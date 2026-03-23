@@ -1,4 +1,6 @@
-from .inline import main_menu, genres_keyboard, owner_menu, partner_menu
-from .reply import admin_reply
+# keyboards/__init__.py
+from .inline import main_menu, genres_keyboard
+# from .reply import admin_reply
 
-__all__ = ["main_menu", "genres_keyboard", "owner_menu", "partner_menu", "admin_reply"]
+# yoki agar __all__ bo'lsa
+__all__ = ("main_menu", "genres_keyboard")
