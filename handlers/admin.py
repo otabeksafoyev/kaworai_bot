@@ -2,17 +2,19 @@ from aiogram import Router, F, types
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
+from sqlalchemy import select, func
 
-# Loyihangiz ichidagi papkalardan importlar
+# Importlarni tekshiring
 from states.admin_states import AddAnime
 from database.models import Anime, Admin, User
-from database.engine import AsyncSession  # Sessionmaker ekanligiga ishonch hosil qiling
-from sqlalchemy import select, func
-from data.config import ADMINS # Config papkangizdan adminlar ro'yxati
+from database.engine import AsyncSessionLocal  # Nomini to'g'irladik
+import os
 
 admin_router = Router()
 
-# Tugmalar majmuasi
+# .env dan adminlarni olish (list ko'rinishida)
+ADMINS = os.getenv("ADMIN_ID", "").split(",")
+
 simple_admin_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Anime qo'shish")],
@@ -22,18 +24,17 @@ simple_admin_kb = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# /admin komandasi
 @admin_router.message(Command("admin"))
 async def admin_entry(msg: Message, state: FSMContext):
-    async with AsyncSession() as session:
-        # Adminni bazadan tekshiramiz
+    # To'g'ri session chaqirish usuli
+    async with AsyncSessionLocal() as session:
         result = await session.execute(select(Admin).where(Admin.telegram_id == msg.from_user.id))
         admin = result.scalar_one_or_none()
         
         if not admin:
-            # Agar foydalanuvchi .env dagi ADMIN_ID bo'lsa va bazada bo'lmasa, qo'shamiz
+            # ADMINS ro'yxatida borligini tekshirish
             if str(msg.from_user.id) in ADMINS:
-                new_admin = Admin(telegram_id=msg.from_user.id, role="owner")
+                new_admin = Admin(telegram_id=msg.from_user.id, role="owner", nickname=msg.from_user.full_name)
                 session.add(new_admin)
                 await session.commit()
                 admin = new_admin
@@ -44,37 +45,27 @@ async def admin_entry(msg: Message, state: FSMContext):
         role_text = "Owner" if admin.role == "owner" else "Partner"
         await msg.answer(f"🛠 {role_text} Admin Panel ochildi", reply_markup=simple_admin_kb)
 
-# Anime qo'shishni boshlash
-@admin_router.message(F.text == "➕ Anime qo'shish")
-async def add_anime(msg: Message, state: FSMContext):
-    await msg.answer("🆔 Anime ID kiriting:")
-    await state.set_state(AddAnime.waiting_id)
-
-# Statistika (200k+ foydalanuvchi uchun optimallashgan count)
 @admin_router.message(F.text == "📊 Statistika")
 async def stats(msg: Message):
-    async with AsyncSession() as session:
-        # Count so'rovlarini parallel bajarish uchun (asyncpg imkoniyati)
-        user_count_query = select(func.count(User.telegram_id))
-        anime_count_query = select(func.count(Anime.id))
+    async with AsyncSessionLocal() as session:
+        # Count so'rovlari
+        user_count = await session.scalar(select(func.count(User.telegram_id)))
+        anime_count = await session.scalar(select(func.count(Anime.id)))
         
-        total_u = await session.scalar(user_count_query)
-        total_a = await session.scalar(anime_count_query)
-        
-        # Eng ko'p ko'rilgan anime (Top 1)
-        # Taxminiy query: Anime modelida 'views' maydoni bor deb hisoblaymiz
-        top_query = select(Anime.title).order_by(Anime.id.desc()).limit(1)
-        top_anime = await session.scalar(top_query)
+        # Oxirgi qo'shilgan anime
+        top_query = select(Anime).order_by(Anime.id.desc()).limit(1)
+        res = await session.execute(top_query)
+        last_anime = res.scalar_one_or_none()
+        title = last_anime.title if last_anime else "Mavjud emas"
 
     await msg.answer(
         f"📊 <b>Statistika:</b>\n\n"
-        f"👤 Foydalanuvchilar: <code>{total_u or 0}</code>\n"
-        f"🎬 Jami animelar: <code>{total_a or 0}</code>\n"
-        f"🌟 Oxirgi qo'shilgan: {top_anime or 'Mavjud emas'}",
+        f"👤 Foydalanuvchilar: <code>{user_count or 0}</code>\n"
+        f"🎬 Jami animelar: <code>{anime_count or 0}</code>\n"
+        f"🌟 Oxirgi qo'shilgan: {title}",
         parse_mode="HTML"
     )
 
-# Chiqish tugmasi
 @admin_router.message(F.text == "🔙 Chiqish")
 async def exit_admin(msg: Message, state: FSMContext):
     await state.clear()
