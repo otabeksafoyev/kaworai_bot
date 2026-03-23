@@ -7,7 +7,7 @@ from database.engine import AsyncSession
 from sqlalchemy import select, func
 from config import config
 
-router = Router()
+admin_router = Router()
 
 # Vaqtincha oddiy reply keyboard (inline emas)
 simple_admin_kb = ReplyKeyboardMarkup(
