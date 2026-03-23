@@ -1,28 +1,24 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.redis import RedisStorage
-from data import config
-from handlers import admin_router, user_router # xatolik bergan joy
+import sys
+import os
+
+# Papka yo'lini tanitish
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from loader import bot
+from handlers.admin import admin_router
+# Agar handlers/users.py bo'lsa:
+# from handlers.users import user_router 
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
-
-    # Redis ulanishi (Tezkorlik uchun)
-    storage = RedisStorage.from_url(config.REDIS_URL)
-
-    bot = Bot(token=config.BOT_TOKEN)
-    dp = Dispatcher(storage=storage)
-
     # Routerlarni ulash
-    dp.include_routers(
-        admin_router,
-        user_router
-    )
+    dp.include_router(admin_router)
+    # dp.include_router(user_router)
 
-    # Bazani ishga tushirish (PostgreSQL)
-    # Bu yerda db.create() funksiyasini chaqirishingiz kerak
+    logging.info("Bot ishga tushmoqda...")
 
+    # Botni yangilashlarni tozalab ishga tushirish
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 

@@ -1,9 +1,9 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InputMediaVideo
 from utils.redis_helpers import set_watching
-from keyboards.inline import next_episode_kb
+# from keyboards.inline import next_episode_kb
 
-router = Router()
+callback_router = Router()
 
 @router.callback_query(F.data.startswith("watch_"))
 async def watch(cb: CallbackQuery):
