@@ -15,3 +15,8 @@ class AddPartner(StatesGroup):
 
 class PublishAnime(StatesGroup):
     waiting_confirm  = State()
+
+
+class AddChannel(StatesGroup):
+    waiting_id = State()
+    waiting_username = State()
