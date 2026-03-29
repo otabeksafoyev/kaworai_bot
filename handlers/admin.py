@@ -1,12 +1,12 @@
 import asyncio
 import os
 from aiogram import Router, F, types
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 
 from states.admin_states import AddAnime, AddChannel, EditAnime, BroadcastState
 from database.models import Anime, Admin, User, SubscriptionChannel, Series
@@ -50,7 +50,6 @@ cancel_kb = ReplyKeyboardMarkup(
 
 
 # ====================== ADMIN PANELGA KIRISH ======================
-
 @admin_router.message(Command("admin"))
 async def admin_entry(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -74,6 +73,7 @@ async def admin_entry(msg: Message, state: FSMContext):
     )
 
 
+# ====================== BEKOR QILISH ======================
 @admin_router.message(F.text == "🚫 Bekor qilish")
 async def cancel_action(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -82,8 +82,16 @@ async def cancel_action(msg: Message, state: FSMContext):
     await msg.answer("Amal bekor qilindi.", reply_markup=admin_main_kb)
 
 
-# ====================== ANIME QO'SHISH ======================
+# ====================== CHIQISH ======================
+@admin_router.message(F.text == "🔙 Chiqish")
+async def exit_admin(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    await state.clear()
+    await msg.answer("Panel yopildi.", reply_markup=ReplyKeyboardRemove())
 
+
+# ====================== ANIME QO'SHISH ======================
 @admin_router.message(F.text == "➕ Anime qo'shish")
 async def add_anime_start(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -143,7 +151,10 @@ async def process_desc(msg: Message, state: FSMContext):
         return await msg.answer("Bekor qilindi.", reply_markup=admin_main_kb)
     await state.update_data(desc=msg.text.strip())
     await state.set_state(AddAnime.waiting_genres)
-    await msg.answer("🎭 Janrlarni kiriting (vergul bilan):\n<i>Masalan: Jangari, Sarguzasht</i>", parse_mode="HTML")
+    await msg.answer(
+        "🎭 Janrlarni kiriting (vergul bilan):\n<i>Masalan: Jangari, Sarguzasht</i>",
+        parse_mode="HTML"
+    )
 
 
 @admin_router.message(AddAnime.waiting_genres)
@@ -170,7 +181,10 @@ async def process_year(msg: Message, state: FSMContext):
         return await msg.answer("❌ Yilni raqamda kiriting!")
     await state.update_data(year=int(msg.text))
     await state.set_state(AddAnime.waiting_rating)
-    await msg.answer("⭐ Boshlang'ich reytingni kiriting:\n<i>Masalan: 8.5 yoki 0</i>", parse_mode="HTML")
+    await msg.answer(
+        "⭐ Boshlang'ich reytingni kiriting:\n<i>Masalan: 8.5 yoki 0</i>",
+        parse_mode="HTML"
+    )
 
 
 @admin_router.message(AddAnime.waiting_rating)
@@ -187,24 +201,6 @@ async def process_rating(msg: Message, state: FSMContext):
     except ValueError:
         return await msg.answer("❌ Raqam kiriting! Masalan: 8.5 yoki 0")
     await state.update_data(rating=rating)
-    await state.set_state(AddAnime.waiting_total_episodes)  # ✅ YANGI QADAM
-    await msg.answer(
-        "📺 Jami nechta seriya bor? (raqam kiriting)\n<i>Masalan: 12, 24, 0 (noma'lum bo'lsa)</i>",
-        parse_mode="HTML"
-    )
-
-
-# ✅ YANGI: jami seriyalar sonini olish
-@admin_router.message(AddAnime.waiting_total_episodes)
-async def process_total_episodes(msg: Message, state: FSMContext):
-    if not await is_admin(msg.from_user.id):
-        return
-    if msg.text == "🚫 Bekor qilish":
-        await state.clear()
-        return await msg.answer("Bekor qilindi.", reply_markup=admin_main_kb)
-    if not msg.text.isdigit():
-        return await msg.answer("❌ Faqat raqam kiriting! Masalan: 12")
-    await state.update_data(total_episodes=int(msg.text))
     await state.set_state(AddAnime.waiting_poster)
     await msg.answer("🖼 Anime posterini (rasm) yuboring:")
 
@@ -220,7 +216,7 @@ async def process_poster(msg: Message, state: FSMContext):
     ])
     await msg.answer(
         "🖼 Inline qidiruv uchun <b>rasm URL</b> kiriting:\n\n"
-        "<i>Bu rasm inline qidiruvda chiqadi.\nMasalan: https://i.imgur.com/abc.jpg</i>",
+        "<i>Masalan: https://i.imgur.com/abc.jpg</i>",
         reply_markup=kb,
         parse_mode="HTML"
     )
@@ -292,7 +288,6 @@ async def _save_anime(msg: Message, state: FSMContext):
             genres=data['genres'],
             year=data['year'],
             rating=data.get('rating', 0.0),
-            total_episodes=data.get('total_episodes', 0),  # ✅ YANGI
             poster_file_id=data['poster_file_id'],
             trailer_file_id=data.get('trailer_file_id'),
             inline_thumbnail_url=data.get('inline_thumbnail_url'),
@@ -300,7 +295,8 @@ async def _save_anime(msg: Message, state: FSMContext):
         session.add(new_anime)
         await session.commit()
     await msg.answer(
-        f"✅ <b>{data['title']}</b> bazaga qo'shildi!",
+        f"✅ <b>{data['title']}</b> bazaga qo'shildi!\n\n"
+        f"📢 Kanallarga yuborish: <b>Xabar yuborish → Anime post</b>",
         reply_markup=admin_main_kb,
         parse_mode="HTML"
     )
@@ -311,14 +307,12 @@ async def _send_admin_preview(msg: Message, data: dict):
     genres_text = ", ".join(data.get('genres', [])) or "Nomalum"
     trailer_status = "✅ Bor" if data.get('trailer_file_id') else "❌ Yo'q"
     inline_status = "✅ Bor" if data.get('inline_thumbnail_url') else "❌ Yo'q"
-    total_ep = data.get('total_episodes', 0)
     info_text = (
         f"📋 <b>Yangi anime qo'shildi!</b>\n\n"
         f"🎌 Nomi: <b>{data['title']}</b>\n"
         f"📅 Yil: {data['year']}\n"
         f"🎭 Janr: {genres_text}\n"
         f"⭐ Reyting: {data.get('rating', 0.0)}\n"
-        f"📺 Jami seriyalar: {total_ep if total_ep else 'Nomalum'}\n"
         f"🎬 Treyler: {trailer_status}\n"
         f"🖼 Inline URL: {inline_status}\n"
         f"🆔 ID: <code>{data['anime_id']}</code>\n\n"
@@ -333,15 +327,39 @@ async def _send_admin_preview(msg: Message, data: dict):
         )
     except Exception as e:
         await msg.answer(f"⚠️ Preview xato: {e}")
+    if data.get('trailer_file_id'):
+        try:
+            await msg.bot.send_video(
+                chat_id=config.ADMIN_ID,
+                video=data['trailer_file_id'],
+                caption=f"🎬 <b>{data['title']}</b> — Treyler",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            await msg.answer(f"⚠️ Treyler xato: {e}")
 
 
-# ====================== ANIME O'CHIRISH ======================
+# ====================== ANIME EDIT (command) ======================
+@admin_router.message(Command("edit_anime"))
+async def edit_anime_start(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    await state.set_state(EditAnime.waiting_anime_id)
+    await state.update_data(action="edit")
+    await msg.answer(
+        "✏️ <b>Anime tahrirlash</b>\n\nAnime ID sini kiriting:",
+        parse_mode="HTML", reply_markup=cancel_kb
+    )
+
 
 @admin_router.message(Command("delete_anime"))
 async def delete_anime_start(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
         return
-    await msg.answer("🗑 <b>Anime o'chirish</b>\n\nAnime ID sini kiriting:", parse_mode="HTML", reply_markup=cancel_kb)
+    await msg.answer(
+        "🗑 <b>Anime o'chirish</b>\n\nAnime ID sini kiriting:",
+        parse_mode="HTML", reply_markup=cancel_kb
+    )
     await state.set_state(EditAnime.waiting_anime_id)
     await state.update_data(action="delete")
 
@@ -358,15 +376,6 @@ async def delete_episode_start(msg: Message, state: FSMContext):
     await state.update_data(action="delete_episode")
 
 
-@admin_router.message(Command("edit_anime"))
-async def edit_anime_start(msg: Message, state: FSMContext):
-    if not await is_admin(msg.from_user.id):
-        return
-    await state.set_state(EditAnime.waiting_anime_id)
-    await state.update_data(action="edit")
-    await msg.answer("✏️ <b>Anime tahrirlash</b>\n\nAnime ID sini kiriting:", parse_mode="HTML", reply_markup=cancel_kb)
-
-
 @admin_router.message(EditAnime.waiting_anime_id)
 async def edit_get_anime(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -381,7 +390,10 @@ async def edit_get_anime(msg: Message, state: FSMContext):
     if action == "delete_episode":
         parts = msg.text.strip().split()
         if len(parts) != 2 or not all(p.isdigit() for p in parts):
-            return await msg.answer("❌ Format: <code>anime_id qism_raqami</code>", parse_mode="HTML")
+            return await msg.answer(
+                "❌ Format: <code>anime_id qism_raqami</code>",
+                parse_mode="HTML"
+            )
         anime_id, ep_num = int(parts[0]), int(parts[1])
         async with AsyncSessionLocal() as session:
             result = await session.execute(
@@ -393,7 +405,7 @@ async def edit_get_anime(msg: Message, state: FSMContext):
             await session.delete(ep)
             await session.commit()
         await state.clear()
-        return await msg.answer(f"✅ {anime_id}-anime {ep_num}-qism o'chirildi!", reply_markup=admin_main_kb)
+        return await msg.answer(f"✅ {ep_num}-qism o'chirildi!", reply_markup=admin_main_kb)
 
     try:
         anime_id = int(msg.text.strip())
@@ -402,35 +414,37 @@ async def edit_get_anime(msg: Message, state: FSMContext):
 
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
-        if not anime:
-            return await msg.answer(f"❌ ID {anime_id} li anime topilmadi!")
+    if not anime:
+        return await msg.answer(f"❌ ID {anime_id} li anime topilmadi!")
 
-        if action == "delete":
-            kb = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data=f"confirm_delete_{anime_id}"),
-                InlineKeyboardButton(text="❌ Yo'q", callback_data="cancel_delete")
-            ]])
-            await state.clear()
-            return await msg.answer(
-                f"⚠️ <b>{anime.title}</b> animesini o'chirishni tasdiqlaysizmi?\nBarcha qismlari ham o'chadi!",
-                reply_markup=kb, parse_mode="HTML"
-            )
+    if action == "delete":
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data=f"confirm_delete_{anime_id}"),
+            InlineKeyboardButton(text="❌ Yo'q", callback_data="cancel_delete")
+        ]])
+        await state.clear()
+        return await msg.answer(
+            f"⚠️ <b>{anime.title}</b> animesini o'chirishni tasdiqlaysizmi?\nBarcha qismlari ham o'chadi!",
+            reply_markup=kb, parse_mode="HTML"
+        )
 
-        await state.update_data(edit_anime_id=anime_id)
-        await state.set_state(EditAnime.waiting_field)
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📝 Nomi", callback_data="edit_title"),
-             InlineKeyboardButton(text="📖 Tavsif", callback_data="edit_desc")],
-            [InlineKeyboardButton(text="🎭 Janr", callback_data="edit_genres"),
-             InlineKeyboardButton(text="📅 Yil", callback_data="edit_year")],
-            [InlineKeyboardButton(text="🖼 Poster", callback_data="edit_poster"),
-             InlineKeyboardButton(text="🎬 Treyler", callback_data="edit_trailer")],
-            [InlineKeyboardButton(text="🖼 Inline URL", callback_data="edit_inline_url"),
-             InlineKeyboardButton(text="⭐ Reyting", callback_data="edit_rating")],
-            [InlineKeyboardButton(text="📺 Jami seriyalar", callback_data="edit_total_episodes")],  # ✅ YANGI
-            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="edit_cancel")],
-        ])
-        await msg.answer(f"✏️ <b>{anime.title}</b>\n\nNimani tahrirlash kerak?", reply_markup=kb, parse_mode="HTML")
+    await state.update_data(edit_anime_id=anime_id)
+    await state.set_state(EditAnime.waiting_field)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 Nomi", callback_data="edit_title"),
+         InlineKeyboardButton(text="📖 Tavsif", callback_data="edit_desc")],
+        [InlineKeyboardButton(text="🎭 Janr", callback_data="edit_genres"),
+         InlineKeyboardButton(text="📅 Yil", callback_data="edit_year")],
+        [InlineKeyboardButton(text="🖼 Poster", callback_data="edit_poster"),
+         InlineKeyboardButton(text="🎬 Treyler", callback_data="edit_trailer")],
+        [InlineKeyboardButton(text="🖼 Inline URL", callback_data="edit_inline_url"),
+         InlineKeyboardButton(text="⭐ Reyting", callback_data="edit_rating")],
+        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="edit_cancel")],
+    ])
+    await msg.answer(
+        f"✏️ <b>{anime.title}</b>\n\nNimani tahrirlash kerak?",
+        reply_markup=kb, parse_mode="HTML"
+    )
 
 
 @admin_router.callback_query(F.data.startswith("confirm_delete_"))
@@ -477,7 +491,6 @@ async def edit_field_selected(call: types.CallbackQuery, state: FSMContext):
         "trailer": "yangi traylerini (video yuboring)",
         "inline_url": "yangi inline URL sini",
         "rating": "yangi reytingini (masalan: 8.5)",
-        "total_episodes": "jami seriyalar sonini (raqam)",  # ✅ YANGI
     }
     await state.update_data(edit_field=field)
     await state.set_state(EditAnime.waiting_value)
@@ -499,14 +512,13 @@ async def save_edit_value(msg: Message, state: FSMContext):
     data = await state.get_data()
     field = data.get('edit_field')
 
-    # del_episode alohida — anime_id siz ishlaydi
+    # del_episode — alohida
     if field == "del_episode":
         del_anime_id = data.get('del_ep_anime_id')
         try:
             ep_num = int(msg.text.strip())
         except ValueError:
             return await msg.answer("❌ Raqam kiriting!")
-
         async with AsyncSessionLocal() as session:
             ep_result = await session.execute(
                 select(Series).where(
@@ -519,13 +531,10 @@ async def save_edit_value(msg: Message, state: FSMContext):
                 return await msg.answer(f"❌ {ep_num}-qism topilmadi!")
             await session.delete(ep)
             await session.commit()
-
         await state.clear()
         return await msg.answer(f"✅ {ep_num}-qism o'chirildi!", reply_markup=admin_main_kb)
 
-    # Qolgan barcha edit maydonlari
     anime_id = data.get('edit_anime_id')
-
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
@@ -573,8 +582,9 @@ async def save_edit_value(msg: Message, state: FSMContext):
         reply_markup=admin_main_kb,
         parse_mode="HTML"
     )
-# ====================== QISM QO'SHISH ======================
 
+
+# ====================== QISM QO'SHISH ======================
 @admin_router.message(F.text == "🎞 Qism qo'shish")
 async def add_episode_start(msg: Message):
     if not await is_admin(msg.from_user.id):
@@ -612,7 +622,10 @@ async def add_episode_from_channel(message: Message):
                 pass
     if anime_id is None or episode is None:
         try:
-            await message.answer("❌ Noto'g'ri format!\n\nTo'g'ri format:\n<b>ID: 388\nQism: 13</b>", parse_mode="HTML")
+            await message.answer(
+                "❌ Noto'g'ri format!\n\nTo'g'ri format:\n<b>ID: 388\nQism: 13</b>",
+                parse_mode="HTML"
+            )
         except Exception:
             pass
         return
@@ -624,7 +637,9 @@ async def add_episode_from_channel(message: Message):
             except Exception:
                 pass
             return
-        result = await session.execute(select(func.max(Series.episode)).where(Series.anime_id == anime_id))
+        result = await session.execute(
+            select(func.max(Series.episode)).where(Series.anime_id == anime_id)
+        )
         last_ep = result.scalar() or 0
         if episode <= last_ep:
             episode = last_ep + 1
@@ -632,7 +647,10 @@ async def add_episode_from_channel(message: Message):
         session.add(new_series)
         await session.commit()
     try:
-        await message.answer(f"✅ <b>{anime.title}</b> — {episode}-qism saqlandi!", parse_mode="HTML")
+        await message.answer(
+            f"✅ <b>{anime.title}</b> — {episode}-qism saqlandi!",
+            parse_mode="HTML"
+        )
     except Exception:
         pass
     try:
@@ -651,7 +669,6 @@ async def add_episode_from_channel(message: Message):
 
 
 # ====================== KANAL SOZLAMALARI ======================
-
 @admin_router.message(F.text == "📢 Kanal sozlamalari")
 async def channel_manager(msg: Message):
     if not await is_admin(msg.from_user.id):
@@ -663,7 +680,10 @@ async def channel_manager(msg: Message):
             InlineKeyboardButton(text="➕ Obuna kanali", callback_data="add_channel"),
             InlineKeyboardButton(text="📰 News kanal", callback_data="add_news_channel")
         ]])
-        return await msg.answer("📢 <b>Hozircha kanallar yo'q.</b>", reply_markup=kb, parse_mode="HTML")
+        return await msg.answer(
+            "📢 <b>Hozircha kanallar yo'q.</b>",
+            reply_markup=kb, parse_mode="HTML"
+        )
     text = "📢 <b>Kanallar ro'yxati:</b>\n\n"
     kb = InlineKeyboardBuilder()
     for ch in channels:
@@ -730,7 +750,10 @@ async def add_news_channel_start(call: types.CallbackQuery, state: FSMContext):
         return await call.answer("❌ Admin emas!", show_alert=True)
     await state.set_state(AddChannel.waiting_name)
     await state.update_data(is_news_channel=True)
-    await call.message.answer("📰 <b>News kanal qo'shish</b>\n\n1️⃣ Kanal nomini kiriting:", parse_mode="HTML", reply_markup=cancel_kb)
+    await call.message.answer(
+        "📰 <b>News kanal qo'shish</b>\n\n1️⃣ Kanal nomini kiriting:",
+        parse_mode="HTML", reply_markup=cancel_kb
+    )
     await call.answer()
 
 
@@ -743,7 +766,10 @@ async def save_ch_name(msg: Message, state: FSMContext):
         return await msg.answer("Bekor qilindi.", reply_markup=admin_main_kb)
     await state.update_data(channel_name=msg.text.strip())
     await state.set_state(AddChannel.waiting_url)
-    await msg.answer("2️⃣ <b>Havola (URL)</b> kiriting:\n\nTelegram: <code>https://t.me/kanal_nomi</code>", parse_mode="HTML", reply_markup=cancel_kb)
+    await msg.answer(
+        "2️⃣ <b>Havola (URL)</b> kiriting:\n\nTelegram: <code>https://t.me/kanal_nomi</code>",
+        parse_mode="HTML", reply_markup=cancel_kb
+    )
 
 
 @admin_router.message(AddChannel.waiting_url)
@@ -790,8 +816,17 @@ async def ch_type_show(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     await state.clear()
     async with AsyncSessionLocal() as session:
-        ch = await add_channel(session=session, channel_name=data["channel_name"], channel_url=data["channel_url"], require_check=False, is_news=False)
-    await call.message.edit_text(f"✅ <b>Kanal qo'shildi!</b>\n\n📢 Nom: <b>{ch.channel_name}</b>", parse_mode="HTML")
+        ch = await add_channel(
+            session=session,
+            channel_name=data["channel_name"],
+            channel_url=data["channel_url"],
+            require_check=False,
+            is_news=False
+        )
+    await call.message.edit_text(
+        f"✅ <b>Kanal qo'shildi!</b>\n\n📢 Nom: <b>{ch.channel_name}</b>",
+        parse_mode="HTML"
+    )
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
     await call.answer()
 
@@ -801,7 +836,10 @@ async def ch_type_required(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id):
         return await call.answer("❌ Admin emas!", show_alert=True)
     await state.set_state(AddChannel.waiting_channel_id)
-    await call.message.edit_text("4️⃣ Telegram kanal ID sini kiriting:\n\n<i>Masalan: -1001234567890</i>", parse_mode="HTML")
+    await call.message.edit_text(
+        "4️⃣ Telegram kanal ID sini kiriting:\n\n<i>Masalan: -1001234567890</i>",
+        parse_mode="HTML"
+    )
     await call.answer()
 
 
@@ -815,14 +853,21 @@ async def save_ch_channel_id(msg: Message, state: FSMContext):
     try:
         channel_id = int(msg.text.strip())
     except ValueError:
-        return await msg.answer("❌ Noto'g'ri format!\nMasalan: <code>-1001234567890</code>", parse_mode="HTML", reply_markup=cancel_kb)
+        return await msg.answer(
+            "❌ Noto'g'ri format!\nMasalan: <code>-1001234567890</code>",
+            parse_mode="HTML", reply_markup=cancel_kb
+        )
     data = await state.get_data()
     is_news = data.get('is_news_channel', False)
     await state.clear()
     async with AsyncSessionLocal() as session:
         ch = await add_channel(
-            session=session, channel_name=data["channel_name"], channel_url=data["channel_url"],
-            require_check=not is_news, is_news=is_news, channel_id=channel_id,
+            session=session,
+            channel_name=data["channel_name"],
+            channel_url=data["channel_url"],
+            require_check=not is_news,
+            is_news=is_news,
+            channel_id=channel_id,
         )
     ch_type = "📰 News kanal" if is_news else "🔒 Majburiy obuna"
     await msg.answer(
@@ -831,23 +876,16 @@ async def save_ch_channel_id(msg: Message, state: FSMContext):
     )
 
 
-
-
-
 # ====================== ANIME SOZLAMALARI ======================
-
 @admin_router.message(F.text == "🎬 Anime sozlamalari")
 async def anime_settings(msg: Message):
     if not await is_admin(msg.from_user.id):
         return
-
     async with AsyncSessionLocal() as session:
         total_animes = await session.scalar(select(func.count(Anime.id)))
         total_series = await session.scalar(select(func.count(Series.id)))
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📋 Anime ro'yxati", callback_data="anime_list_0")],
-        [InlineKeyboardButton(text="🔍 Anime qidirish", callback_data="anime_search_start")],
         [InlineKeyboardButton(text="✏️ ID bo'yicha tahrirlash", callback_data="admin_edit_by_id")],
         [InlineKeyboardButton(text="🗑 ID bo'yicha o'chirish", callback_data="admin_delete_by_id")],
     ])
@@ -860,36 +898,47 @@ async def anime_settings(msg: Message):
     )
 
 
-# --- Anime ro'yxati (sahifalab) ---
+@admin_router.callback_query(F.data == "admin_edit_by_id")
+async def admin_edit_by_id_cb(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(EditAnime.waiting_anime_id)
+    await state.update_data(action="edit")
+    await call.message.answer("✏️ Tahrirlash uchun anime ID sini kiriting:", reply_markup=cancel_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "admin_delete_by_id")
+async def admin_delete_by_id_cb(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(EditAnime.waiting_anime_id)
+    await state.update_data(action="delete")
+    await call.message.answer("🗑 O'chirish uchun anime ID sini kiriting:", reply_markup=cancel_kb)
+    await call.answer()
+
+
 @admin_router.callback_query(F.data.startswith("anime_list_"))
 async def anime_list(call: types.CallbackQuery):
     if not await is_admin(call.from_user.id):
         return
-
     page = int(call.data.replace("anime_list_", ""))
     page_size = 8
-
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Anime).order_by(Anime.id.asc())
-        )
+        result = await session.execute(select(Anime).order_by(Anime.id.asc()))
         all_animes = result.scalars().all()
-
     total = len(all_animes)
     total_pages = max(1, (total + page_size - 1) // page_size)
     start = page * page_size
     page_animes = all_animes[start:start + page_size]
-
     if not page_animes:
         return await call.answer("❌ Anime yo'q!", show_alert=True)
-
     buttons = []
     for anime in page_animes:
         buttons.append([InlineKeyboardButton(
             text=f"🎬 {anime.id}. {anime.title[:30]}",
             callback_data=f"anime_manage_{anime.id}"
         )])
-
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"anime_list_{page - 1}"))
@@ -898,10 +947,8 @@ async def anime_list(call: types.CallbackQuery):
         nav.append(InlineKeyboardButton(text="➡️", callback_data=f"anime_list_{page + 1}"))
     if nav:
         buttons.append(nav)
-
     buttons.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_anime_settings")])
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-
     text = f"📋 <b>Anime ro'yxati</b> ({total} ta)\n\nBirini tanlang:"
     try:
         await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
@@ -910,28 +957,21 @@ async def anime_list(call: types.CallbackQuery):
     await call.answer()
 
 
-# --- Anime boshqaruv paneli ---
 @admin_router.callback_query(F.data.startswith("anime_manage_"))
 async def anime_manage(call: types.CallbackQuery):
     if not await is_admin(call.from_user.id):
         return
-
     anime_id = int(call.data.replace("anime_manage_", ""))
-
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
             return await call.answer("❌ Anime topilmadi!", show_alert=True)
-
         ep_result = await session.execute(
             select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
         )
         episodes = ep_result.scalars().all()
-
     total_ep = len(episodes)
     genres_text = ", ".join(anime.genres) if anime.genres else "Nomalum"
-
-    # Qo'shilgan va qo'shilmagan qismlar
     added_episodes = [ep.episode for ep in episodes]
     if total_ep > 0:
         expected = list(range(1, max(added_episodes) + 1))
@@ -939,25 +979,22 @@ async def anime_manage(call: types.CallbackQuery):
         missing_text = f"❌ Qo'shilmagan: {', '.join(map(str, missing))}" if missing else "✅ Hammasi qo'shilgan"
     else:
         missing_text = "📭 Hali qism yo'q"
-
     text = (
         f"🎬 <b>{anime.title}</b>\n\n"
         f"🆔 ID: <code>{anime.id}</code>\n"
         f"📅 Yil: {anime.year}\n"
         f"🎭 Janr: {genres_text}\n"
         f"⭐ Reyting: {anime.rating} ({anime.rating_count} ovoz)\n"
-        f"🎞 Qo'shilgan qismlar: <b>{total_ep} ta</b>\n"
+        f"🎞 Qo'shilgan: <b>{total_ep} ta</b>\n"
         f"{missing_text}\n\n"
-        f"📖 {anime.description[:200]}{'...' if len(anime.description or '') > 200 else ''}"
+        f"📖 {(anime.description or '')[:200]}{'...' if len(anime.description or '') > 200 else ''}"
     )
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data=f"admin_edit_{anime_id}"),
          InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"admin_del_{anime_id}")],
         [InlineKeyboardButton(text="📋 Qismlar boshqaruvi", callback_data=f"ep_manage_{anime_id}")],
         [InlineKeyboardButton(text="🔙 Ro'yxatga", callback_data="anime_list_0")],
     ])
-
     try:
         await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
@@ -965,106 +1002,71 @@ async def anime_manage(call: types.CallbackQuery):
     await call.answer()
 
 
-# --- Qismlar boshqaruvi ---
 @admin_router.callback_query(F.data.startswith("ep_manage_"))
 async def ep_manage(call: types.CallbackQuery):
     if not await is_admin(call.from_user.id):
         return
-
     anime_id = int(call.data.replace("ep_manage_", ""))
-
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         ep_result = await session.execute(
             select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
         )
         episodes = ep_result.scalars().all()
-
     if not episodes:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"anime_manage_{anime_id}")]
         ])
         return await call.message.edit_text(
             f"📭 <b>{anime.title}</b>\n\nHali qismlar qo'shilmagan.",
-            reply_markup=kb,
-            parse_mode="HTML"
+            reply_markup=kb, parse_mode="HTML"
         )
-
     total = len(episodes)
     ep_nums = [str(ep.episode) for ep in episodes]
     chunks = [ep_nums[i:i+10] for i in range(0, len(ep_nums), 10)]
     ep_list_text = "\n".join([", ".join(chunk) for chunk in chunks])
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🗑 1 ta qismni o'chirish",
-            callback_data=f"del_one_ep_{anime_id}"
-        )],
-        [InlineKeyboardButton(
-            text="💣 Barcha qismlarni o'chirish",
-            callback_data=f"del_all_eps_{anime_id}"
-        )],
+        [InlineKeyboardButton(text="🗑 1 ta qismni o'chirish", callback_data=f"del_one_ep_{anime_id}")],
+        [InlineKeyboardButton(text="💣 Barcha qismlarni o'chirish", callback_data=f"del_all_eps_{anime_id}")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"anime_manage_{anime_id}")],
     ])
-
     await call.message.edit_text(
         f"🎞 <b>{anime.title}</b> — Qismlar\n\n"
         f"📊 Jami: <b>{total} ta</b>\n"
         f"📋 Qismlar: {ep_list_text}",
-        reply_markup=kb,
-        parse_mode="HTML"
+        reply_markup=kb, parse_mode="HTML"
     )
     await call.answer()
 
 
-# --- 1 ta qismni o'chirish ---
 @admin_router.callback_query(F.data.startswith("del_one_ep_"))
 async def del_one_ep_start(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id):
         return
-
     anime_id = int(call.data.replace("del_one_ep_", ""))
-    await state.update_data(del_ep_anime_id=anime_id)
+    await state.update_data(del_ep_anime_id=anime_id, edit_field="del_episode")
     await state.set_state(EditAnime.waiting_value)
-    await state.update_data(edit_field="del_episode")
-
     await call.message.answer(
-        f"🗑 Qaysi qismni o'chirish kerak?\n\n"
-        f"Qism raqamini kiriting (masalan: <code>5</code>):",
-        parse_mode="HTML",
-        reply_markup=cancel_kb
+        "🗑 Qaysi qismni o'chirish kerak?\n\nQism raqamini kiriting (masalan: <code>5</code>):",
+        parse_mode="HTML", reply_markup=cancel_kb
     )
     await call.answer()
 
 
-# --- Barcha qismlarni o'chirish tasdiqlash ---
 @admin_router.callback_query(F.data.startswith("del_all_eps_"))
 async def del_all_eps_confirm(call: types.CallbackQuery):
     if not await is_admin(call.from_user.id):
         return
-
     anime_id = int(call.data.replace("del_all_eps_", ""))
-
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="✅ Ha, hammasini o'chir",
-                callback_data=f"confirm_del_all_{anime_id}"
-            ),
-            InlineKeyboardButton(
-                text="❌ Bekor",
-                callback_data=f"ep_manage_{anime_id}"
-            )
-        ]
-    ])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Ha, hammasini o'chir", callback_data=f"confirm_del_all_{anime_id}"),
+        InlineKeyboardButton(text="❌ Bekor", callback_data=f"ep_manage_{anime_id}")
+    ]])
     await call.message.edit_text(
-        f"⚠️ <b>{anime.title if anime else anime_id}</b>\n\n"
-        f"Barcha qismlarni o'chirishni tasdiqlaysizmi?",
-        reply_markup=kb,
-        parse_mode="HTML"
+        f"⚠️ <b>{anime.title if anime else anime_id}</b>\n\nBarcha qismlarni o'chirishni tasdiqlaysizmi?",
+        reply_markup=kb, parse_mode="HTML"
     )
     await call.answer()
 
@@ -1073,44 +1075,33 @@ async def del_all_eps_confirm(call: types.CallbackQuery):
 async def confirm_del_all_eps(call: types.CallbackQuery):
     if not await is_admin(call.from_user.id):
         return
-
     anime_id = int(call.data.replace("confirm_del_all_", ""))
-
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
-        result = await session.execute(
-            select(Series).where(Series.anime_id == anime_id)
-        )
+        result = await session.execute(select(Series).where(Series.anime_id == anime_id))
         episodes = result.scalars().all()
         count = len(episodes)
         for ep in episodes:
             await session.delete(ep)
         await session.commit()
-
     await call.message.edit_text(
-        f"✅ <b>{anime.title if anime else anime_id}</b>\n\n"
-        f"{count} ta qism o'chirildi!",
+        f"✅ <b>{anime.title if anime else anime_id}</b>\n\n{count} ta qism o'chirildi!",
         parse_mode="HTML"
     )
     await call.answer("✅ Barcha qismlar o'chirildi!", show_alert=True)
 
 
-# --- Admin edit by id (callback) ---
 @admin_router.callback_query(F.data.startswith("admin_edit_") & ~F.data.in_({"admin_edit_by_id"}))
 async def admin_edit_anime_cb(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id):
         return
-
     anime_id = int(call.data.replace("admin_edit_", ""))
-
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
     if not anime:
         return await call.answer("❌ Topilmadi!", show_alert=True)
-
     await state.update_data(edit_anime_id=anime_id, action="edit")
     await state.set_state(EditAnime.waiting_field)
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📝 Nomi", callback_data="edit_title"),
          InlineKeyboardButton(text="📖 Tavsif", callback_data="edit_desc")],
@@ -1124,51 +1115,29 @@ async def admin_edit_anime_cb(call: types.CallbackQuery, state: FSMContext):
     ])
     await call.message.edit_text(
         f"✏️ <b>{anime.title}</b>\n\nNimani tahrirlash kerak?",
-        reply_markup=kb,
-        parse_mode="HTML"
+        reply_markup=kb, parse_mode="HTML"
     )
     await call.answer()
 
 
-# --- Admin delete by id (callback) ---
 @admin_router.callback_query(F.data.startswith("admin_del_"))
 async def admin_del_anime_cb(call: types.CallbackQuery):
     if not await is_admin(call.from_user.id):
         return
-
     anime_id = int(call.data.replace("admin_del_", ""))
-
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
     if not anime:
         return await call.answer("❌ Topilmadi!", show_alert=True)
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="✅ Ha, o'chirish",
-                callback_data=f"confirm_delete_{anime_id}"
-            ),
-            InlineKeyboardButton(
-                text="❌ Bekor",
-                callback_data=f"anime_manage_{anime_id}"
-            )
-        ]
-    ])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data=f"confirm_delete_{anime_id}"),
+        InlineKeyboardButton(text="❌ Bekor", callback_data=f"anime_manage_{anime_id}")
+    ]])
     await call.message.edit_text(
-        f"⚠️ <b>{anime.title}</b> animesini o'chirishni tasdiqlaysizmi?\n\n"
-        f"Bu animening barcha qismlari ham o'chadi!",
-        reply_markup=kb,
-        parse_mode="HTML"
+        f"⚠️ <b>{anime.title}</b> animesini o'chirishni tasdiqlaysizmi?\n\nBarcha qismlari ham o'chadi!",
+        reply_markup=kb, parse_mode="HTML"
     )
     await call.answer()
-
-
-# --- Edit value da del_episode holatini handle qilish ---
-# save_edit_value funksiyasiga shu qismni QOSHING (elif field == "rating": dan keyin):
-# elif field == "del_episode":
-#     ...
-# Pastdagi save_edit_value_extended funksiyasi buni to'liq qiladi
 
 
 @admin_router.callback_query(F.data == "back_anime_settings")
@@ -1187,8 +1156,7 @@ async def back_anime_settings(call: types.CallbackQuery):
         f"🎬 <b>Anime sozlamalari</b>\n\n"
         f"📊 Jami animalar: <b>{total_animes}</b>\n"
         f"🎞 Jami qismlar: <b>{total_series}</b>",
-        reply_markup=kb,
-        parse_mode="HTML"
+        reply_markup=kb, parse_mode="HTML"
     )
     await call.answer()
 
@@ -1198,15 +1166,7 @@ async def noop_cb(call: types.CallbackQuery):
     await call.answer()
 
 
-
-
-
-
-
-
-
 # ====================== STATISTIKA ======================
-
 @admin_router.message(F.text == "📊 Statistika")
 async def show_stats(msg: Message):
     if not await is_admin(msg.from_user.id):
@@ -1227,7 +1187,6 @@ async def show_stats(msg: Message):
 
 
 # ====================== BROADCAST ======================
-
 @admin_router.message(F.text == "✉️ Xabar yuborish")
 async def broadcast_start(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -1237,4 +1196,152 @@ async def broadcast_start(msg: Message, state: FSMContext):
         [InlineKeyboardButton(text="👥 Foydalanuvchilarga xabar", callback_data="broadcast_users")],
         [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="broadcast_cancel")],
     ])
-    await msg.answer("📢 <b>Xabar yuborish</b>\n\nNimani yubormoqchisiz?", reply_markup=kb, parse_mode="HTML")
+    await msg.answer(
+        "📢 <b>Xabar yuborish</b>\n\nNimani yubormoqchisiz?",
+        reply_markup=kb, parse_mode="HTML"
+    )
+
+
+@admin_router.callback_query(F.data == "broadcast_cancel")
+async def broadcast_cancel_cb(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.edit_text("❌ Bekor qilindi.")
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "broadcast_anime")
+async def broadcast_anime_start(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(BroadcastState.waiting_anime_id)
+    await call.message.answer(
+        "🎬 Qaysi animeni yubormoqchisiz?\n\nAnime ID sini kiriting:",
+        reply_markup=cancel_kb
+    )
+    await call.answer()
+
+
+@admin_router.message(BroadcastState.waiting_anime_id)
+async def broadcast_get_anime_id(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor qilindi.", reply_markup=admin_main_kb)
+    try:
+        anime_id = int(msg.text.strip())
+    except ValueError:
+        return await msg.answer("❌ Raqam kiriting!")
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+    if not anime:
+        return await msg.answer(f"❌ ID {anime_id} li anime topilmadi!")
+    await state.update_data(broadcast_anime_id=anime_id)
+    await state.set_state(BroadcastState.waiting_media_type)
+    has_trailer = "✅ Treyler bor" if anime.trailer_file_id else "❌ Treyler yo'q"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎬 Treyler bilan", callback_data="bcast_trailer")],
+        [InlineKeyboardButton(text="🖼 Poster bilan", callback_data="bcast_poster")],
+        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="broadcast_cancel")],
+    ])
+    await msg.answer(
+        f"🎬 <b>{anime.title}</b>\n📅 Yil: {anime.year}\n{has_trailer}\n\nQanday yuborilsin?",
+        reply_markup=kb, parse_mode="HTML"
+    )
+
+
+@admin_router.callback_query(F.data.in_({"bcast_trailer", "bcast_poster"}))
+async def broadcast_send_anime_post(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    data = await state.get_data()
+    anime_id = data['broadcast_anime_id']
+    use_trailer = call.data == "bcast_trailer"
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+        news_channels = await get_news_channels(session)
+    if not anime:
+        await state.clear()
+        return await call.message.answer("❌ Anime topilmadi!", reply_markup=admin_main_kb)
+    await state.clear()
+    if not news_channels:
+        return await call.message.answer(
+            "⚠️ News kanallar yo'q! Avval news kanal qo'shing.",
+            reply_markup=admin_main_kb
+        )
+    genres_text = ", ".join(anime.genres) if anime.genres else "Nomalum"
+    caption = (
+        f"🎌 <b>{anime.title}</b>\n\n"
+        f"📅 Yil: {anime.year}\n"
+        f"🎭 Janr: {genres_text}\n"
+        f"⭐ Reyting: {anime.rating} ({anime.rating_count} ovoz)\n\n"
+        f"📖 {anime.description}"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="▶️ 1-qismni ko'rish",
+            url=f"https://t.me/kaworai_uz_bot?start=anime_{anime_id}"
+        )
+    ]])
+    sent_count = 0
+    for ch in news_channels:
+        try:
+            if use_trailer and anime.trailer_file_id:
+                await call.bot.send_video(
+                    chat_id=ch.channel_id,
+                    video=anime.trailer_file_id,
+                    caption=caption, reply_markup=kb, parse_mode="HTML"
+                )
+            else:
+                await call.bot.send_photo(
+                    chat_id=ch.channel_id,
+                    photo=anime.poster_file_id,
+                    caption=caption, reply_markup=kb, parse_mode="HTML"
+                )
+            sent_count += 1
+        except Exception as e:
+            await call.message.answer(f"⚠️ {ch.channel_name}: {e}")
+    await call.message.answer(
+        f"✅ <b>{anime.title}</b> {sent_count} ta kanalga yuborildi!",
+        reply_markup=admin_main_kb, parse_mode="HTML"
+    )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "broadcast_users")
+async def broadcast_users_start(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(BroadcastState.waiting_content)
+    await call.message.answer(
+        "👥 Foydalanuvchilarga yuboriladigan xabarni yuboring\n(Rasm, Video yoki Matn):",
+        reply_markup=cancel_kb
+    )
+    await call.answer()
+
+
+@admin_router.message(BroadcastState.waiting_content)
+async def broadcast_users_send(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor qilindi.", reply_markup=admin_main_kb)
+    await state.clear()
+    await msg.answer("🚀 Yuborish boshlandi...", reply_markup=admin_main_kb)
+    async with AsyncSessionLocal() as session:
+        users = (await session.execute(select(User.telegram_id))).scalars().all()
+    count = 0
+    failed = 0
+    for user_id in users:
+        try:
+            await msg.copy_to(chat_id=user_id)
+            count += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            failed += 1
+    await msg.answer(
+        f"✅ Yuborildi: <b>{count}</b> kishi\n❌ Xato: <b>{failed}</b> kishi",
+        parse_mode="HTML"
+    )
