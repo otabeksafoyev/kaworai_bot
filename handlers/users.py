@@ -1,16 +1,19 @@
+import asyncio
 from aiogram import Router, F, types
 from aiogram.filters import CommandStart, CommandObject
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import InlineKeyboardButton
-from sqlalchemy import select
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-# Proyektdagi importlar
-from database.models import User, Anime, SubscriptionChannel
+from database.models import Anime, Series
 from database.engine import AsyncSessionLocal
+from database.queries import get_or_create_user, get_active_channels
+from middlewares.subscription import check_subscription, get_sub_keyboard
+from sqlalchemy import select
 
 user_router = Router()
 
-# --- YORDAMCHI FUNKSIYALAR ---
+PHOTO_URL = "https://i.postimg.cc/zDpjp9Mz/kawaro-(1)-(3).jpg"
+
 
 def get_main_menu_keyboard():
     builder = InlineKeyboardBuilder()
@@ -20,88 +23,172 @@ def get_main_menu_keyboard():
     )
     builder.row(
         InlineKeyboardButton(text="❤️ Obunalarim", callback_data="my_subs"),
-        InlineKeyboardButton(text="🟢 Kawaii Pass", callback_data="kawaii_pass")
+        InlineKeyboardButton(text="🟢 Kaworai Pro", callback_data="kawaii_pass")
     )
     return builder.as_markup()
 
-async def check_subscription(bot, user_id, session):
-    """Majburiy obunani tekshirish"""
-    channels = await session.scalars(select(SubscriptionChannel))
-    not_subbed = []
-    
-    for ch in channels:
-        try:
-            member = await bot.get_chat_member(chat_id=ch.channel_id, user_id=user_id)
-            if member.status not in ["member", "administrator", "creator"]:
-                not_subbed.append(ch)
-        except Exception:
-            continue # Agar bot kanalda admin bo'lmasa yoki xato bersa o'tkazib yuboradi
-    return not_subbed
 
-# --- ASOSIY HANDLERLAR ---
+async def send_main_menu(message: types.Message):
+    caption = (
+        "🎌 <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
+    )
+    try:
+        await message.answer_photo(
+            photo=PHOTO_URL,
+            caption=caption,
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML"
+        )
+    except Exception:
+        await message.answer(
+            text=caption,
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML"
+        )
+
 
 @user_router.message(CommandStart())
 async def cmd_start(message: types.Message, command: CommandObject):
     user_id = message.from_user.id
-    
+
     async with AsyncSessionLocal() as session:
-        # 1. Foydalanuvchini bazaga qo'shish (agar yo'q bo'lsa)
-        user = await session.get(User, user_id)
-        if not user:
-            new_user = User(telegram_id=user_id, full_name=message.from_user.full_name)
-            session.add(new_user)
-            await session.commit()
+        await get_or_create_user(
+            session=session,
+            telegram_id=user_id,
+            full_name=message.from_user.full_name,
+            username=message.from_user.username,
+        )
+        channels = await get_active_channels(session)
 
-        # 2. Majburiy obunani tekshirish
-        not_subbed = await check_subscription(message.bot, user_id, session)
-        if not_subbed:
-            kb = InlineKeyboardBuilder()
-            for ch in not_subbed:
-                kb.row(InlineKeyboardButton(text=f"➕ {ch.username}", url=f"https://t.me/{ch.username.replace('@', '')}"))
-            kb.row(InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_subs"))
-            return await message.answer("<b>Botdan foydalanish uchun quyidagi kanallarga a'zo bo'ling:</b>", 
-                                        reply_markup=kb.as_markup(), parse_mode="HTML")
+    not_subbed = await check_subscription(message.bot, user_id, channels)
+    if not_subbed:
+        kb = get_sub_keyboard(not_subbed)
+        return await message.answer(
+            "⚠️ <b>Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:</b>\n\n"
+            + "\n".join(f"• {ch.channel_name}" for ch in not_subbed),
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
 
-        # 3. Deep-linking (Kanaldan anime ko'rish uchun kelgan bo'lsa)
-        args = command.args
-        if args and args.startswith("anime_"):
+    # Deep-link
+    args = command.args or ""
+    if args.startswith("anime_"):
+        try:
             anime_id = int(args.replace("anime_", ""))
-            anime = await session.get(Anime, anime_id)
+        except ValueError:
+            anime_id = None
+
+        if anime_id:
+            async with AsyncSessionLocal() as session:
+                anime = await session.get(Anime, anime_id)
+                first_ep = None
+                if anime:
+                    ep_result = await session.execute(
+                        select(Series)
+                        .where(Series.anime_id == anime_id)
+                        .order_by(Series.episode.asc())
+                        .limit(1)
+                    )
+                    first_ep = ep_result.scalar_one_or_none()
+
             if anime:
-                # Animeni to'g'ridan-to'g'ri chiqarish
+                genres_text = ', '.join(anime.genres) if anime.genres else 'Nomalum'
                 caption = (
                     f"🎬 <b>{anime.title}</b>\n\n"
                     f"📅 Yili: {anime.year}\n"
-                    f"🎭 Janri: {', '.join(anime.genres) if anime.genres else 'Nomalum'}\n\n"
+                    f"🎭 Janri: {genres_text}\n"
+                    f"⭐ Reyting: {anime.rating} ({anime.rating_count} ovoz)\n\n"
                     f"📖 <b>Tavsif:</b> {anime.description}"
                 )
+                kb = InlineKeyboardBuilder()
+                if first_ep:
+                    kb.row(InlineKeyboardButton(
+                        text="▶️ 1-qismni ko'rish",
+                        callback_data=f"watch_{anime.id}"
+                    ))
+                else:
+                    kb.row(InlineKeyboardButton(
+                        text="⏳ Qismlar hali qo'shilmagan",
+                        callback_data="no_episodes"
+                    ))
+                kb.row(InlineKeyboardButton(
+                    text="🏠 Asosiy menyu",
+                    callback_data="main_menu"
+                ))
                 return await message.answer_photo(
                     photo=anime.poster_file_id,
                     caption=caption,
-                    reply_markup=InlineKeyboardBuilder().row(
-                        InlineKeyboardButton(text="▶️ Tomosha qilish", callback_data=f"watch_{anime.id}")
-                    ).as_markup(),
+                    reply_markup=kb.as_markup(),
                     parse_mode="HTML"
                 )
 
-        # 4. Standart Start menyusi (Kawaii dizayn)
-        caption = (
-            "• 8 ta foydalanuvchi anime tomosha qilmoqda\n"
-            "• Eng ko'p tomosha qilinayotgan anime - <b>Naruto: Bo'ron yilnomalari</b>"
-        )
-        photo_url = "https://i.postimg.cc/hj8Lrw0j/Screenshot-2026-03-24-014815.jpg"
-        
+    await send_main_menu(message)
+
+
+# ✅ Obunani tekshirish
+@user_router.callback_query(F.data == "check_subs")
+async def recheck_subscription(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    async with AsyncSessionLocal() as session:
+        channels = await get_active_channels(session)
+    not_subbed = await check_subscription(call.bot, user_id, channels)
+
+    if not_subbed:
+        kb = get_sub_keyboard(not_subbed)
         try:
-            await message.answer_photo(
-                photo=photo_url,
-                caption=caption,
-                reply_markup=get_main_menu_keyboard(),
+            await call.message.edit_text(
+                "❌ <b>Siz hali barcha kanallarga obuna bo'lmagansiz!</b>\n\n"
+                + "\n".join(f"• {ch.channel_name}" for ch in not_subbed),
+                reply_markup=kb,
                 parse_mode="HTML"
             )
         except Exception:
-            await message.answer(text=caption, reply_markup=get_main_menu_keyboard(), parse_mode="HTML")
+            pass
+        await call.answer("❌ Hali to'liq obuna emassiz!", show_alert=True)
+    else:
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+        await send_main_menu(call.message)
+        await call.answer("✅ Obuna tasdiqlandi!", show_alert=True)
 
-# Barcha keraksiz xabarlarni e'tiborsiz qoldirish
+
+# ❌ Obunadan chiqish
+@user_router.callback_query(F.data == "cancel_sub_check")
+async def cancel_sub(call: types.CallbackQuery):
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await call.answer("Bekor qilindi.", show_alert=False)
+
+
+# Kaworai Pro
+@user_router.callback_query(F.data == "kawaii_pass")
+async def kawaii_pass_cb(call: types.CallbackQuery):
+    await call.answer(
+        "🟢 Kaworai Pro tez kunda ishga tushadi!",
+        show_alert=True
+    )
+
+
+# Qismlar yo'q
+@user_router.callback_query(F.data == "no_episodes")
+async def no_episodes(call: types.CallbackQuery):
+    await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
+
+
+# Boshqa xabarlar — /start deb javob beradi va o'chadi
 @user_router.message()
-async def ignore_all_messages(message: types.Message):
-    return
+async def unknown_message(message: types.Message):
+    sent = await message.answer(
+        "❗ <b>/start</b> buyrug'ini yozing",
+        parse_mode="HTML"
+    )
+    await asyncio.sleep(3)
+    try:
+        await sent.delete()
+        await message.delete()
+    except Exception:
+        pass

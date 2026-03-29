@@ -1,45 +1,85 @@
 from aiogram import Router, types
-from aiogram.types import InlineQueryResultArticle, InputTextMessageContent
+from aiogram.types import (
+    InlineQueryResultArticle,
+    InlineQueryResultPhoto,
+    InputTextMessageContent,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
+)
 from sqlalchemy import select
 from database.models import Anime
 from database.engine import AsyncSessionLocal
 
 inline_router = Router()
 
+DEFAULT_THUMB = "https://i.imgur.com/JyOSMOR.png"  # Rasm yo'q bo'lsa
+
+
 @inline_router.inline_query()
 async def query_anime(query: types.InlineQuery):
     search_text = query.query.strip()
-    
-    # Agar qidiruv so'zi bo'lsa, bazadan qidiramiz
+
     async with AsyncSessionLocal() as session:
         if not search_text:
-            # Bo'sh bo'lsa, eng oxirgi 10 ta animeni chiqaramiz
             sql = select(Anime).order_by(Anime.id.desc()).limit(10)
         else:
-            # Nomi bo'yicha qidirish (Katta-kichik harfni farqlamaydi)
-            sql = select(Anime).where(Anime.title.ilike(f"%{search_text}%")).limit(20)
-        
+            sql = select(Anime).where(
+                Anime.title.ilike(f"%{search_text}%")
+            ).limit(20)
+
         result = await session.execute(sql)
         animes = result.scalars().all()
 
     results = []
     for anime in animes:
-        # Har bir anime uchun natija shakllantiramiz
-        results.append(
-            InlineQueryResultArticle(
-                id=str(anime.id),
-                title=anime.title,
-                description=f"📅 Yil: {anime.year} | 🎭 Janr: {', '.join(anime.genres) if anime.genres else 'Noma`lum'}",
-                thumbnail_url=None, # Poster file_id bo'lgani uchun bu yerda ko'rinmaydi
-                input_message_content=InputTextMessageContent(
-                    message_text=f"🎬 <b>{anime.title}</b>\n\nℹ️ <b>Ma'lumot:</b> {anime.description}\n📅 <b>Yili:</b> {anime.year}\n🌟 <b>Reyting:</b> {anime.rating}",
-                    parse_mode="HTML"
-                ),
-                # Bu yerda "Tomosha qilish" tugmasini qo'shish mumkin
-                reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="👁 Tomosha qilish", callback_data=f"view_{anime.id}")]
-                ])
-            )
+        genres_text = ", ".join(anime.genres) if anime.genres else "Nomalum"
+
+        # Inline bosilganda botga o'tish tugmasi
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="▶️ Tomosha qilish",
+                url=f"https://t.me/kaworai_uz_bot?start=anime_{anime.id}"
+            )]
+        ])
+
+        message_text = (
+            f"🎬 <b>{anime.title}</b>\n\n"
+            f"📅 Yil: {anime.year}\n"
+            f"🎭 Janr: {genres_text}\n"
+            f"⭐ Reyting: {anime.rating} ({anime.rating_count} ovoz)\n\n"
+            f"📖 {anime.description}"
         )
 
-    await query.answer(results, cache_time=5)
+        thumb = anime.inline_thumbnail_url or DEFAULT_THUMB
+
+        # inline_thumbnail_url bor bo'lsa — rasmli natija
+        if anime.inline_thumbnail_url:
+            results.append(
+                InlineQueryResultPhoto(
+                    id=str(anime.id),
+                    photo_url=anime.inline_thumbnail_url,
+                    thumbnail_url=anime.inline_thumbnail_url,
+                    title=anime.title,
+                    description=f"⭐ {anime.rating} | 📅 {anime.year} | 🎭 {genres_text}",
+                    caption=message_text,
+                    reply_markup=kb,
+                    parse_mode="HTML"
+                )
+            )
+        else:
+            # URL yo'q — matnsiz natija
+            results.append(
+                InlineQueryResultArticle(
+                    id=str(anime.id),
+                    title=f"🎬 {anime.title}",
+                    description=f"⭐ {anime.rating} | 📅 {anime.year} | 🎭 {genres_text}",
+                    thumbnail_url=DEFAULT_THUMB,
+                    input_message_content=InputTextMessageContent(
+                        message_text=message_text,
+                        parse_mode="HTML"
+                    ),
+                    reply_markup=kb
+                )
+            )
+
+    await query.answer(results, cache_time=5, is_personal=True)
