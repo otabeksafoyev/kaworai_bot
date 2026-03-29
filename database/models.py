@@ -19,12 +19,14 @@ class Anime(Base):
     description = Column(Text, nullable=True)
     poster_file_id = Column(String(300), nullable=True)
     trailer_file_id = Column(String(300), nullable=True)
-    inline_thumbnail_url = Column(String(500), nullable=True)  # inline uchun URL
+    inline_thumbnail_url = Column(String(500), nullable=True)
     genres = Column(JSON, nullable=True)
     year = Column(Integer, nullable=True)
     rating = Column(Float, default=0.0)
-    rating_count = Column(Integer, default=0)   # nechta odam baho bergan
+    rating_count = Column(Integer, default=0)
+    total_episodes = Column(Integer, default=0)  # ✅ YANGI: jami seriyalar soni
     views = Column(Integer, default=0)
+
     episodes = relationship("Series", back_populates="anime", cascade="all, delete-orphan")
     ratings = relationship("AnimeRating", back_populates="anime", cascade="all, delete-orphan")
 
@@ -43,7 +45,7 @@ class AnimeRating(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     anime_id = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"))
     user_id = Column(BigInteger, nullable=False)
-    score = Column(Integer, nullable=False)  # 1-10
+    score = Column(Integer, nullable=False)
     anime = relationship("Anime", back_populates="ratings")
 
 
@@ -63,4 +65,4 @@ class SubscriptionChannel(Base):
     channel_name = Column(String(128), nullable=False)
     is_active = Column(Boolean, default=True)
     require_check = Column(Boolean, default=False)
-    is_news = Column(Boolean, default=False)   # news kanal belgisi
+    is_news = Column(Boolean, default=False)

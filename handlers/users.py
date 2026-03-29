@@ -29,9 +29,7 @@ def get_main_menu_keyboard():
 
 
 async def send_main_menu(message: types.Message):
-    caption = (
-        "🎌 <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
-    )
+    caption = "🎌 <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
     try:
         await message.answer_photo(
             photo=PHOTO_URL,
@@ -59,8 +57,8 @@ async def cmd_start(message: types.Message, command: CommandObject):
             username=message.from_user.username,
         )
         channels = await get_active_channels(session)
+        not_subbed = await check_subscription(message.bot, user_id, channels)
 
-    not_subbed = await check_subscription(message.bot, user_id, channels)
     if not_subbed:
         kb = get_sub_keyboard(not_subbed)
         return await message.answer(
@@ -70,7 +68,7 @@ async def cmd_start(message: types.Message, command: CommandObject):
             parse_mode="HTML"
         )
 
-    # Deep-link
+    # ✅ Deep-link: ?start=anime_ID — poster + 1-qism tugmasi chiqadi
     args = command.args or ""
     if args.startswith("anime_"):
         try:
@@ -82,6 +80,7 @@ async def cmd_start(message: types.Message, command: CommandObject):
             async with AsyncSessionLocal() as session:
                 anime = await session.get(Anime, anime_id)
                 first_ep = None
+                ep_count = 0
                 if anime:
                     ep_result = await session.execute(
                         select(Series)
@@ -90,18 +89,28 @@ async def cmd_start(message: types.Message, command: CommandObject):
                         .limit(1)
                     )
                     first_ep = ep_result.scalar_one_or_none()
+                    from sqlalchemy import func
+                    ep_count_result = await session.execute(
+                        select(func.count(Series.id)).where(Series.anime_id == anime_id)
+                    )
+                    ep_count = ep_count_result.scalar() or 0
 
             if anime:
                 genres_text = ', '.join(anime.genres) if anime.genres else 'Nomalum'
+                total_ep_text = str(anime.total_episodes) if anime.total_episodes else "?"
+
                 caption = (
                     f"🎬 <b>{anime.title}</b>\n\n"
                     f"📅 Yili: {anime.year}\n"
                     f"🎭 Janri: {genres_text}\n"
-                    f"⭐ Reyting: {anime.rating} ({anime.rating_count} ovoz)\n\n"
+                    f"⭐ Reyting: {anime.rating} ({anime.rating_count} ovoz)\n"
+                    f"📺 Qismlar: {ep_count}/{total_ep_text}\n\n"
                     f"📖 <b>Tavsif:</b> {anime.description}"
                 )
+
                 kb = InlineKeyboardBuilder()
                 if first_ep:
+                    # ✅ 1-qismni darhol ko'rsatish
                     kb.row(InlineKeyboardButton(
                         text="▶️ 1-qismni ko'rish",
                         callback_data=f"watch_{anime.id}"
@@ -111,10 +120,9 @@ async def cmd_start(message: types.Message, command: CommandObject):
                         text="⏳ Qismlar hali qo'shilmagan",
                         callback_data="no_episodes"
                     ))
-                kb.row(InlineKeyboardButton(
-                    text="🏠 Asosiy menyu",
-                    callback_data="main_menu"
-                ))
+                kb.row(InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu"))
+
+                # ✅ Posterda total_episodes ko'rinadi
                 return await message.answer_photo(
                     photo=anime.poster_file_id,
                     caption=caption,
@@ -126,12 +134,13 @@ async def cmd_start(message: types.Message, command: CommandObject):
 
 
 # ✅ Obunani tekshirish
+
 @user_router.callback_query(F.data == "check_subs")
 async def recheck_subscription(call: types.CallbackQuery):
     user_id = call.from_user.id
     async with AsyncSessionLocal() as session:
         channels = await get_active_channels(session)
-    not_subbed = await check_subscription(call.bot, user_id, channels)
+        not_subbed = await check_subscription(call.bot, user_id, channels)
 
     if not_subbed:
         kb = get_sub_keyboard(not_subbed)
@@ -154,7 +163,6 @@ async def recheck_subscription(call: types.CallbackQuery):
         await call.answer("✅ Obuna tasdiqlandi!", show_alert=True)
 
 
-# ❌ Obunadan chiqish
 @user_router.callback_query(F.data == "cancel_sub_check")
 async def cancel_sub(call: types.CallbackQuery):
     try:
@@ -164,28 +172,20 @@ async def cancel_sub(call: types.CallbackQuery):
     await call.answer("Bekor qilindi.", show_alert=False)
 
 
-# Kaworai Pro
 @user_router.callback_query(F.data == "kawaii_pass")
 async def kawaii_pass_cb(call: types.CallbackQuery):
-    await call.answer(
-        "🟢 Kaworai Pro tez kunda ishga tushadi!",
-        show_alert=True
-    )
+    await call.answer("🟢 Kaworai Pro tez kunda ishga tushadi!", show_alert=True)
 
 
-# Qismlar yo'q
 @user_router.callback_query(F.data == "no_episodes")
 async def no_episodes(call: types.CallbackQuery):
     await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
 
 
-# Boshqa xabarlar — /start deb javob beradi va o'chadi
+# ✅ Noma'lum xabarlar — 3 soniyadan keyin o'chadi
 @user_router.message()
 async def unknown_message(message: types.Message):
-    sent = await message.answer(
-        "❗ <b>/start</b> buyrug'ini yozing",
-        parse_mode="HTML"
-    )
+    sent = await message.answer("❗ <b>/start</b> buyrug'ini yozing", parse_mode="HTML")
     await asyncio.sleep(3)
     try:
         await sent.delete()
