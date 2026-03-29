@@ -22,11 +22,25 @@ class AddChannel(StatesGroup):
 
 
 class EditAnime(StatesGroup):
+    # Tahrirlash
     waiting_anime_id = State()
     waiting_field = State()
     waiting_value = State()
+    waiting_episode_select = State()
+    waiting_episode_video = State()
+    # Anime o'chirish
+    waiting_delete_anime_id = State()
+    # Qism oraliq o'chirish
+    waiting_delete_ep_anime_id = State()
+    waiting_delete_ep_from = State()
+    waiting_delete_ep_to = State()
 
 
 class BroadcastState(StatesGroup):
-    waiting_message = State()
+    waiting_content = State()
+    waiting_media_type = State()
+    waiting_caption = State()
+    waiting_confirm = State()
     waiting_anime_id = State()
+    waiting_anime_post_caption = State()
+    waiting_anime_post_confirm = State()
