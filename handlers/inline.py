@@ -57,12 +57,12 @@ async def query_anime(query: types.InlineQuery):
         ]])
 
         message_text = (
-            f"🎬 <b>{anime.title}</b>\n\n"
-            f"📅 Yil: {anime.year}\n"
-            f"🎭 Janr: {genres_text}\n"
-            f"⭐ Reyting: {anime.rating} ({anime.rating_count} ovoz)\n"
-            f"📺 Seriyalar: {total_ep_text}\n\n"
-            f"📖 {anime.description}"
+           f"🎌 <b>{anime.title}</b>\n\n"
+        f"📅 Yil: {anime.year}\n"
+        f"🎭 Janr: {genres_text}\n"
+        f"⭐ Reyting: {anime.rating} ({anime.rating_count} ovoz)\n\n"
+        f"📖 {anime.description}\n\n"
+        f"🆔 Anime kodi: <code>{anime.id}</code>"
         )
 
         # ✅ TUZATILDI: agar inline_thumbnail_url bor bo'lsa — FAQAT o'shani ishlatamiz
