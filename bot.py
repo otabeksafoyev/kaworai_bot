@@ -13,7 +13,7 @@ from handlers.admin import admin_router
 from handlers.callbacks import callback_router
 from handlers.users import user_router
 from handlers.inline import inline_router
-
+from handlers.genres import genre_router
 
 async def on_startup():
     logging.info("Ma'lumotlar bazasi jadvallari tekshirilmoqda...")
@@ -46,7 +46,7 @@ async def main():
     # Obuna tekshiruv middleware
     dp.message.middleware(SubscriptionMiddleware())
     dp.callback_query.middleware(SubscriptionMiddleware())
-
+    dp.include_router(genre_router)
     bot_info = await bot.get_me()
     print(f"--- BOT ISHGA TUSHDI ---\nUSER: @{bot_info.username}\nID: {bot_info.id}\n------------------------")
 
