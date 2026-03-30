@@ -1,17 +1,14 @@
-# main.py — agar albatta shu nom bilan ishlatmoqchi bo'lsangiz
 import asyncio
 import logging
-
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 
-# o'zingizning modullaringiz
 from config import config
 from database.engine import init_db
 from middlewares import SubscriptionMiddleware, ThrottlingMiddleware
-from handlers import user_router, admin_router, callback_router
+from handlers import user_router, admin_router, callback_router, genre_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,7 +23,8 @@ dp.message.middleware(ThrottlingMiddleware())
 dp.message.middleware(SubscriptionMiddleware())
 dp.callback_query.middleware(SubscriptionMiddleware())
 
-dp.include_routers(user_router, admin_router, callback_router)
+# genre_router — callback_router DAN OLDIN bo'lishi shart!
+dp.include_routers(user_router, genre_router, admin_router, callback_router)
 
 async def main():
     await init_db()
