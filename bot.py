@@ -14,6 +14,12 @@ from handlers.callbacks import callback_router
 from handlers.users import user_router
 from handlers.inline import inline_router
 from handlers.genres import genre_router
+from handlers.admin_pro import pro_admin_router
+from handlers.users_pro import pro_user_rout
+
+
+
+
 
 async def on_startup():
     logging.info("Ma'lumotlar bazasi jadvallari tekshirilmoqda...")
@@ -42,7 +48,11 @@ async def main():
     dp.include_router(user_router)
     dp.include_router(callback_router)
     dp.include_router(inline_router)
+    dp.include_router(pro_admin_router)
+    dp.include_router(pro_user_router)
 
+
+    
     # Obuna tekshiruv middleware
     dp.message.middleware(SubscriptionMiddleware())
     dp.callback_query.middleware(SubscriptionMiddleware())
