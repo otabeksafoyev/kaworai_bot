@@ -1,3 +1,4 @@
+import json
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select
@@ -7,36 +8,103 @@ from database.engine import AsyncSessionLocal
 genre_router = Router()
 
 GENRES = {
-    "Action":        "⚔️ Jang",
-    "Adventure":     "🗺️ Sarguzasht",
-    "Comedy":        "😂 Komediya",
-    "Drama":         "🎭 Drama",
-    "Fantasy":       "🧙 Fantaziya",
-    "Horror":        "👻 Qo'rqinchli",
-    "Mystery":       "🔍 Sirli",
-    "Romance":       "❤️ Romantika",
-    "SciFi":         "🚀 Ilmiy fantastika",
-    "SliceOfLife":   "☕ Oddiy hayot",
-    "Sports":        "⚽ Sport",
-    "Supernatural":  "✨ G'ayritabiiy",
-    "Thriller":      "😱 Triller",
-    "Mecha":         "🤖 Mexanik",
-    "Magic":         "🪄 Sehr",
-    "School":        "🏫 Maktab",
-    "Shounen":       "👦 Shonen",
-    "Shoujo":        "👧 Shojo",
-    "Isekai":        "🌀 Isekai",
-    "Psychological": "🧠 Psixologik",
+    "Jang": "⚔️ Jang",
+    "Sarguzasht": "🗺️ Sarguzasht",
+    "Komediya": "😂 Komediya",
+    "Drama": "🎭 Drama",
+    "Fantaziya": "🧙 Fantaziya",
+    "Qo'rqinchli": "👻 Qo'rqinchli",
+    "Sirli": "🔍 Sirli",
+    "Romantika": "❤️ Romantika",
+    "Ilmiy fantastika": "🚀 Ilmiy fantastika",
+    "Oddiy hayot": "☕ Oddiy hayot",
+    "Sport": "⚽ Sport",
+    "G'ayritabiiy": "✨ G'ayritabiiy",
+    "Triller": "😱 Triller",
+    "Mexanik": "🤖 Mexanik",
+    "Sehr": "🪄 Sehr",
+    "Maktab": "🏫 Maktab",
+    "Shonen": "👦 Shonen",
+    "Shojo": "👧 Shojo",
+    "Isekai": "🌀 Isekai",
+    "Psixologik": "🧠 Psixologik",
 }
 
-# DB dagi eski nomlar → yangi key lar (agar DB da "Sci-Fi" yoki "Slice of Life" bo'lsa)
+# Bazadagi turli yozilish variantlarini normalize qilish
 GENRE_ALIASES = {
-    "Sci-Fi":       "SciFi",
+    "Sci-Fi": "SciFi",
     "Slice of Life": "SliceOfLife",
+    "sci-fi": "SciFi",
+    "slice of life": "SliceOfLife",
+    "action": "Action",
+    "adventure": "Adventure",
+    "comedy": "Comedy",
+    "drama": "Drama",
+    "fantasy": "Fantasy",
+    "horror": "Horror",
+    "mystery": "Mystery",
+    "romance": "Romance",
+    "scifi": "SciFi",
+    "sliceoflife": "SliceOfLife",
+    "sports": "Sports",
+    "sport": "Sports",
+    "supernatural": "Supernatural",
+    "thriller": "Thriller",
+    "mecha": "Mecha",
+    "magic": "Magic",
+    "school": "School",
+    "shounen": "Shounen",
+    "shoujo": "Shoujo",
+    "isekai": "Isekai",
+    "psychological": "Psychological",
 }
 
 GENRE_PAGE_SIZE = 8
 ANIME_PAGE_SIZE = 6
+
+
+def normalize_genre(g: str) -> str:
+    """Genre stringini standart key ga aylantiradi."""
+    g = g.strip()
+    # To'g'ridan-to'g'ri alias tekshirish
+    if g in GENRE_ALIASES:
+        return GENRE_ALIASES[g]
+    # Kichik harf bilan tekshirish
+    if g.lower() in GENRE_ALIASES:
+        return GENRE_ALIASES[g.lower()]
+    # GENRES kalitlarida bormi tekshirish (case-insensitive)
+    for key in GENRES:
+        if key.lower() == g.lower():
+            return key
+    return g
+
+
+def parse_genres(raw_genres) -> list:
+    """
+    Bazadan kelgan genres ni list ga aylantiradi.
+    JSON list, JSON string, vergul bilan ajratilgan string — barchasini qabul qiladi.
+    """
+    if raw_genres is None:
+        return []
+
+    # Allaqachon list bo'lsa
+    if isinstance(raw_genres, list):
+        return raw_genres
+
+    # String bo'lsa
+    if isinstance(raw_genres, str):
+        raw_genres = raw_genres.strip()
+        # JSON parse
+        try:
+            parsed = json.loads(raw_genres)
+            if isinstance(parsed, list):
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+        # Vergul bilan ajratilgan
+        return [g.strip() for g in raw_genres.split(",") if g.strip()]
+
+    return []
 
 
 def genres_keyboard(page: int = 0) -> InlineKeyboardMarkup:
@@ -111,20 +179,20 @@ async def get_animes_by_genre(genre_key: str) -> list:
         result = await session.execute(select(Anime))
         all_animes = result.scalars().all()
 
-    matched = []
-    for anime in all_animes:
-        if not anime.genres:
-            continue
-        for g in anime.genres:
-            # Alias orqali normalize qilamiz
-            normalized = GENRE_ALIASES.get(g, g)
-            if normalized == genre_key:
-                matched.append(anime)
-                break
-    return matched
+        matched = []
+        for anime in all_animes:
+            genres_list = parse_genres(anime.genres)
+            for g in genres_list:
+                normalized = normalize_genre(g)
+                if normalized == genre_key:
+                    matched.append(anime)
+                    break
+
+        return matched
 
 
 # ====================== JANRLAR RO'YXATI ======================
+
 @genre_router.callback_query(F.data == "genres")
 async def show_genres(call: CallbackQuery):
     kb = genres_keyboard(page=0)
@@ -144,6 +212,7 @@ async def show_genres(call: CallbackQuery):
 
 
 # ====================== JANR SAHIFASI ======================
+
 @genre_router.callback_query(F.data.startswith("gpage:"))
 async def genre_page(call: CallbackQuery):
     page = int(call.data.split(":")[1])
@@ -160,9 +229,9 @@ async def genre_page(call: CallbackQuery):
 
 
 # ====================== JANR BO'YICHA ANIMLAR ======================
+
 @genre_router.callback_query(F.data.startswith("gshow:"))
 async def show_genre_animes(call: CallbackQuery):
-    # gshow:Action:0
     parts = call.data.split(":")
     genre_key = parts[1]
     from_page = int(parts[2])
@@ -185,9 +254,9 @@ async def show_genre_animes(call: CallbackQuery):
 
 
 # ====================== ANIME RO'YXATI SAHIFASI ======================
+
 @genre_router.callback_query(F.data.startswith("glist:"))
 async def genre_anime_page(call: CallbackQuery):
-    # glist:Action:0:1
     parts = call.data.split(":")
     genre_key = parts[1]
     from_page = int(parts[2])

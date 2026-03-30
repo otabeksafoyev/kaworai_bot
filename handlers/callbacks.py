@@ -351,12 +351,6 @@ async def back_to_main(call: CallbackQuery):
     )
     await call.answer()
 
-
-# @callback_router.callback_query(F.data == "show_genres")
-# async def show_genres_callback(call: CallbackQuery):
-#     await call.answer("🚧 Tez kunda!", show_alert=True)
-
-
 @callback_router.callback_query(F.data == "no_episodes")
 async def no_episodes_cb(call: CallbackQuery):
     await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
