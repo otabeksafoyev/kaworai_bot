@@ -26,7 +26,6 @@ def player_keyboard(
 
     buttons = []
 
-    # Qismlar tugmalari — 4 ustun
     row = []
     for ep in page_episodes:
         is_current = ep.episode == episode
@@ -41,7 +40,6 @@ def player_keyboard(
     if row:
         buttons.append(row)
 
-    # Nav qatori
     nav = []
     if episode > episodes[0].episode:
         nav.append(InlineKeyboardButton(
@@ -68,16 +66,13 @@ def player_keyboard(
     if nav:
         buttons.append(nav)
 
-    # Kaworai Pro
     buttons.append([InlineKeyboardButton(text="🟢 Kaworai Pro", callback_data="kawaii_pass")])
 
-    # Menu va Muammo
     buttons.append([
         InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu"),
         InlineKeyboardButton(text="⚠️ Muammo", callback_data="report_problem"),
     ])
 
-    # Baho berish
     if is_last and not user_rated:
         buttons.append([InlineKeyboardButton(text="⭐ Baho berish", callback_data=f"rate_{anime_id}")])
     elif is_last and user_rated:
@@ -351,6 +346,7 @@ async def back_to_main(call: CallbackQuery):
     )
     await call.answer()
 
+
 @callback_router.callback_query(F.data == "no_episodes")
 async def no_episodes_cb(call: CallbackQuery):
     await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
@@ -359,11 +355,6 @@ async def no_episodes_cb(call: CallbackQuery):
 @callback_router.callback_query(F.data == "report_problem")
 async def report_problem(call: CallbackQuery):
     await call.answer("🚧 Tez kunda!", show_alert=True)
-
-
-@callback_router.callback_query(F.data == "kawaii_pass")
-async def kawaii_pass_cb(call: CallbackQuery):
-    await call.answer("🟢 Kaworai Pro tez kunda ishga tushadi!", show_alert=True)
 
 
 @callback_router.callback_query(F.data == "noop")

@@ -2,12 +2,6 @@
 Kaworai Pro — Admin JSON Import Handler
 Mavjud admin.py ga QO'SHILADI (almashtirmaydi).
 
-Qo'shish kerak bo'lgan yangi handlerlar:
-  1. JSON orqali kontent qo'shish (admin yozgan JSON ni parse qiladi)
-  2. Pro-lock toggle
-  3. Popularity recalculate
-  4. Admin statistika (Pro)
-
 FOYDALANISH:
   admin.py ga quyidagi import va router ni qo'shing:
   from handlers.admin_pro import pro_admin_router
@@ -15,12 +9,9 @@ FOYDALANISH:
 """
 
 import json
-import asyncio
 from aiogram import Router, F, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, func
 
 from database.models import Anime, RelatedContent, Admin
@@ -32,7 +23,7 @@ pro_admin_router = Router()
 ADMINS = os.getenv("ADMIN_ID", "").split(",")
 
 
-# ─── Admin tekshirish (mavjud funksiya bilan bir xil) ───
+# ─── Admin tekshirish ───
 async def is_admin(user_id: int) -> bool:
     if str(user_id) in ADMINS:
         return True
@@ -44,7 +35,7 @@ async def is_admin(user_id: int) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════
-#  JSON IMPORT — ASOSIY FUNKSIYA
+#  JSON IMPORT
 # ═══════════════════════════════════════════════════════════
 
 EXPECTED_JSON_FORMAT = """{
@@ -73,10 +64,6 @@ EXPECTED_JSON_FORMAT = """{
 
 @pro_admin_router.message(Command("json_add"))
 async def json_add_command(msg: Message):
-    """
-    /json_add buyrug'i bilan JSON formatini ko'rsatadi.
-    Admin keyin JSON ni xabar sifatida yuboradi.
-    """
     if not await is_admin(msg.from_user.id):
         return
 
@@ -94,24 +81,9 @@ async def json_add_command(msg: Message):
         parse_mode="HTML"
     )
 
-    # Keyingi xabar JSON bo'lishini kutish uchun state saqlamaymiz,
-    # chunki /json_import_data handler bor.
-
-
-@pro_admin_router.message(Command("json_import_data"))
-async def json_import_trigger(msg: Message):
-    """
-    Hint: /json_add dan keyin JSON yuborganda bu handler ishlamaydi.
-    Buning o'rniga raw JSON text handler ishlatiladi.
-    """
-    pass
-
 
 @pro_admin_router.message(F.text & F.text.startswith("{"))
 async def handle_json_import(msg: Message):
-    """
-    Admin { bilan boshlangan xabar yuborganida — JSON import deb qabul qiladi.
-    """
     if not await is_admin(msg.from_user.id):
         return
 
@@ -141,15 +113,15 @@ async def handle_json_import(msg: Message):
     anime_id = data.get("id")
     if not isinstance(anime_id, int):
         await processing.delete()
-        return await msg.answer("❌ <code>id</code> butun son bo'lishi kerak!", parse_mode="HTML")
+        return await msg.answer(
+            "❌ <code>id</code> butun son bo'lishi kerak!",
+            parse_mode="HTML"
+        )
 
     async with AsyncSessionLocal() as session:
-        # ID mavjudligini tekshirish
         existing = await session.get(Anime, anime_id)
         if existing:
             await processing.delete()
-
-            # Yangilash taklifi
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [
                     InlineKeyboardButton(
@@ -170,12 +142,10 @@ async def handle_json_import(msg: Message):
                 parse_mode="HTML"
             )
 
-        # Yangi kontent yaratish
         new_anime = _build_anime_from_json(data)
         session.add(new_anime)
-        await session.flush()   # ID olish uchun
+        await session.flush()
 
-        # Related content qo'shish
         related_list = data.get("related", [])
         related_errors = []
         for rel in related_list:
@@ -195,18 +165,18 @@ async def handle_json_import(msg: Message):
             session.add(rc)
 
         await session.commit()
-
-        # Popularity hisoblash
         await recalculate_popularity(session, anime_id)
 
     await processing.delete()
 
-    # Preview
-    genres_str = ", ".join(data.get("genres", [])) or "—"
-    tags_str   = ", ".join(data.get("tags",   [])) or "—"
-    mood_str   = ", ".join(data.get("mood",   [])) or "—"
+    genres_str  = ", ".join(data.get("genres", [])) or "—"
+    tags_str    = ", ".join(data.get("tags",   [])) or "—"
+    mood_str    = ", ".join(data.get("mood",   [])) or "—"
     related_str = f"{len(related_list)} ta" if related_list else "Yo'q"
-    err_str    = f"\n⚠️ Topilmagan related IDs: {related_errors}" if related_errors else ""
+    err_str     = f"\n⚠️ Topilmagan related IDs: {related_errors}" if related_errors else ""
+
+    # ✅ BU YERDA TUZATILDI — apostrof muammosi yo'q
+    pro_locked_str = "Ha" if data.get("is_pro_locked") else "Yo'q"
 
     success_text = (
         f"✅ <b>{data.get('title')}</b> qo'shildi!\n\n"
@@ -220,11 +190,10 @@ async def handle_json_import(msg: Message):
         f"🎞 Qismlar: {data.get('episodes', '—')}\n"
         f"📊 Status: {data.get('status', 'ongoing')}\n"
         f"🔗 Related: {related_str}\n"
-        f"🔒 Pro-locked: {'Ha' if data.get('is_pro_locked') else 'Yo'q'}"
+        f"🔒 Pro-locked: {pro_locked_str}"
         f"{err_str}"
     )
 
-    # Poster bor bo'lsa yuborish
     poster = data.get("poster_url") or data.get("poster_file_id")
     if poster and (poster.startswith("http") or len(poster) > 50):
         try:
@@ -237,7 +206,6 @@ async def handle_json_import(msg: Message):
 
 @pro_admin_router.callback_query(F.data.startswith("json_update_"))
 async def json_update_confirm(call: types.CallbackQuery):
-    """JSON bilan mavjud kontentni yangilash."""
     if not await is_admin(call.from_user.id):
         return
 
@@ -257,7 +225,6 @@ async def json_cancel(call: types.CallbackQuery):
 
 
 def _build_anime_from_json(data: dict) -> Anime:
-    """JSON dict → Anime model obyekti."""
     return Anime(
         id=data["id"],
         title=data["title"],
@@ -274,7 +241,6 @@ def _build_anime_from_json(data: dict) -> Anime:
         description=data.get("description", ""),
         popularity=float(data.get("popularity", 0.0)),
         is_pro_locked=bool(data.get("is_pro_locked", False)),
-        # poster va trailer: URL yoki file_id
         inline_thumbnail_url=data.get("poster_url") or data.get("poster_file_id"),
         poster_file_id=data.get("poster_file_id") or data.get("poster_url"),
         trailer_file_id=data.get("trailer_url") or data.get("trailer_file_id"),
@@ -287,9 +253,6 @@ def _build_anime_from_json(data: dict) -> Anime:
 
 @pro_admin_router.message(Command("pro_lock"))
 async def toggle_pro_lock(msg: Message):
-    """
-    /pro_lock <anime_id>  — Pro lockni yoqish/o'chirish
-    """
     if not await is_admin(msg.from_user.id):
         return
 
@@ -322,9 +285,6 @@ async def toggle_pro_lock(msg: Message):
 
 @pro_admin_router.message(Command("pro_stats"))
 async def pro_stats(msg: Message):
-    """
-    /pro_stats — kengaytirilgan statistika
-    """
     if not await is_admin(msg.from_user.id):
         return
 
@@ -342,7 +302,6 @@ async def pro_stats(msg: Message):
             select(func.count(Anime.id))
         )
 
-        # Turlarga ajratish
         type_counts = {}
         for t in ["anime", "movie", "serial", "dorama"]:
             cnt = await session.scalar(
@@ -350,19 +309,16 @@ async def pro_stats(msg: Message):
             )
             type_counts[t] = cnt or 0
 
-        # 7 kunlik views
         week_ago = datetime.utcnow() - timedelta(days=7)
         week_views = await session.scalar(
             select(func.count(ViewRecord.id))
             .where(ViewRecord.viewed_at >= week_ago)
         )
 
-        # Pro locked
         pro_locked = await session.scalar(
             select(func.count(Anime.id)).where(Anime.is_pro_locked == True)
         )
 
-        # Top 3 trending
         top3_q = await session.execute(
             select(Anime.title, Anime.views)
             .order_by(Anime.views.desc())
@@ -370,7 +326,9 @@ async def pro_stats(msg: Message):
         )
         top3 = top3_q.fetchall()
 
-    top3_text = "\n".join(f"  {i+1}. {r[0]} ({r[1]} ko'rish)" for i, r in enumerate(top3))
+    top3_text = "\n".join(
+        f"  {i+1}. {r[0]} ({r[1]} ko'rish)" for i, r in enumerate(top3)
+    )
 
     await msg.answer(
         f"📊 <b>Kaworai Pro Statistikasi</b>\n\n"
@@ -394,10 +352,6 @@ async def pro_stats(msg: Message):
 
 @pro_admin_router.message(Command("set_pro"))
 async def set_pro_user(msg: Message):
-    """
-    /set_pro <user_id> [days]
-    Userni Pro qilish. Days ko'rsatilmasa — abadiy.
-    """
     if not await is_admin(msg.from_user.id):
         return
 
@@ -421,11 +375,7 @@ async def set_pro_user(msg: Message):
             return await msg.answer(f"❌ User {user_id} topilmadi!")
 
         user.is_pro = True
-        if days:
-            user.pro_until = datetime.utcnow() + timedelta(days=days)
-        else:
-            user.pro_until = None   # Abadiy
-
+        user.pro_until = datetime.utcnow() + timedelta(days=days) if days else None
         await session.commit()
 
         until_str = f"{days} kun" if days else "Abadiy"
@@ -438,15 +388,15 @@ async def set_pro_user(msg: Message):
 
 @pro_admin_router.message(Command("remove_pro"))
 async def remove_pro_user(msg: Message):
-    """
-    /remove_pro <user_id>
-    """
     if not await is_admin(msg.from_user.id):
         return
 
     parts = msg.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        return await msg.answer("Format: <code>/remove_pro 123456789</code>", parse_mode="HTML")
+        return await msg.answer(
+            "Format: <code>/remove_pro 123456789</code>",
+            parse_mode="HTML"
+        )
 
     user_id = int(parts[1])
     from database.models import User

@@ -16,7 +16,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/kaworai")
+DATABASE_URL = os.getenv("DB_URL", os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/kaworai"))
+
 
 
 MIGRATION_SQL = """

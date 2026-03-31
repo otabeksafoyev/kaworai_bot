@@ -68,7 +68,6 @@ async def cmd_start(message: types.Message, command: CommandObject):
             parse_mode="HTML"
         )
 
-    # ✅ Deep-link: ?start=anime_ID — poster + 1-qism tugmasi chiqadi
     args = command.args or ""
     if args.startswith("anime_"):
         try:
@@ -110,7 +109,6 @@ async def cmd_start(message: types.Message, command: CommandObject):
 
                 kb = InlineKeyboardBuilder()
                 if first_ep:
-                    # ✅ 1-qismni darhol ko'rsatish
                     kb.row(InlineKeyboardButton(
                         text="▶️ 1-qismni ko'rish",
                         callback_data=f"watch_{anime.id}"
@@ -122,7 +120,6 @@ async def cmd_start(message: types.Message, command: CommandObject):
                     ))
                 kb.row(InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu"))
 
-                # ✅ Posterda total_episodes ko'rinadi
                 return await message.answer_photo(
                     photo=anime.poster_file_id,
                     caption=caption,
@@ -132,8 +129,6 @@ async def cmd_start(message: types.Message, command: CommandObject):
 
     await send_main_menu(message)
 
-
-# ✅ Obunani tekshirish
 
 @user_router.callback_query(F.data == "check_subs")
 async def recheck_subscription(call: types.CallbackQuery):
@@ -172,17 +167,11 @@ async def cancel_sub(call: types.CallbackQuery):
     await call.answer("Bekor qilindi.", show_alert=False)
 
 
-@user_router.callback_query(F.data == "kawaii_pass")
-async def kawaii_pass_cb(call: types.CallbackQuery):
-    await call.answer("🟢 Kaworai Pro tez kunda ishga tushadi!", show_alert=True)
-
-
 @user_router.callback_query(F.data == "no_episodes")
 async def no_episodes(call: types.CallbackQuery):
     await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
 
 
-# ✅ Noma'lum xabarlar — 3 soniyadan keyin o'chadi
 @user_router.message()
 async def unknown_message(message: types.Message):
     sent = await message.answer("❗ <b>/start</b> buyrug'ini yozing", parse_mode="HTML")

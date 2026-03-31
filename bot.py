@@ -15,10 +15,8 @@ from handlers.users import user_router
 from handlers.inline import inline_router
 from handlers.genres import genre_router
 from handlers.admin_pro import pro_admin_router
-from handlers.users_pro import pro_user_rout
-
-
-
+from handlers.users_pro import pro_user_router
+from handlers.pro_payment import pro_payment_router
 
 
 async def on_startup():
@@ -37,26 +35,26 @@ async def main():
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler("bot.log", encoding="utf-8"),  # Loglarni faylga ham yozish
+            logging.FileHandler("bot.log", encoding="utf-8"),
         ]
     )
 
     await on_startup()
 
-    # Routerlar (admin har doim birinchi!)
+    # Routerlar (pro_payment ENG BIRINCHI — kawaii_pass ni ushlaydi)
+    dp.include_router(pro_payment_router)
     dp.include_router(admin_router)
+    dp.include_router(pro_admin_router)
+    dp.include_router(pro_user_router)
     dp.include_router(user_router)
     dp.include_router(callback_router)
     dp.include_router(inline_router)
-    dp.include_router(pro_admin_router)
-    dp.include_router(pro_user_router)
+    dp.include_router(genre_router)
 
-
-    
     # Obuna tekshiruv middleware
     dp.message.middleware(SubscriptionMiddleware())
     dp.callback_query.middleware(SubscriptionMiddleware())
-    dp.include_router(genre_router)
+
     bot_info = await bot.get_me()
     print(f"--- BOT ISHGA TUSHDI ---\nUSER: @{bot_info.username}\nID: {bot_info.id}\n------------------------")
 
