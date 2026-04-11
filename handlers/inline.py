@@ -1,100 +1,72 @@
 from aiogram import Router, types
 from aiogram.types import (
     InlineQueryResultArticle,
-    InlineQueryResultVideo,
     InputTextMessageContent,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton
 )
 from sqlalchemy import select
-from database.models import Anime, Series
+from database.models import Anime, User
 from database.engine import AsyncSessionLocal
 
 inline_router = Router()
 
-BOT_USERNAME = "kaworai_uz_bot"  # ✅ bot username sini shu yerda o'zgartiring
 DEFAULT_THUMB = "https://i.imgur.com/JyOSMOR.png"
+
+
+async def _is_pro(user_id: int) -> bool:
+    from datetime import datetime
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user or not user.is_pro:
+            return False
+        if user.pro_until and user.pro_until < datetime.utcnow():
+            user.is_pro    = False
+            user.pro_until = None
+            await session.commit()
+            return False
+        return True
 
 
 @inline_router.inline_query()
 async def query_anime(query: types.InlineQuery):
     search_text = query.query.strip()
+    user_id     = query.from_user.id
+    is_pro      = await _is_pro(user_id)
 
     async with AsyncSessionLocal() as session:
         if not search_text:
-            sql = select(Anime).order_by(Anime.id.desc()).limit(10)
+            sql = select(Anime).order_by(Anime.id.desc()).limit(20)
         else:
-            sql = select(Anime).where(Anime.title.ilike(f"%{search_text}%")).limit(20)
-
-        result = await session.execute(sql)
-        animes = result.scalars().all()
-
-        # Har bir anime uchun 1-qismni ham olish
-        anime_first_eps = {}
-        for anime in animes:
-            ep_result = await session.execute(
-                select(Series)
-                .where(Series.anime_id == anime.id)
-                .order_by(Series.episode.asc())
-                .limit(1)
+            sql = (
+                select(Anime)
+                .where(Anime.title.ilike(f"%{search_text}%"))
+                .limit(30)
             )
-            first_ep = ep_result.scalar_one_or_none()
-            anime_first_eps[anime.id] = first_ep
+        result = await session.execute(sql)
+        all_animes = result.scalars().all()
+
+    animes = [a for a in all_animes if is_pro or not a.is_pro_locked]
 
     results = []
-
     for anime in animes:
-        genres_text = ", ".join(anime.genres) if anime.genres else "Nomalum"
-        total_ep_text = str(anime.total_episodes) if anime.total_episodes else "?"
-        first_ep = anime_first_eps.get(anime.id)
+        genres_text = ", ".join(anime.genres or []) or "Nomalum"
+        ep_text     = str(anime.episodes_count or anime.total_episodes or "?")
+        thumb       = anime.inline_thumbnail_url or DEFAULT_THUMB
 
-        # ✅ Inline bosilganda botga o'tish — ?start=anime_ID
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
-                text="▶️ Tomosha qilish",
-                url=f"https://t.me/{BOT_USERNAME}?start=anime_{anime.id}"
+        results.append(
+            InlineQueryResultArticle(
+                id=str(anime.id),
+                title=f"🎬 {anime.title}",
+                description=(
+                    f"⭐ {anime.rating:.1f} | "
+                    f"📅 {anime.year or '—'} | "
+                    f"🎭 {genres_text[:30]} | "
+                    f"📺 {ep_text} qism"
+                ),
+                thumbnail_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"anime_{anime.id}",
+                ),
             )
-        ]])
-
-        message_text = (
-           f"🎌 <b>{anime.title}</b>\n\n"
-        f"📅 Yil: {anime.year}\n"
-        f"🎭 Janr: {genres_text}\n"
-        f"⭐ Reyting: {anime.rating} ({anime.rating_count} ovoz)\n\n"
-        f"📖 {anime.description}\n\n"
-        f"🆔 Anime kodi: <code>{anime.id}</code>"
         )
-
-        # ✅ TUZATILDI: agar inline_thumbnail_url bor bo'lsa — FAQAT o'shani ishlatamiz
-        # InlineQueryResultVideo ishlatamiz — bu 1 ta rasm chiqaradi, 2 ta emas
-        if anime.inline_thumbnail_url:
-            results.append(
-                InlineQueryResultArticle(
-                    id=str(anime.id),
-                    title=f"🎬 {anime.title}",
-                    description=f"⭐ {anime.rating} | 📅 {anime.year} | 🎭 {genres_text} | 📺 {total_ep_text} qism",
-                    thumbnail_url=anime.inline_thumbnail_url,  # ✅ faqat admin qo'shgan rasm
-                    input_message_content=InputTextMessageContent(
-                        message_text=message_text,
-                        parse_mode="HTML"
-                    ),
-                    reply_markup=kb
-                )
-            )
-        else:
-            # URL yo'q — default rasm bilan
-            results.append(
-                InlineQueryResultArticle(
-                    id=str(anime.id),
-                    title=f"🎬 {anime.title}",
-                    description=f"⭐ {anime.rating} | 📅 {anime.year} | 🎭 {genres_text} | 📺 {total_ep_text} qism",
-                    thumbnail_url=DEFAULT_THUMB,
-                    input_message_content=InputTextMessageContent(
-                        message_text=message_text,
-                        parse_mode="HTML"
-                    ),
-                    reply_markup=kb
-                )
-            )
 
     await query.answer(results, cache_time=5, is_personal=True)

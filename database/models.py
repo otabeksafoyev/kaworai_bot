@@ -1,27 +1,24 @@
-from sqlalchemy import Column, Integer, BigInteger, String, Text, JSON, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy import (
+    Column, Integer, BigInteger, String, Text, JSON,
+    Float, Boolean, DateTime, ForeignKey, UniqueConstraint
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database.engine import Base
 
 
-# ═══════════════════════════════════════════════════════════
-#  MAVJUD MODELLAR (o'zgartirilgan + kengaytirilgan)
-# ═══════════════════════════════════════════════════════════
-
 class User(Base):
     __tablename__ = "users"
-    telegram_id = Column(BigInteger, primary_key=True)
-    username    = Column(String(100), nullable=True)
-    full_name   = Column(String(200), nullable=True)
-    joined_at   = Column(DateTime, server_default=func.now())
+    telegram_id   = Column(BigInteger, primary_key=True)
+    username      = Column(String(100), nullable=True)
+    full_name     = Column(String(200), nullable=True)
+    joined_at     = Column(DateTime, server_default=func.now())
+    is_pro        = Column(Boolean, default=False)
+    pro_until     = Column(DateTime, nullable=True)
 
-    # ✅ Pro maydonlari
-    is_pro    = Column(Boolean, default=False)
-    pro_until = Column(DateTime, nullable=True)
-
-    # ✅ Pro relationships
     watch_history = relationship("UserWatchHistory", back_populates="user", cascade="all, delete-orphan")
     taste_profile = relationship("UserTasteProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    subscriptions = relationship("AnimeSubscription", back_populates="user", cascade="all, delete-orphan")
 
 
 class Anime(Base):
@@ -38,28 +35,26 @@ class Anime(Base):
     rating_count         = Column(Integer, default=0)
     total_episodes       = Column(Integer, default=0)
     views                = Column(Integer, default=0)
+    content_type         = Column(String(20), default="anime")
+    tags                 = Column(JSON, default=list)
+    mood                 = Column(JSON, default=list)
+    episodes_count       = Column(Integer, nullable=True)
+    duration             = Column(Integer, nullable=True)
+    status               = Column(String(20), default="ongoing")
+    popularity           = Column(Float, default=0.0)
+    popularity_score     = Column(Float, default=0.0)
+    is_hidden_gem        = Column(Boolean, default=False)
+    is_pro_locked        = Column(Boolean, default=False)
+    # Migration orqali qo'shiladi (migration_v2.py)
+    # added_by_id, added_by_username, added_at
 
-    # ✅ Pro maydonlari
-    content_type     = Column(String(20), default="anime")       # anime | movie | serial | dorama
-    tags             = Column(JSON, default=list)
-    mood             = Column(JSON, default=list)
-    episodes_count   = Column(Integer, nullable=True)
-    duration         = Column(Integer, nullable=True)            # daqiqada
-    status           = Column(String(20), default="ongoing")     # ongoing | completed | announced
-    popularity       = Column(Float, default=0.0)
-    popularity_score = Column(Float, default=0.0)
-    is_hidden_gem    = Column(Boolean, default=False)
-    is_pro_locked    = Column(Boolean, default=False)
-
-    # Mavjud relationships
-    episodes = relationship("Series", back_populates="anime", cascade="all, delete-orphan")
-    ratings  = relationship("AnimeRating", back_populates="anime", cascade="all, delete-orphan")
-
-    # ✅ Pro relationships
+    episodes      = relationship("Series", back_populates="anime", cascade="all, delete-orphan")
+    ratings       = relationship("AnimeRating", back_populates="anime", cascade="all, delete-orphan")
     related_to    = relationship("RelatedContent", foreign_keys="RelatedContent.anime_id",
                                  back_populates="anime", cascade="all, delete-orphan")
     watch_records = relationship("UserWatchHistory", back_populates="anime", cascade="all, delete-orphan")
     view_records  = relationship("ViewRecord", back_populates="anime", cascade="all, delete-orphan")
+    subscriptions = relationship("AnimeSubscription", back_populates="anime", cascade="all, delete-orphan")
 
 
 class Series(Base):
@@ -85,57 +80,67 @@ class Admin(Base):
     telegram_id = Column(BigInteger, primary_key=True)
     nickname    = Column(String(100), nullable=True)
     role        = Column(String(20), default="admin")
+    # added_by va added_at migration_v2.py ishlatilgandan keyin qo'shiladi
 
 
 class SubscriptionChannel(Base):
     __tablename__ = "channels"
-    id           = Column(Integer, primary_key=True, autoincrement=True)
-    channel_id   = Column(BigInteger, unique=True, nullable=True)
-    username     = Column(String(100), nullable=True)
-    channel_url  = Column(String(256), nullable=False)
-    channel_name = Column(String(128), nullable=False)
-    is_active    = Column(Boolean, default=True)
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    channel_id    = Column(BigInteger, unique=True, nullable=True)
+    username      = Column(String(100), nullable=True)
+    channel_url   = Column(String(256), nullable=False)
+    channel_name  = Column(String(128), nullable=False)
+    is_active     = Column(Boolean, default=True)
     require_check = Column(Boolean, default=False)
-    is_news      = Column(Boolean, default=False)
+    is_news       = Column(Boolean, default=False)
 
 
-# ═══════════════════════════════════════════════════════════
-#  YANGI PRO MODELLAR
-# ═══════════════════════════════════════════════════════════
+class AnimeSubscription(Base):
+    """User animega obuna — yangi qism chiqsa xabar beradi."""
+    __tablename__ = "anime_subscriptions"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    anime_id   = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"), nullable=False)
+    user_id    = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    anime = relationship("Anime", back_populates="subscriptions")
+    user  = relationship("User", back_populates="subscriptions")
+
+    __table_args__ = (
+        UniqueConstraint("anime_id", "user_id", name="uq_anime_user_sub"),
+    )
+
 
 class RelatedContent(Base):
-    """Anime lar orasidagi bog'liqlik (sequel, prequel, spin-off...)"""
     __tablename__ = "related_content"
     id            = Column(Integer, primary_key=True, autoincrement=True)
     anime_id      = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"), nullable=False)
     related_id    = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"), nullable=False)
-    relation_type = Column(String(20), default="similar")  # sequel | prequel | spin-off | similar
+    relation_type = Column(String(20), default="similar")
 
     anime         = relationship("Anime", foreign_keys=[anime_id], back_populates="related_to")
     related_anime = relationship("Anime", foreign_keys=[related_id])
 
 
 class UserWatchHistory(Base):
-    """Foydalanuvchi tomosha tarixi"""
     __tablename__ = "user_watch_history"
-    id           = Column(Integer, primary_key=True, autoincrement=True)
-    user_id      = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"), nullable=False)
-    anime_id     = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"), nullable=False)
-    watched_at   = Column(DateTime, default=func.now())
-    last_episode = Column(Integer, default=1)
-    is_completed = Column(Boolean, default=False)
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    user_id       = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"), nullable=False)
+    anime_id      = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"), nullable=False)
+    watched_at    = Column(DateTime, default=func.now())
+    last_episode  = Column(Integer, default=1)
+    is_completed  = Column(Boolean, default=False)
 
     user  = relationship("User", back_populates="watch_history")
     anime = relationship("Anime", back_populates="watch_records")
 
 
 class UserTasteProfile(Base):
-    """Foydalanuvchining did profili (AI tavsiya uchun)"""
-    __tablename__ = "user_taste_profiles"
+    __tablename__   = "user_taste_profiles"
     id              = Column(Integer, primary_key=True, autoincrement=True)
     user_id         = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"),
                              nullable=False, unique=True)
-    fav_genres      = Column(JSON, default=dict)   # {"action": 5, "drama": 3}
+    fav_genres      = Column(JSON, default=dict)
     fav_tags        = Column(JSON, default=dict)
     fav_moods       = Column(JSON, default=dict)
     fav_type        = Column(String(20), nullable=True)
@@ -146,7 +151,6 @@ class UserTasteProfile(Base):
 
 
 class ViewRecord(Base):
-    """Ko'rishlar tarixi (trending va popularity uchun)"""
     __tablename__ = "view_records"
     id        = Column(Integer, primary_key=True, autoincrement=True)
     anime_id  = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"), nullable=False)
