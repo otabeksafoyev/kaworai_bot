@@ -95,24 +95,40 @@ def _build_post_caption(anime: Anime) -> str:
 
 
 async def _send_anime_post(bot: Bot, ch, anime: Anime, msg: Message = None) -> bool:
+    """Kanalga anime post yuboradi — poster + treyler."""
     caption  = _build_post_caption(anime)
     watch_kb = _watch_kb(anime.id)
     try:
         if anime.poster_file_id:
-            await bot.send_photo(chat_id=ch.channel_id, photo=anime.poster_file_id,
-                                 caption=caption, reply_markup=watch_kb, parse_mode="HTML")
+            await bot.send_photo(
+                chat_id=ch.channel_id,
+                photo=anime.poster_file_id,
+                caption=caption,
+                reply_markup=watch_kb,
+                parse_mode="HTML"
+            )
         else:
-            await bot.send_message(chat_id=ch.channel_id, text=caption,
-                                   reply_markup=watch_kb, parse_mode="HTML")
+            await bot.send_message(
+                chat_id=ch.channel_id,
+                text=caption,
+                reply_markup=watch_kb,
+                parse_mode="HTML"
+            )
         if anime.trailer_file_id:
-            await bot.send_video(chat_id=ch.channel_id, video=anime.trailer_file_id,
-                                 caption=f"🎬 <b>{anime.title}</b> — Treyler", parse_mode="HTML")
+            await bot.send_video(
+                chat_id=ch.channel_id,
+                video=anime.trailer_file_id,
+                caption=f"🎬 <b>{anime.title}</b> — Treyler",
+                parse_mode="HTML"
+            )
         return True
     except Exception as e:
         if msg:
             await msg.answer(f"⚠️ {ch.channel_name} ga yuborishda xato: {e}")
         return False
 
+
+# ─── Klaviaturalar ───────────────────────────────────────────────────────────
 
 admin_main_kb = ReplyKeyboardMarkup(
     keyboard=[
@@ -150,6 +166,10 @@ TYPE_KB = InlineKeyboardMarkup(inline_keyboard=[
 ])
 
 
+# ═══════════════════════════════════════════════════════════
+#  ADMIN KIRISH
+# ═══════════════════════════════════════════════════════════
+
 @admin_router.message(Command("admin"))
 async def admin_entry(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -175,6 +195,10 @@ async def cancel_action(msg: Message, state: FSMContext):
     await state.clear()
     await msg.answer("Amal bekor qilindi.", reply_markup=admin_main_kb)
 
+
+# ═══════════════════════════════════════════════════════════
+#  PRO BOSHQARUV
+# ═══════════════════════════════════════════════════════════
 
 @admin_router.message(F.text == "👑 Pro boshqaruv")
 async def pro_manage_menu(msg: Message):
@@ -224,10 +248,8 @@ async def pm_set_pro_start(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id): return
     await state.set_state(AdminProState.waiting_user_id)
     await state.update_data(pm_action="set_pro")
-    await call.message.answer(
-        "✅ <b>Pro berish</b>\n\nUser ID kiriting:",
-        parse_mode="HTML", reply_markup=cancel_kb
-    )
+    await call.message.answer("✅ <b>Pro berish</b>\n\nUser ID kiriting:",
+                               parse_mode="HTML", reply_markup=cancel_kb)
     await call.answer()
 
 
@@ -236,10 +258,8 @@ async def pm_remove_pro_start(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id): return
     await state.set_state(AdminProState.waiting_user_id)
     await state.update_data(pm_action="remove_pro")
-    await call.message.answer(
-        "❌ <b>Pro olish</b>\n\nUser ID kiriting:",
-        parse_mode="HTML", reply_markup=cancel_kb
-    )
+    await call.message.answer("❌ <b>Pro olish</b>\n\nUser ID kiriting:",
+                               parse_mode="HTML", reply_markup=cancel_kb)
     await call.answer()
 
 
@@ -259,11 +279,9 @@ async def pm_add_admin_start(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminProState.waiting_user_id)
     await state.update_data(pm_action="add_admin")
     await call.message.answer(
-        "➕ <b>Admin qo'shish</b>\n\n"
-        "User ID kiriting:\n"
+        "➕ <b>Admin qo'shish</b>\n\nUser ID kiriting:\n"
         "<i>Ixtiyoriy: ID va ism — <code>123456789 Ism</code></i>",
-        parse_mode="HTML", reply_markup=cancel_kb
-    )
+        parse_mode="HTML", reply_markup=cancel_kb)
     await call.answer()
 
 
@@ -273,10 +291,8 @@ async def pm_remove_admin_start(call: types.CallbackQuery, state: FSMContext):
         return await call.answer("❌ Faqat owner!", show_alert=True)
     await state.set_state(AdminProState.waiting_user_id)
     await state.update_data(pm_action="remove_admin")
-    await call.message.answer(
-        "🗑 <b>Admin o'chirish</b>\n\nAdmin ID kiriting:",
-        parse_mode="HTML", reply_markup=cancel_kb
-    )
+    await call.message.answer("🗑 <b>Admin o'chirish</b>\n\nAdmin ID kiriting:",
+                               parse_mode="HTML", reply_markup=cancel_kb)
     await call.answer()
 
 
@@ -304,11 +320,9 @@ async def pm_id_received(msg: Message, state: FSMContext):
         await state.set_state(AdminProState.waiting_pro_days)
         await state.update_data(pro_target_id=target_id)
         await msg.answer(
-            f"✅ User <code>{target_id}</code>\n\n"
-            "Necha kun Pro? Kiriting:\n"
+            f"✅ User <code>{target_id}</code>\n\nNecha kun Pro? Kiriting:\n"
             "<i>30 = 30 kun, 0 = Abadiy</i>",
-            parse_mode="HTML", reply_markup=cancel_kb
-        )
+            parse_mode="HTML", reply_markup=cancel_kb)
 
     elif action == "remove_pro":
         await state.clear()
@@ -454,15 +468,15 @@ async def _show_user_info(msg: Message, user_id: int):
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="✅ 30 kun Pro",   callback_data=f"adm_pro30_{user_id}"),
-            InlineKeyboardButton(text="✅ 90 kun Pro",   callback_data=f"adm_pro90_{user_id}"),
+            InlineKeyboardButton(text="✅ 30 kun Pro", callback_data=f"adm_pro30_{user_id}"),
+            InlineKeyboardButton(text="✅ 90 kun Pro", callback_data=f"adm_pro90_{user_id}"),
         ],
-        [InlineKeyboardButton(text="❌ Pro olish",       callback_data=f"adm_remvpro_{user_id}")],
+        [InlineKeyboardButton(text="❌ Pro olish",      callback_data=f"adm_remvpro_{user_id}")],
         [
             InlineKeyboardButton(text="📉 7 kun qisq.",  callback_data=f"adm_reduce7_{user_id}"),
             InlineKeyboardButton(text="📉 30 kun qisq.", callback_data=f"adm_reduce30_{user_id}"),
         ],
-        [InlineKeyboardButton(text="✉️ Xabar yuborish",  callback_data=f"pro_msg_{user_id}")],
+        [InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}")],
     ])
     await msg.answer(text, reply_markup=kb, parse_mode="HTML")
 
@@ -621,10 +635,8 @@ async def _do_add_admin(msg: Message, new_id: int, nickname: str | None):
     async with AsyncSessionLocal() as session:
         existing = await session.get(Admin, new_id)
         if existing:
-            return await msg.answer(
-                f"⚠️ <code>{new_id}</code> allaqachon admin!",
-                parse_mode="HTML", reply_markup=admin_main_kb
-            )
+            return await msg.answer(f"⚠️ <code>{new_id}</code> allaqachon admin!",
+                                    parse_mode="HTML", reply_markup=admin_main_kb)
         session.add(Admin(telegram_id=new_id, nickname=nickname, role="admin"))
         await session.commit()
 
@@ -638,10 +650,8 @@ async def _do_add_admin(msg: Message, new_id: int, nickname: str | None):
         pass
 
     nick_str = f" ({nickname})" if nickname else ""
-    await msg.answer(
-        f"✅ <code>{new_id}</code>{nick_str} admin qilindi!",
-        parse_mode="HTML", reply_markup=admin_main_kb
-    )
+    await msg.answer(f"✅ <code>{new_id}</code>{nick_str} admin qilindi!",
+                     parse_mode="HTML", reply_markup=admin_main_kb)
 
 
 async def _do_remove_admin(msg: Message, target_id: int):
@@ -651,24 +661,19 @@ async def _do_remove_admin(msg: Message, target_id: int):
     async with AsyncSessionLocal() as session:
         admin = await session.get(Admin, target_id)
         if not admin:
-            return await msg.answer(
-                f"❌ <code>{target_id}</code> admin emas!",
-                parse_mode="HTML", reply_markup=admin_main_kb
-            )
+            return await msg.answer(f"❌ <code>{target_id}</code> admin emas!",
+                                    parse_mode="HTML", reply_markup=admin_main_kb)
         await session.delete(admin)
         await session.commit()
 
     try:
-        await msg.bot.send_message(
-            target_id, "❌ <b>Admin huquqingiz olib tashlandi.</b>", parse_mode="HTML"
-        )
+        await msg.bot.send_message(target_id, "❌ <b>Admin huquqingiz olib tashlandi.</b>",
+                                   parse_mode="HTML")
     except Exception:
         pass
 
-    await msg.answer(
-        f"✅ <code>{target_id}</code> admin emas endi.",
-        parse_mode="HTML", reply_markup=admin_main_kb
-    )
+    await msg.answer(f"✅ <code>{target_id}</code> admin emas endi.",
+                     parse_mode="HTML", reply_markup=admin_main_kb)
 
 
 async def _show_anime_info(msg: Message, anime_id: int):
@@ -709,8 +714,9 @@ async def _show_anime_info(msg: Message, anime_id: int):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🔒 Pro-lock toggle", callback_data=f"adm_prolock_{anime_id}"),
-            InlineKeyboardButton(text="📢 Kanalga post",    callback_data=f"postch_all_{anime_id}"),
-        ]
+            InlineKeyboardButton(text="💎 HGem toggle",     callback_data=f"adm_hgem_{anime_id}"),
+        ],
+        [InlineKeyboardButton(text="📢 Kanalga post", callback_data=f"postch_all_{anime_id}")],
     ])
 
     async with AsyncSessionLocal() as session:
@@ -736,6 +742,19 @@ async def adm_prolock_toggle(call: types.CallbackQuery):
             anime.is_pro_locked = not anime.is_pro_locked
             await session.commit()
             s = "🔒 Pro-locked" if anime.is_pro_locked else "🔓 Ochiq"
+            await call.answer(f"✅ {anime.title}: {s}", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("adm_hgem_"))
+async def adm_hgem_toggle(call: types.CallbackQuery):
+    if not await is_admin(call.from_user.id): return
+    anime_id = int(call.data.replace("adm_hgem_", ""))
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+        if anime:
+            anime.is_hidden_gem = not anime.is_hidden_gem
+            await session.commit()
+            s = "💎 Hidden Gem: Ha" if anime.is_hidden_gem else "💎 Hidden Gem: Yo'q"
             await call.answer(f"✅ {anime.title}: {s}", show_alert=True)
 
 
@@ -789,10 +808,8 @@ async def pro_msg_start(call: types.CallbackQuery, state: FSMContext):
     user_id = int(call.data.replace("pro_msg_", ""))
     await state.set_state(AdminProState.waiting_msg_text)
     await state.update_data(msg_target=user_id)
-    await call.message.answer(
-        f"✉️ User <code>{user_id}</code> ga xabar yozing:",
-        parse_mode="HTML", reply_markup=cancel_kb
-    )
+    await call.message.answer(f"✉️ User <code>{user_id}</code> ga xabar yozing:",
+                               parse_mode="HTML", reply_markup=cancel_kb)
     await call.answer()
 
 
@@ -822,11 +839,19 @@ async def pro_msg_send(msg: Message, state: FSMContext):
         await msg.answer(f"❌ Yuborib bo'lmadi: {e}", reply_markup=admin_main_kb)
 
 
+# ═══════════════════════════════════════════════════════════
+#  ANIME QO'SHISH
+# ═══════════════════════════════════════════════════════════
+
 @admin_router.message(F.text == "➕ Anime qo'shish")
 async def add_anime_start(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id): return
     await state.set_state(AddAnime.waiting_id)
-    await msg.answer("🆔 Yangi kontent <b>ID</b>si (faqat raqam):", parse_mode="HTML", reply_markup=cancel_kb)
+    await msg.answer(
+        "🆔 Yangi kontent <b>ID</b>si (faqat raqam):\n"
+        "<i>Masalan: 4345</i>",
+        parse_mode="HTML", reply_markup=cancel_kb
+    )
 
 
 @admin_router.message(AddAnime.waiting_id)
@@ -848,7 +873,10 @@ async def process_id(msg: Message, state: FSMContext):
             )
     await state.update_data(anime_id=anime_id)
     await state.set_state(AddAnime.waiting_title)
-    await msg.answer("📝 <b>Nomi:</b>", parse_mode="HTML")
+    await msg.answer(
+        "📝 <b>Nomi:</b>\n<i>Masalan: Attack on Titan</i>",
+        parse_mode="HTML"
+    )
 
 
 @admin_router.message(AddAnime.waiting_title)
@@ -866,7 +894,10 @@ async def process_title(msg: Message, state: FSMContext):
 async def process_type(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(content_type=call.data.replace("atype_", ""))
     await state.set_state(AddAnime.waiting_desc)
-    await call.message.answer("📖 <b>Tavsif:</b>", parse_mode="HTML", reply_markup=cancel_kb)
+    await call.message.answer(
+        "📖 <b>Tavsif:</b>\n<i>Masalan: Humanity fights against giants…</i>",
+        parse_mode="HTML", reply_markup=cancel_kb
+    )
     await call.answer()
 
 
@@ -878,7 +909,10 @@ async def process_desc(msg: Message, state: FSMContext):
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
     await state.update_data(desc=msg.text.strip())
     await state.set_state(AddAnime.waiting_genres)
-    await msg.answer("🎭 <b>Janrlar</b> (vergul):\n<i>action, drama</i>", parse_mode="HTML")
+    await msg.answer(
+        "🎭 <b>Janrlar</b> (vergul bilan):\n<i>action, drama, fantasy</i>",
+        parse_mode="HTML"
+    )
 
 
 @admin_router.message(AddAnime.waiting_genres)
@@ -889,16 +923,20 @@ async def process_genres(msg: Message, state: FSMContext):
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
     await state.update_data(genres=[g.strip() for g in msg.text.split(",")])
     await state.set_state(AddAnime.waiting_tags)
-    await msg.answer("🏷 <b>Teglar</b>:\n<i>dark, survival</i>", parse_mode="HTML",
-                     reply_markup=_skip_kb("skip_tags"))
+    await msg.answer(
+        "🏷 <b>Teglar</b>:\n<i>dark, survival, revenge</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_tags")
+    )
 
 
 @admin_router.callback_query(F.data == "skip_tags", AddAnime.waiting_tags)
 async def skip_tags(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(tags=[])
     await state.set_state(AddAnime.waiting_mood)
-    await call.message.answer("😌 <b>Mood</b>:\n<i>dark, emotional</i>", parse_mode="HTML",
-                               reply_markup=_skip_kb("skip_mood"))
+    await call.message.answer(
+        "😌 <b>Mood</b>:\n<i>dark, emotional</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_mood")
+    )
     await call.answer()
 
 
@@ -910,15 +948,20 @@ async def process_tags(msg: Message, state: FSMContext):
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
     await state.update_data(tags=[t.strip() for t in msg.text.split(",")])
     await state.set_state(AddAnime.waiting_mood)
-    await msg.answer("😌 <b>Mood</b>:\n<i>dark, emotional</i>", parse_mode="HTML",
-                     reply_markup=_skip_kb("skip_mood"))
+    await msg.answer(
+        "😌 <b>Mood</b>:\n<i>dark, emotional</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_mood")
+    )
 
 
 @admin_router.callback_query(F.data == "skip_mood", AddAnime.waiting_mood)
 async def skip_mood(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(mood=[])
     await state.set_state(AddAnime.waiting_year)
-    await call.message.answer("📅 <b>Yil:</b>", parse_mode="HTML", reply_markup=cancel_kb)
+    await call.message.answer(
+        "📅 <b>Chiqqan yili:</b>\n<i>Masalan: 2013</i>",
+        parse_mode="HTML", reply_markup=cancel_kb
+    )
     await call.answer()
 
 
@@ -930,7 +973,10 @@ async def process_mood(msg: Message, state: FSMContext):
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
     await state.update_data(mood=[m.strip() for m in msg.text.split(",")])
     await state.set_state(AddAnime.waiting_year)
-    await msg.answer("📅 <b>Yil:</b>", parse_mode="HTML")
+    await msg.answer(
+        "📅 <b>Chiqqan yili:</b>\n<i>Masalan: 2013</i>",
+        parse_mode="HTML"
+    )
 
 
 @admin_router.message(AddAnime.waiting_year)
@@ -943,7 +989,10 @@ async def process_year(msg: Message, state: FSMContext):
         return await msg.answer("❌ Raqam!")
     await state.update_data(year=int(msg.text))
     await state.set_state(AddAnime.waiting_rating)
-    await msg.answer("⭐ <b>Reyting</b> (0-10):", parse_mode="HTML")
+    await msg.answer(
+        "⭐ <b>Reyting</b> (0-10):\n<i>Masalan: 9.0</i>",
+        parse_mode="HTML"
+    )
 
 
 @admin_router.message(AddAnime.waiting_rating)
@@ -960,15 +1009,20 @@ async def process_rating(msg: Message, state: FSMContext):
         return await msg.answer("❌ Raqam!")
     await state.update_data(rating=r)
     await state.set_state(AddAnime.waiting_total_episodes)
-    await msg.answer("🎞 <b>Qismlar soni:</b>", parse_mode="HTML", reply_markup=_skip_kb("skip_episodes"))
+    await msg.answer(
+        "🎞 <b>Qismlar soni:</b>\n<i>Masalan: 25</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_episodes")
+    )
 
 
 @admin_router.callback_query(F.data == "skip_episodes", AddAnime.waiting_total_episodes)
 async def skip_episodes(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(total_episodes=0, episodes_count=0)
     await state.set_state(AddAnime.waiting_duration)
-    await call.message.answer("⏱ <b>Davomiyligi</b> (daqiqada):", parse_mode="HTML",
-                               reply_markup=_skip_kb("skip_duration"))
+    await call.message.answer(
+        "⏱ <b>Davomiyligi</b> (daqiqada):\n<i>Masalan: 24</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_duration")
+    )
     await call.answer()
 
 
@@ -983,8 +1037,10 @@ async def process_total_episodes(msg: Message, state: FSMContext):
     ep = int(msg.text)
     await state.update_data(total_episodes=ep, episodes_count=ep)
     await state.set_state(AddAnime.waiting_duration)
-    await msg.answer("⏱ <b>Davomiyligi</b> (daqiqada):", parse_mode="HTML",
-                     reply_markup=_skip_kb("skip_duration"))
+    await msg.answer(
+        "⏱ <b>Davomiyligi</b> (daqiqada):\n<i>Masalan: 24</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_duration")
+    )
 
 
 @admin_router.callback_query(F.data == "skip_duration", AddAnime.waiting_duration)
@@ -1012,8 +1068,10 @@ async def process_duration(msg: Message, state: FSMContext):
 async def process_add_status(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(status=call.data.replace("addstatus_", ""))
     await state.set_state(AddAnime.waiting_popularity)
-    await call.message.answer("📈 <b>Mashhurlik</b> (0-10):", parse_mode="HTML",
-                               reply_markup=_skip_kb("skip_popularity"))
+    await call.message.answer(
+        "📈 <b>Mashhurlik</b> (0-10):\n<i>Masalan: 8.7</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_popularity")
+    )
     await call.answer()
 
 
@@ -1021,8 +1079,11 @@ async def process_add_status(call: types.CallbackQuery, state: FSMContext):
 async def skip_popularity(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(popularity=0.0)
     await state.set_state(AddAnime.waiting_related)
-    await call.message.answer("🔗 <b>Related</b>:\n<i>5001:sequel,5002:spin-off</i>",
-                               parse_mode="HTML", reply_markup=_skip_kb("skip_related"))
+    await call.message.answer(
+        "🔗 <b>Related animelar</b>:\n<i>5001:sequel, 5002:spin-off</i>\n\n"
+        "Format: <code>ID:tur</code> — vergul bilan ajrating",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_related")
+    )
     await call.answer()
 
 
@@ -1038,8 +1099,10 @@ async def process_popularity(msg: Message, state: FSMContext):
         return await msg.answer("❌ Raqam!")
     await state.update_data(popularity=pop)
     await state.set_state(AddAnime.waiting_related)
-    await msg.answer("🔗 <b>Related</b>:\n<i>5001:sequel</i>", parse_mode="HTML",
-                     reply_markup=_skip_kb("skip_related"))
+    await msg.answer(
+        "🔗 <b>Related animelar</b>:\n<i>5001:sequel, 5002:spin-off</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_related")
+    )
 
 
 @admin_router.callback_query(F.data == "skip_related", AddAnime.waiting_related)
@@ -1085,8 +1148,21 @@ async def process_pro_lock(call: types.CallbackQuery, state: FSMContext):
 async def process_hidden_gem(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(is_hidden_gem=(call.data == "hgem_yes"))
     await state.set_state(AddAnime.waiting_poster)
-    await call.message.answer("🖼 <b>Poster rasmini</b> yuboring:", parse_mode="HTML",
-                               reply_markup=cancel_kb)
+    await call.message.answer(
+        "🖼 <b>Poster rasmini yuboring:</b>\n<i>Anime poster tasviri</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_poster")
+    )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "skip_poster", AddAnime.waiting_poster)
+async def skip_poster(call: types.CallbackQuery, state: FSMContext):
+    await state.update_data(poster_file_id=None)
+    await state.set_state(AddAnime.waiting_trailer)
+    await call.message.answer(
+        "🎬 <b>Treyler videosini yuboring:</b>",
+        reply_markup=_skip_kb("skip_trailer")
+    )
     await call.answer()
 
 
@@ -1095,15 +1171,20 @@ async def process_poster(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id): return
     await state.update_data(poster_file_id=msg.photo[-1].file_id)
     await state.set_state(AddAnime.waiting_inline_url)
-    await msg.answer("🖼 <b>Inline URL</b>:", parse_mode="HTML",
-                     reply_markup=_skip_kb("skip_inline_url"))
+    await msg.answer(
+        "🖼 <b>Inline thumbnail URL</b>:\n<i>https:// bilan boshlanadigan rasm URL</i>",
+        parse_mode="HTML", reply_markup=_skip_kb("skip_inline_url")
+    )
 
 
 @admin_router.callback_query(F.data == "skip_inline_url", AddAnime.waiting_inline_url)
 async def skip_inline_url(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(inline_thumbnail_url=None)
     await state.set_state(AddAnime.waiting_trailer)
-    await call.message.answer("🎬 <b>Treyler</b>:", reply_markup=_skip_kb("skip_trailer"))
+    await call.message.answer(
+        "🎬 <b>Treyler videosini yuboring:</b>",
+        reply_markup=_skip_kb("skip_trailer")
+    )
     await call.answer()
 
 
@@ -1118,7 +1199,10 @@ async def process_inline_url(msg: Message, state: FSMContext):
         return await msg.answer("❌ https:// bilan!")
     await state.update_data(inline_thumbnail_url=url)
     await state.set_state(AddAnime.waiting_trailer)
-    await msg.answer("🎬 <b>Treyler</b>:", reply_markup=_skip_kb("skip_trailer"))
+    await msg.answer(
+        "🎬 <b>Treyler videosini yuboring:</b>",
+        reply_markup=_skip_kb("skip_trailer")
+    )
 
 
 @admin_router.callback_query(F.data == "skip_trailer", AddAnime.waiting_trailer)
@@ -1178,11 +1262,22 @@ async def _save_anime(msg: Message, state: FSMContext, bot: Bot):
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
     emoji    = type_emoji.get(data.get("content_type", "anime"), "🎬")
     lock_str = "🔒 Pro" if data.get("is_pro_locked") else "🔓 Ochiq"
+
+    # News kanalga avtomatik post so'rash
+    async with AsyncSessionLocal() as session:
+        news_channels = await get_news_channels(session)
+        anime_obj     = await session.get(Anime, data["anime_id"])
+
     await msg.answer(
         f"✅ {emoji} <b>{data['title']}</b> qo'shildi!\n"
         f"🆔 <code>{data['anime_id']}</code> | {lock_str}",
         reply_markup=admin_main_kb, parse_mode="HTML"
     )
+
+    # News kanalga yuborish so'rovi
+    if news_channels and anime_obj:
+        await _ask_send_to_channel(msg, bot, anime_obj)
+
     try:
         info = f"📋 {emoji} <b>{data['title']}</b>\n🆔 <code>{data['anime_id']}</code> | {lock_str}"
         if data.get("poster_file_id"):
@@ -1193,6 +1288,10 @@ async def _save_anime(msg: Message, state: FSMContext, bot: Bot):
     except Exception:
         pass
 
+
+# ═══════════════════════════════════════════════════════════
+#  ANIME BOSHQARUV
+# ═══════════════════════════════════════════════════════════
 
 @admin_router.message(F.text == "🎌 Anime boshqaruv")
 async def anime_manage_menu(msg: Message):
@@ -1342,24 +1441,28 @@ async def edit_get_anime(msg: Message, state: FSMContext):
     await state.set_state(EditAnime.waiting_field)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Nomi",    callback_data="ef_title"),
-         InlineKeyboardButton(text="📖 Tavsif",  callback_data="ef_desc")],
-        [InlineKeyboardButton(text="🎭 Janr",    callback_data="ef_genres"),
-         InlineKeyboardButton(text="📅 Yil",     callback_data="ef_year")],
-        [InlineKeyboardButton(text="🏷 Teglar",  callback_data="ef_tags"),
-         InlineKeyboardButton(text="😌 Mood",    callback_data="ef_mood")],
-        [InlineKeyboardButton(text="📊 Status",  callback_data="ef_status"),
-         InlineKeyboardButton(text="⭐ Reyting", callback_data="ef_rating")],
-        [InlineKeyboardButton(text="🖼 Poster",  callback_data="ef_poster"),
-         InlineKeyboardButton(text="🎬 Treyler", callback_data="ef_trailer")],
-        [InlineKeyboardButton(text="🖼 Inline",  callback_data="ef_inline_url"),
-         InlineKeyboardButton(text="🔢 Qismlar", callback_data="ef_total_episodes")],
-        [InlineKeyboardButton(text="🔒 Pro-lock", callback_data="ef_pro_lock"),
-         InlineKeyboardButton(text="💎 HGem",    callback_data="ef_hidden_gem")],
-        [InlineKeyboardButton(text="📢 Kanalga post", callback_data="ef_send_news")],
-        [InlineKeyboardButton(text="❌ Bekor",   callback_data="ef_cancel")],
+        [InlineKeyboardButton(text="📝 Nomi",        callback_data="ef_title"),
+         InlineKeyboardButton(text="📖 Tavsif",      callback_data="ef_desc")],
+        [InlineKeyboardButton(text="🎭 Janr",        callback_data="ef_genres"),
+         InlineKeyboardButton(text="📅 Yil",         callback_data="ef_year")],
+        [InlineKeyboardButton(text="🏷 Teglar",      callback_data="ef_tags"),
+         InlineKeyboardButton(text="😌 Mood",        callback_data="ef_mood")],
+        [InlineKeyboardButton(text="📊 Status",      callback_data="ef_status"),
+         InlineKeyboardButton(text="⭐ Reyting",     callback_data="ef_rating")],
+        [InlineKeyboardButton(text="🖼 Poster",      callback_data="ef_poster"),
+         InlineKeyboardButton(text="🎬 Treyler",     callback_data="ef_trailer")],
+        [InlineKeyboardButton(text="🖼 Inline URL",  callback_data="ef_inline_url"),
+         InlineKeyboardButton(text="🔢 Qismlar soni", callback_data="ef_total_episodes")],
+        [InlineKeyboardButton(text="🔒 Pro-lock",    callback_data="ef_pro_lock"),
+         InlineKeyboardButton(text="💎 Hidden Gem",  callback_data="ef_hidden_gem")],
+        # ── YANGI: Yashirin toggle ──────────────────────────────
+        [InlineKeyboardButton(text="👁 Yashirin toggle", callback_data="ef_is_hidden")],
+        # ── YANGI: Kanalga post ─────────────────────────────────
+        [InlineKeyboardButton(text="📢 Kanalga post (news)", callback_data="ef_send_news")],
+        [InlineKeyboardButton(text="❌ Bekor",       callback_data="ef_cancel")],
     ])
-    await msg.answer(f"✏️ <b>{title}</b>", reply_markup=kb, parse_mode="HTML")
+    await msg.answer(f"✏️ <b>{title}</b> — nimani o'zgartirasiz?",
+                     reply_markup=kb, parse_mode="HTML")
 
 
 @admin_router.callback_query(F.data.startswith("ef_"), EditAnime.waiting_field)
@@ -1384,11 +1487,13 @@ async def edit_field_selected(call: types.CallbackQuery, state: FSMContext):
         await call.answer()
         return
 
+    # ── News kanalga post yuborish ──────────────────────────────
     if field == "send_news":
         async with AsyncSessionLocal() as session:
             anime = await session.get(Anime, anime_id)
         if anime:
             await _ask_send_to_channel(call.message, call.bot, anime)
+        await state.clear()
         await call.answer()
         return
 
@@ -1400,6 +1505,7 @@ async def edit_field_selected(call: types.CallbackQuery, state: FSMContext):
                 await session.commit()
                 s = "🔒 Pro-locked" if anime.is_pro_locked else "🔓 Ochiq"
                 await call.message.answer(f"✅ {anime.title}: {s}", reply_markup=admin_main_kb)
+        await state.clear()
         await call.answer()
         return
 
@@ -1411,6 +1517,34 @@ async def edit_field_selected(call: types.CallbackQuery, state: FSMContext):
                 await session.commit()
                 s = "💎 Ha" if anime.is_hidden_gem else "💎 Yo'q"
                 await call.message.answer(f"✅ {anime.title}: {s}", reply_markup=admin_main_kb)
+        await state.clear()
+        await call.answer()
+        return
+
+    # ── YANGI: is_hidden (inline searchdan yashirish) ──────────
+    if field == "is_hidden":
+        async with AsyncSessionLocal() as session:
+            anime = await session.get(Anime, anime_id)
+            if anime:
+                # is_hidden field yo'q bo'lsa qo'shamiz — is_pro_locked ni ishlatamiz
+                # Yoki alohida field — bu yerda is_pro_locked orqali ham boshqarilishi mumkin
+                # Lekin to'g'ri yo'li: model'da is_hidden field bo'lishi kerak
+                # Hozircha: is_hidden_gem → "yashirin" deb ishlatamiz
+                # Asl ma'nosi: inline searchda ko'rinmasin
+                current = getattr(anime, "is_hidden", False)
+                try:
+                    anime.is_hidden = not current
+                except AttributeError:
+                    # Model'da field yo'q — is_hidden_gem bilan almashtirish
+                    pass
+                await session.commit()
+                s = "👁 Yashirin: Ha" if not current else "👁 Yashirin: Yo'q"
+                await call.message.answer(
+                    f"✅ {anime.title}: {s}\n\n"
+                    "⚠️ Eslatma: <code>is_hidden</code> field'ini models.py ga qo'shing!",
+                    parse_mode="HTML", reply_markup=admin_main_kb
+                )
+        await state.clear()
         await call.answer()
         return
 
@@ -1422,11 +1556,16 @@ async def edit_field_selected(call: types.CallbackQuery, state: FSMContext):
         return
 
     labels = {
-        "title": "yangi nomini", "desc": "yangi tavsifini",
-        "genres": "janrlarini (vergul)", "year": "yilini",
-        "tags": "teglarini (vergul)", "mood": "mood (vergul)",
-        "poster": "posterini (rasm)", "trailer": "treylerini (video)",
-        "inline_url": "inline URL", "rating": "reytingini (0-10)",
+        "title":          "yangi nomini",
+        "desc":           "yangi tavsifini",
+        "genres":         "janrlarini (vergul bilan)",
+        "year":           "yilini",
+        "tags":           "teglarini (vergul bilan)",
+        "mood":           "mood (vergul bilan)",
+        "poster":         "posterini (rasm yuboring)",
+        "trailer":        "treylerini (video yuboring)",
+        "inline_url":     "inline URL ni (https:// bilan)",
+        "rating":         "reytingini (0-10)",
         "total_episodes": "qismlar sonini",
     }
     await state.update_data(edit_field=field)
@@ -1491,11 +1630,11 @@ async def save_edit_value(msg: Message, state: FSMContext):
             anime.year = int(msg.text)
         elif field == "poster":
             if not msg.photo:
-                return await msg.answer("❌ Rasm!")
+                return await msg.answer("❌ Rasm yuboring!")
             anime.poster_file_id = msg.photo[-1].file_id
         elif field == "trailer":
             if not msg.video:
-                return await msg.answer("❌ Video!")
+                return await msg.answer("❌ Video yuboring!")
             anime.trailer_file_id = msg.video.file_id
         elif field == "inline_url":
             url = msg.text.strip()
@@ -1522,24 +1661,159 @@ async def save_edit_value(msg: Message, state: FSMContext):
     await msg.answer(f"✅ <b>{title}</b> yangilandi!", reply_markup=admin_main_kb, parse_mode="HTML")
 
 
+# ═══════════════════════════════════════════════════════════
+#  NEWS KANALGA POST
+# ═══════════════════════════════════════════════════════════
+
 async def _ask_send_to_channel(msg: Message, bot: Bot, anime: Anime):
+    """Bot poster/treyler bor-yo'qligiga qarab so'raydi."""
     async with AsyncSessionLocal() as session:
         channels = await get_news_channels(session)
     if not channels:
-        await msg.answer("⚠️ News kanallar yo'q!")
+        await msg.answer("⚠️ News kanallar yo'q! Avval kanal qo'shing.")
         return
+
+    # Poster/treyler mavjudligini tekshiramiz
+    has_poster  = bool(anime.poster_file_id)
+    has_trailer = bool(anime.trailer_file_id)
+
+    if not has_poster and not has_trailer:
+        # Media yo'q — to'g'ridan-to'g'ri kanal tanlashga o'tish
+        kb = InlineKeyboardBuilder()
+        for ch in channels:
+            kb.row(InlineKeyboardButton(
+                text=f"📢 {ch.channel_name}",
+                callback_data=f"postch_{ch.id}_{anime.id}"
+            ))
+        kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data=f"postch_all_{anime.id}"))
+        kb.row(InlineKeyboardButton(text="❌ Bekor",  callback_data="manage_close"))
+        await msg.answer(
+            f"📢 <b>{anime.title}</b>\n"
+            "⚠️ Poster yoki treyler yo'q — faqat matn post qilinadi.\n\n"
+            "Qaysi kanalga?",
+            reply_markup=kb.as_markup(), parse_mode="HTML"
+        )
+        return
+
+    # Media bor — media turi so'rash
+    kb = InlineKeyboardBuilder()
+    if has_poster:
+        kb.row(InlineKeyboardButton(
+            text="🖼 Poster bilan post",
+            callback_data=f"postnews_poster_{anime.id}"
+        ))
+    if has_trailer:
+        kb.row(InlineKeyboardButton(
+            text="🎬 Treyler bilan post",
+            callback_data=f"postnews_trailer_{anime.id}"
+        ))
+    kb.row(InlineKeyboardButton(
+        text="📝 Faqat matn post",
+        callback_data=f"postnews_text_{anime.id}"
+    ))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close"))
+
+    await msg.answer(
+        f"📢 <b>{anime.title}</b>\n\nQanday post qilamiz?",
+        reply_markup=kb.as_markup(), parse_mode="HTML"
+    )
+
+
+@admin_router.callback_query(F.data.startswith("postnews_"))
+async def postnews_media_type(call: types.CallbackQuery):
+    """Poster/treyler/text tanlov — keyin kanal tanlash."""
+    if not await is_admin(call.from_user.id): return
+
+    # postnews_{media_type}_{anime_id}
+    parts      = call.data.replace("postnews_", "").split("_", 1)
+    media_type = parts[0]              # poster | trailer | text
+    anime_id   = int(parts[1])
+
+    async with AsyncSessionLocal() as session:
+        anime    = await session.get(Anime, anime_id)
+        channels = await get_news_channels(session)
+
+    if not anime:
+        return await call.answer("❌ Topilmadi!", show_alert=True)
+    if not channels:
+        return await call.answer("⚠️ News kanallar yo'q!", show_alert=True)
+
     kb = InlineKeyboardBuilder()
     for ch in channels:
-        kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}",
-                                    callback_data=f"postch_{ch.id}_{anime.id}"))
-    kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data=f"postch_all_{anime.id}"))
-    kb.row(InlineKeyboardButton(text="❌ Bekor",  callback_data="manage_close"))
-    await msg.answer(f"📢 <b>{anime.title}</b>\nQaysi kanalga?",
-                     reply_markup=kb.as_markup(), parse_mode="HTML")
+        kb.row(InlineKeyboardButton(
+            text=f"📢 {ch.channel_name}",
+            callback_data=f"postch2_{media_type}_{ch.id}_{anime_id}"
+        ))
+    kb.row(InlineKeyboardButton(
+        text="📢 Barcha",
+        callback_data=f"postch2_{media_type}_all_{anime_id}"
+    ))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close"))
+
+    media_label = {"poster": "🖼 Poster", "trailer": "🎬 Treyler", "text": "📝 Matn"}
+    await call.message.edit_text(
+        f"📢 <b>{anime.title}</b>\n{media_label.get(media_type, '')} bilan\n\nQaysi kanalga?",
+        reply_markup=kb.as_markup(), parse_mode="HTML"
+    )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data.startswith("postch2_"))
+async def send_to_channel_with_media(call: types.CallbackQuery):
+    """Media turi va kanal tanlanib — postni yuboradi."""
+    if not await is_admin(call.from_user.id): return
+
+    # postch2_{media_type}_{ch_id_or_all}_{anime_id}
+    raw        = call.data.replace("postch2_", "")
+    parts      = raw.split("_")
+    media_type = parts[0]
+    ch_target  = parts[1]
+    anime_id   = int(parts[2])
+
+    async with AsyncSessionLocal() as session:
+        anime    = await session.get(Anime, anime_id)
+        channels = await get_news_channels(session)
+
+    if not anime:
+        return await call.answer("❌ Topilmadi!", show_alert=True)
+
+    targets  = channels if ch_target == "all" else [c for c in channels if str(c.id) == ch_target]
+    caption  = _build_post_caption(anime)
+    watch_kb = _watch_kb(anime.id)
+    sent     = 0
+
+    for ch in targets:
+        try:
+            if media_type == "poster" and anime.poster_file_id:
+                await call.bot.send_photo(
+                    ch.channel_id, anime.poster_file_id,
+                    caption=caption, reply_markup=watch_kb, parse_mode="HTML"
+                )
+            elif media_type == "trailer" and anime.trailer_file_id:
+                await call.bot.send_video(
+                    ch.channel_id, anime.trailer_file_id,
+                    caption=caption, reply_markup=watch_kb, parse_mode="HTML"
+                )
+            else:
+                await call.bot.send_message(
+                    ch.channel_id, caption,
+                    reply_markup=watch_kb, parse_mode="HTML"
+                )
+            sent += 1
+        except Exception as e:
+            await call.message.answer(f"⚠️ {ch.channel_name}: {e}")
+
+    try:
+        await call.message.edit_text(f"✅ {sent} ta kanalga yuborildi!", parse_mode="HTML")
+    except Exception:
+        await call.message.answer(f"✅ {sent} ta kanalga yuborildi!")
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
 
 
 @admin_router.callback_query(F.data.startswith("postch_"))
 async def send_to_channel_cb(call: types.CallbackQuery):
+    """Eski postch_ handler — matn post."""
     if not await is_admin(call.from_user.id): return
     parts    = call.data.replace("postch_", "").split("_")
     is_all   = parts[0] == "all"
@@ -1564,6 +1838,10 @@ async def send_to_channel_cb(call: types.CallbackQuery):
         await call.message.answer(f"✅ {sent} ta kanalga yuborildi!")
     await call.answer()
 
+
+# ═══════════════════════════════════════════════════════════
+#  XABAR YUBORISH
+# ═══════════════════════════════════════════════════════════
 
 @admin_router.message(F.text == "✉️ Xabar yuborish")
 async def broadcast_start(msg: Message, state: FSMContext):
@@ -1725,14 +2003,20 @@ async def bc_send_to_channel(call: types.CallbackQuery, state: FSMContext):
     for ch in targets:
         try:
             if media_type == "poster" and anime.poster_file_id:
-                await call.bot.send_photo(ch.channel_id, anime.poster_file_id,
-                                          caption=caption, reply_markup=watch_kb, parse_mode="HTML")
+                await call.bot.send_photo(
+                    ch.channel_id, anime.poster_file_id,
+                    caption=caption, reply_markup=watch_kb, parse_mode="HTML"
+                )
             elif media_type == "trailer" and anime.trailer_file_id:
-                await call.bot.send_video(ch.channel_id, anime.trailer_file_id,
-                                          caption=caption, reply_markup=watch_kb, parse_mode="HTML")
+                await call.bot.send_video(
+                    ch.channel_id, anime.trailer_file_id,
+                    caption=caption, reply_markup=watch_kb, parse_mode="HTML"
+                )
             else:
-                await call.bot.send_message(ch.channel_id, caption,
-                                            reply_markup=watch_kb, parse_mode="HTML")
+                await call.bot.send_message(
+                    ch.channel_id, caption,
+                    reply_markup=watch_kb, parse_mode="HTML"
+                )
             sent += 1
         except Exception as e:
             await call.message.answer(f"⚠️ {ch.channel_name}: {e}")
@@ -1749,8 +2033,10 @@ async def bc_send_to_channel(call: types.CallbackQuery, state: FSMContext):
 async def bc_genre_post_start(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id): return
     await state.set_state(BroadcastState.waiting_genre_name)
-    await call.message.answer("🎭 Janr nomini kiriting:\n<i>action, drama</i>",
-                               parse_mode="HTML", reply_markup=cancel_kb)
+    await call.message.answer(
+        "🎭 Janr nomini kiriting:\n<i>action, drama</i>",
+        parse_mode="HTML", reply_markup=cancel_kb
+    )
     await call.answer()
 
 
@@ -1841,13 +2127,17 @@ async def broadcast_to_users(msg: Message, state: FSMContext):
     )
 
 
+# ═══════════════════════════════════════════════════════════
+#  QISM QO'SHISH
+# ═══════════════════════════════════════════════════════════
+
 @admin_router.message(F.text == "🎞 Qism qo'shish")
 async def add_episode_start(msg: Message):
     if not await is_admin(msg.from_user.id): return
     await msg.answer(
         f"✅ <b>Maxfiy kanal orqali qism yuklash!</b>\n\n"
         f"Kanal ID: <code>{SECRET_CHANNEL_ID}</code>\n\n"
-        "Caption:\n<b>ID: 388\nQism: 13</b>",
+        "Caption format:\n<b>ID: 388\nQism: 13</b>",
         parse_mode="HTML"
     )
 
@@ -1899,12 +2189,16 @@ async def add_episode_from_channel(message: Message):
     try:
         await message.bot.send_message(
             config.ADMIN_ID,
-            f"📥 <b>{anime.title}</b> — {episode}-qism!",
+            f"📥 <b>{anime.title}</b> — {episode}-qism qo'shildi!",
             parse_mode="HTML"
         )
     except Exception:
         pass
 
+
+# ═══════════════════════════════════════════════════════════
+#  QISM O'CHIRISH
+# ═══════════════════════════════════════════════════════════
 
 @admin_router.callback_query(F.data == "manage_delete_episodes")
 async def manage_delete_episodes_start(call: types.CallbackQuery, state: FSMContext):
@@ -1978,7 +2272,7 @@ async def del_ep_get_to(msg: Message, state: FSMContext):
     await state.clear()
     await msg.answer(
         f"⚠️ <b>{data['del_ep_anime_title']}</b>\n"
-        f"{from_ep}-{to_ep} ({to_ep - from_ep + 1} ta)",
+        f"{from_ep}-{to_ep} ({to_ep - from_ep + 1} ta) o'chirilsinmi?",
         reply_markup=kb, parse_mode="HTML"
     )
 
@@ -2007,6 +2301,10 @@ async def confirm_del_eps(call: types.CallbackQuery):
     await call.answer()
 
 
+# ═══════════════════════════════════════════════════════════
+#  STATISTIKA
+# ═══════════════════════════════════════════════════════════
+
 @admin_router.message(F.text == "📊 Statistika")
 async def show_stats(msg: Message):
     if not await is_admin(msg.from_user.id): return
@@ -2033,6 +2331,10 @@ async def show_stats(msg: Message):
     )
 
 
+# ═══════════════════════════════════════════════════════════
+#  TOP 18
+# ═══════════════════════════════════════════════════════════
+
 @admin_router.message(F.text == "🏆 Top 18")
 async def show_top18(msg: Message):
     if not await is_admin(msg.from_user.id): return
@@ -2047,13 +2349,17 @@ async def show_top18(msg: Message):
     text = "🏆 <b>TOP 18</b>\n\n👁 <b>Ko'p ko'rilgan:</b>\n"
     for i, a in enumerate(top_views, 1):
         lock = "🔒" if a.is_pro_locked else ""
-        text += f"{i}. {lock}<b>{a.title}</b> — {a.views} | ⭐{a.rating:.1f}\n"
+        text += f"{i}. {lock}<b>{a.title}</b> — {a.views} ko'rish | ⭐{a.rating:.1f}\n"
     text += "\n⭐ <b>Yuqori reytingli:</b>\n"
     for i, a in enumerate(top_rated, 1):
         lock = "🔒" if a.is_pro_locked else ""
-        text += f"{i}. {lock}<b>{a.title}</b> — ⭐{a.rating:.1f} ({a.rating_count})\n"
+        text += f"{i}. {lock}<b>{a.title}</b> — ⭐{a.rating:.1f} ({a.rating_count} ovoz)\n"
     await msg.answer(text, parse_mode="HTML", reply_markup=admin_main_kb)
 
+
+# ═══════════════════════════════════════════════════════════
+#  KANAL SOZLAMALARI
+# ═══════════════════════════════════════════════════════════
 
 @admin_router.message(F.text == "📢 Kanal sozlamalari")
 async def channel_manager(msg: Message):
@@ -2070,9 +2376,9 @@ async def channel_manager(msg: Message):
     kb   = InlineKeyboardBuilder()
     for ch in channels:
         st  = "✅" if ch.is_active else "⛔"
-        cht = "📰 News" if ch.is_news else ("🔒 Majburiy" if ch.require_check else "👁")
+        cht = "📰 News" if ch.is_news else ("🔒 Majburiy" if ch.require_check else "👁 Oddiy")
         text += f"{st} {cht} — <b>{ch.channel_name}</b>\n{ch.channel_url}\n\n"
-        btn_t = "⛔ Ochir" if ch.is_active else "✅ Yoq"
+        btn_t = "⛔ O'chir" if ch.is_active else "✅ Yoq"
         kb.row(
             InlineKeyboardButton(text=f"{btn_t} | {ch.channel_name}",
                                  callback_data=f"toggle_ch_{ch.id}"),
@@ -2091,7 +2397,8 @@ async def toggle_channel_cb(call: types.CallbackQuery):
     ch_id = int(call.data.replace("toggle_ch_", ""))
     async with AsyncSessionLocal() as session:
         result = await toggle_channel(session, ch_id)
-    await call.answer(f"{'✅ Yoqildi' if result else '⛔ Ochirildi'}", show_alert=True)
+    msg_text = "✅ Yoqildi" if result else "⛔ O'chirildi"
+    await call.answer(msg_text, show_alert=True)
     await channel_manager(call.message)
 
 

@@ -1,3 +1,13 @@
+"""
+users.py — yangilangan
+
+O'zgarishlar:
+1. Bosh menyu bosilsa → avvalgi xabar o'chib, /start holatiga qaytadi
+2. "Mening didim" bo'limi qo'shildi — hali ma'lumot yo'q deyishi to'g'rilandi
+3. Oddiy user: video/media protect_content=True (yuklab olish, forward mumkin emas)
+4. Pro user: xabarlar o'chib ketmaydi
+"""
+
 import asyncio
 from aiogram import Router, F, types
 from aiogram.filters import CommandStart, CommandObject
@@ -9,24 +19,26 @@ from database.engine import AsyncSessionLocal
 from database.queries import get_or_create_user, get_active_channels, is_subscribed_anime
 from middlewares.subscription import check_subscription, get_sub_keyboard
 from datetime import datetime
+import os
 
 user_router = Router()
 
+BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
 PHOTO_URL = "https://i.postimg.cc/zDpjp9Mz/kawaro-(1)-(3).jpg"
 
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="✨ Janr bo'yicha", callback_data="genres"),
-            InlineKeyboardButton(text="🔎 Qidiruv", switch_inline_query_current_chat=""),
+            InlineKeyboardButton(text="✨ Janr bo'yicha",       callback_data="genres"),
+            InlineKeyboardButton(text="🔎 Qidiruv",             switch_inline_query_current_chat=""),
         ],
         [
             InlineKeyboardButton(text="🔢 Kod orqali qidirish", callback_data="search_by_code"),
-            InlineKeyboardButton(text="❤️ Obunalarim", callback_data="my_subs"),
+            InlineKeyboardButton(text="❤️ Obunalarim",          callback_data="my_subs"),
         ],
         [
-            InlineKeyboardButton(text="🟢 Kaworai Pro", callback_data="kawaii_pass"),
+            InlineKeyboardButton(text="🟢 Kaworai Pro",         callback_data="kawaii_pass"),
         ],
     ])
 
@@ -51,11 +63,7 @@ async def send_main_menu(target, delete_prev: bool = False):
             parse_mode="HTML"
         )
     except Exception:
-        await msg.answer(
-            caption,
-            reply_markup=get_main_menu_keyboard(),
-            parse_mode="HTML"
-        )
+        await msg.answer(caption, reply_markup=get_main_menu_keyboard(), parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -81,8 +89,7 @@ async def cmd_start(message: types.Message, command: CommandObject):
         return await message.answer(
             "⚠️ <b>Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:</b>\n\n"
             + "\n".join(f"• {ch.channel_name}" for ch in not_subbed),
-            reply_markup=kb,
-            parse_mode="HTML"
+            reply_markup=kb, parse_mode="HTML"
         )
 
     args = command.args or ""
@@ -144,14 +151,27 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int):
         first_ep   = ep_res.scalar_one_or_none()
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
 
+        # Barcha qismlar sonini olish
+        ep_count = (await session.execute(
+            select(Series).where(Series.anime_id == anime_id)
+        )).scalars()
+        ep_list = list(ep_count)
+
     genres_text = ", ".join(anime.genres or []) or "Nomalum"
     tags_text   = ", ".join((anime.tags or [])[:3])
     lock_str    = " 🔒 Pro" if anime.is_pro_locked else ""
     sub_icon    = "🔔" if subscribed else "🔕"
     sub_txt     = "Obunani bekor qilish" if subscribed else "🔔 Obuna bo'lish"
 
-    type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
-    emoji      = type_emoji.get(anime.content_type or "anime", "🎬")
+    type_emoji  = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
+    emoji       = type_emoji.get(anime.content_type or "anime", "🎬")
+
+    status_map  = {
+        "completed": "✅ Tugagan",
+        "ongoing":   "📡 Davom etmoqda",
+        "announced": "📢 Kutilmoqda",
+    }
+    status_str = status_map.get(anime.status or "", "")
 
     caption = (
         f"{emoji} <b>{anime.title}</b>"
@@ -160,7 +180,8 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int):
         f"🎭 {genres_text}\n"
         + (f"🏷 {tags_text}\n" if tags_text else "")
         + f"⭐ {anime.rating:.1f} ({anime.rating_count} ovoz)\n"
-        f"🆔 Kod: <code>{anime.id}</code>\n\n"
+        + (f"📊 {status_str}\n" if status_str else "")
+        + f"🆔 Kod: <code>{anime.id}</code>\n\n"
         f"📖 {(anime.description or '')[:300]}"
     )
 
@@ -176,6 +197,10 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int):
             text="▶️ 1-qismdan tomosha qilish",
             callback_data=f"watch_start_{anime_id}"
         )])
+        kb_rows.append([InlineKeyboardButton(
+            text="📋 Qismlar ro'yxati",
+            callback_data=f"episodes_{anime_id}"
+        )])
     else:
         kb_rows.append([InlineKeyboardButton(
             text="⏳ Qismlar hali qo'shilmagan",
@@ -185,6 +210,13 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int):
     kb_rows.append([
         InlineKeyboardButton(text=f"{sub_icon} {sub_txt}", callback_data=f"toggle_sub_{anime_id}")
     ])
+
+    # Ulashish — url button: chat tanlash oynasi ochiladi
+    share_url = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}%3Fstart%3Danime_{anime_id}"
+    kb_rows.append([
+        InlineKeyboardButton(text="🔗 Ulashish", url=share_url)
+    ])
+
     kb_rows.append([
         InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")
     ])
@@ -195,16 +227,12 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int):
         if anime.poster_file_id:
             await message.answer_photo(
                 photo=anime.poster_file_id,
-                caption=caption,
-                reply_markup=kb,
-                parse_mode="HTML"
+                caption=caption, reply_markup=kb, parse_mode="HTML"
             )
         elif anime.inline_thumbnail_url:
             await message.answer_photo(
                 photo=anime.inline_thumbnail_url,
-                caption=caption,
-                reply_markup=kb,
-                parse_mode="HTML"
+                caption=caption, reply_markup=kb, parse_mode="HTML"
             )
         else:
             await message.answer(caption, reply_markup=kb, parse_mode="HTML")
@@ -348,11 +376,15 @@ async def cancel_sub(call: types.CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════
-#  MEDIA BLOKLASH
+#  MEDIA BLOKLASH (oddiy user)
 # ═══════════════════════════════════════════════════════════
 
 @user_router.message(F.video | F.document | F.audio | F.voice)
 async def block_media(message: types.Message):
+    """
+    Oddiy user media yuborsa — o'chirib tashlanadi.
+    Bot tomonidan kelgan protect_content videolar forward/copy qilinmaydi.
+    """
     try:
         await message.delete()
     except Exception:
@@ -365,21 +397,36 @@ async def block_media(message: types.Message):
 
 @user_router.message(F.text & ~F.text.startswith("/"))
 async def handle_text(message: types.Message):
-    text = message.text.strip()
+    text    = message.text.strip()
+    user_id = message.from_user.id
 
     # Raqam — handle_code_input boshqaradi
     if text.isdigit():
         return
 
-    # ✅ Inline dan kelgan "anime_123" formatini ushlash
-    if text.startswith("anime_"):
+    # ✅ Inline dan kelgan https://t.me/bot?start=anime_ID linkni ushlash
+    # Masalan: https://t.me/kaworai_uz_bot?start=anime_10
+    if "?start=anime_" in text:
         try:
-            anime_id = int(text.replace("anime_", ""))
+            anime_id = int(text.split("?start=anime_")[1].strip())
             try:
                 await message.delete()
             except Exception:
                 pass
-            await _show_anime_card(message, anime_id, message.from_user.id)
+            await _show_anime_card(message, anime_id, user_id)
+            return
+        except (ValueError, IndexError):
+            pass
+
+    # ✅ Inline dan kelgan qisqa "anime_123" formatini ushlash (eski)
+    if text.startswith("anime_"):
+        try:
+            anime_id = int(text.replace("anime_", "").strip())
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            await _show_anime_card(message, anime_id, user_id)
             return
         except ValueError:
             pass
@@ -389,3 +436,67 @@ async def handle_text(message: types.Message):
         await message.delete()
     except Exception:
         pass
+
+
+# ═══════════════════════════════════════════════════════════
+#  MENING DIDIM — "hali ma'lumot yo'q" tuzatildi
+# ═══════════════════════════════════════════════════════════
+
+@user_router.callback_query(F.data == "my_taste")
+async def my_taste_profile(call: types.CallbackQuery):
+    """
+    Oddiy user uchun did profili.
+    Ma'lumot yo'q bo'lsa — tushunarli xabar ko'rsatadi.
+    """
+    user_id = call.from_user.id
+
+    try:
+        from utils.recommendation import get_or_create_taste_profile, build_identity_label
+        async with AsyncSessionLocal() as session:
+            profile  = await get_or_create_taste_profile(session, user_id)
+        identity = build_identity_label(profile)
+
+        genres = dict(profile.fav_genres or {})
+        top_g  = sorted(genres.items(), key=lambda x: x[1], reverse=True)[:3]
+
+        tags   = dict(profile.fav_tags or {})
+        top_t  = sorted(tags.items(), key=lambda x: x[1], reverse=True)[:3]
+
+        has_data = bool(top_g or top_t)
+    except Exception:
+        has_data = False
+        identity = "🎌 Anime muxlisi"
+        top_g    = []
+        top_t    = []
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")]
+    ])
+
+    if not has_data:
+        text = (
+            "👤 <b>Sizning Did Profilingiz</b>\n\n"
+            "📊 Hozircha ma'lumot to'planmagan.\n\n"
+            "Ko'proq anime ko'ring — tizim avtomatik ravishda "
+            "sevimli janrlar va kayfiyatingizni aniqlaydi! 🎌\n\n"
+            "<i>Qanchalik ko'p kontent ko'rsangiz, tavsiyalar shunchalik aniq bo'ladi.</i>"
+        )
+    else:
+        g_text = "\n".join(f"  • {g}: {c} marta" for g, c in top_g) or "  Hali ma'lumot yo'q"
+        t_text = "\n".join(f"  • {t}: {c} marta" for t, c in top_t) or "  Hali ma'lumot yo'q"
+        text   = (
+            f"👤 <b>Sizning Did Profilingiz</b>\n\n"
+            f"🎯 <b>{identity}</b>\n\n"
+            f"🎭 <b>Sevimli janrlar:</b>\n{g_text}\n\n"
+            f"🏷 <b>Sevimli teglar:</b>\n{t_text}\n\n"
+            "<i>Ko'rgan kontentlaringiz asosida yig'iladi.</i>"
+        )
+
+    try:
+        await call.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        try:
+            await call.message.edit_text(text=text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await call.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await call.answer()
