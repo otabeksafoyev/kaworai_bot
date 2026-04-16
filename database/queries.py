@@ -68,7 +68,59 @@ async def add_channel(
     is_news: bool = False,
     channel_id: int | None = None,
     username: str | None = None,
-) -> SubscriptionChannel:
+) -> tuple[SubscriptionChannel, str]:
+    """
+    Kanal qo'shadi yoki allaqachon mavjud bo'lsa bayroqlarni birlashtiradi.
+
+    Qoidalar:
+      - Bir kanalni bir vaqtda "Majburiy" VA "News" qilib qo'yish mumkin —
+        bitta qatorda ikkala bayroq ham True bo'ladi.
+      - Agar kanal allaqachon shu kategoriyada bo'lsa — takroriy qo'shishga
+        yo'l qo'yilmaydi.
+
+    Qaytaradi: (channel, status) — status quyidagilardan biri:
+      - "created"           — yangi qator qo'shildi.
+      - "merged"            — mavjud qator yangi kategoriyani oldi.
+      - "duplicate_mandatory" — allaqachon majburiy ro'yxatda.
+      - "duplicate_news"    — allaqachon news ro'yxatda.
+    """
+    existing: SubscriptionChannel | None = None
+
+    # Avval `channel_id` orqali qidiramiz (u unique). Topilmasa — `channel_url`.
+    if channel_id is not None:
+        existing = (await session.execute(
+            select(SubscriptionChannel)
+            .where(SubscriptionChannel.channel_id == channel_id)
+        )).scalar_one_or_none()
+
+    if existing is None and channel_url:
+        existing = (await session.execute(
+            select(SubscriptionChannel)
+            .where(SubscriptionChannel.channel_url == channel_url)
+        )).scalar_one_or_none()
+
+    if existing is not None:
+        # Takror ogohlantirishlari — faqat shu kategoriyada takrorlash taqiqlanadi.
+        if require_check and existing.require_check:
+            return existing, "duplicate_mandatory"
+        if is_news and existing.is_news:
+            return existing, "duplicate_news"
+
+        # Birlashtirish — mavjud qatorga yangi bayroqni qo'shamiz, eskini o'chirmaymiz.
+        if require_check:
+            existing.require_check = True
+        if is_news:
+            existing.is_news = True
+        # channel_id avval None bo'lib, endi kelgan bo'lsa — yangilaymiz.
+        if channel_id is not None and existing.channel_id is None:
+            existing.channel_id = channel_id
+        if username and not existing.username:
+            existing.username = username
+        existing.is_active = True
+        await session.commit()
+        await session.refresh(existing)
+        return existing, "merged"
+
     ch = SubscriptionChannel(
         channel_id=channel_id, username=username,
         channel_url=channel_url, channel_name=channel_name,
@@ -77,7 +129,7 @@ async def add_channel(
     session.add(ch)
     await session.commit()
     await session.refresh(ch)
-    return ch
+    return ch, "created"
 
 
 async def remove_channel(session: AsyncSession, ch_id: int) -> bool:

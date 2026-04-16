@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from aiogram import Router, F, types, Bot
@@ -20,6 +21,8 @@ from database.queries import (
 )
 from data import config
 from utils.security import esc, parse_admin_ids
+
+logger = logging.getLogger(__name__)
 
 admin_router = Router()
 
@@ -2405,6 +2408,11 @@ async def toggle_channel_cb(call: types.CallbackQuery):
     ch_id = int(call.data.replace("toggle_ch_", ""))
     async with AsyncSessionLocal() as session:
         result = await toggle_channel(session, ch_id)
+    try:
+        from middlewares.subscription import invalidate_active_channels_cache
+        invalidate_active_channels_cache()
+    except Exception:
+        pass
     msg_text = "✅ Yoqildi" if result else "⛔ O'chirildi"
     await call.answer(msg_text, show_alert=True)
     await channel_manager(call.message)
@@ -2417,6 +2425,11 @@ async def delete_channel_cb(call: types.CallbackQuery):
     async with AsyncSessionLocal() as session:
         success = await remove_channel(session, ch_id)
     if success:
+        try:
+            from middlewares.subscription import invalidate_active_channels_cache
+            invalidate_active_channels_cache()
+        except Exception:
+            pass
         await call.answer("✅ O'chirildi!", show_alert=True)
         await channel_manager(call.message)
     else:
@@ -2481,9 +2494,18 @@ async def ch_type_show(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     await state.clear()
     async with AsyncSessionLocal() as session:
-        ch = await add_channel(session=session, channel_name=data["channel_name"],
-                               channel_url=data["channel_url"], require_check=False, is_news=False)
-    await call.message.edit_text(f"✅ {ch.channel_name} qo'shildi!")
+        ch, status = await add_channel(
+            session=session,
+            channel_name=data["channel_name"],
+            channel_url=data["channel_url"],
+            require_check=False,
+            is_news=False,
+        )
+    if status == "created":
+        text = f"✅ {esc(ch.channel_name)} qo'shildi!"
+    else:
+        text = f"ℹ️ {esc(ch.channel_name)} allaqachon mavjud."
+    await call.message.edit_text(text, parse_mode="HTML")
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
     await call.answer()
 
@@ -2499,6 +2521,8 @@ async def ch_type_required(call: types.CallbackQuery, state: FSMContext):
 @admin_router.message(AddChannel.waiting_channel_id)
 async def save_ch_id(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id): return
+    if not msg.text:
+        return await msg.answer("❌ Format: <code>-1001234567890</code>", parse_mode="HTML")
     if msg.text == "🚫 Bekor qilish":
         await state.clear()
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
@@ -2510,18 +2534,48 @@ async def save_ch_id(msg: Message, state: FSMContext):
     is_news = data.get("is_news_channel", False)
     await state.clear()
     async with AsyncSessionLocal() as session:
-        ch = await add_channel(
+        ch, status = await add_channel(
             session=session,
             channel_name=data["channel_name"],
             channel_url=data["channel_url"],
             require_check=not is_news,
             is_news=is_news,
-            channel_id=channel_id
+            channel_id=channel_id,
         )
-    ch_type = "📰 News" if is_news else "🔒 Majburiy"
+
+    # Subscription middleware cache'ini tozalash — yangi kanal darrov paydo bo'lsin.
+    try:
+        from middlewares.subscription import invalidate_active_channels_cache
+        invalidate_active_channels_cache()
+    except Exception:
+        pass
+
+    ch_type_label = "📰 News" if is_news else "🔒 Majburiy"
+    name_esc = esc(ch.channel_name)
+    if status == "duplicate_mandatory":
+        return await msg.answer(
+            f"⚠️ <b>{name_esc}</b> allaqachon 🔒 Majburiy ro'yxatda.\n"
+            f"Bir xil kanalni bitta kategoriyaga ikki marta qo'shib bo'lmaydi.",
+            reply_markup=admin_main_kb, parse_mode="HTML",
+        )
+    if status == "duplicate_news":
+        return await msg.answer(
+            f"⚠️ <b>{name_esc}</b> allaqachon 📰 News ro'yxatda.\n"
+            f"Bir xil kanalni bitta kategoriyaga ikki marta qo'shib bo'lmaydi.",
+            reply_markup=admin_main_kb, parse_mode="HTML",
+        )
+    if status == "merged":
+        other = "📰 News" if not is_news else "🔒 Majburiy"
+        return await msg.answer(
+            f"✅ <b>{name_esc}</b> ikkala kategoriyada ham faol:\n"
+            f"   • {ch_type_label}  (yangi qo'shildi)\n"
+            f"   • {other}  (avval bor edi)\n"
+            f"🆔 <code>{ch.channel_id}</code>",
+            reply_markup=admin_main_kb, parse_mode="HTML",
+        )
     await msg.answer(
-        f"✅ {ch.channel_name} ({ch_type}) qo'shildi!\n🆔 {ch.channel_id}",
-        reply_markup=admin_main_kb
+        f"✅ <b>{name_esc}</b> ({ch_type_label}) qo'shildi!\n🆔 <code>{ch.channel_id}</code>",
+        reply_markup=admin_main_kb, parse_mode="HTML",
     )
 
 
