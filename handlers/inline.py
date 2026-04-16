@@ -1,16 +1,25 @@
 """
 inline.py — to'liq tuzatilgan
 
-- Inline tanlanganda: https://t.me/bot?start=anime_ID LINK yuboriladi (matn emas)
-- Bo'sh qidiruv → Top 18 (9 ko'p ko'rilgan + 9 yuqori reyting)
-- Oddiy user: pro_locked va is_hidden animelar chiqmaydi
-- Pro user: hammasi chiqadi
+Inline tanlanganda:
+  - Foydalanuvchi chatda https://t.me/bot?start=anime_ID linkini yuboradi
+  - Bot shu linkni ko'rib anime kartasini chiqaradi (users.py da)
+
+Qidiruv:
+  - Bo'sh → Top 18 (9 ko'p ko'rilgan + 9 yuqori reyting)
+  - Matn → shu nomdagi animalar
+
+Filtr:
+  - Oddiy user: pro_locked animelar ko'rinmaydi
+  - Pro user: hammasi ko'rinadi
 """
 
 from aiogram import Router, types
 from aiogram.types import (
     InlineQueryResultArticle,
     InputTextMessageContent,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
 )
 from sqlalchemy import select
 from database.models import Anime, User
@@ -37,31 +46,34 @@ async def _is_pro(user_id: int) -> bool:
         return True
 
 
-def _make_share_url(anime_id: int) -> str:
-    return f"https://t.me/{BOT_USERNAME}?start=anime_{anime_id}"
-
-
-def _build_result(anime: Anime, is_pro: bool) -> InlineQueryResultArticle:
+def _make_result(anime: Anime) -> InlineQueryResultArticle:
+    """
+    Inline natija — tanlanganda foydalanuvchi chatda
+    https://t.me/BOT?start=anime_ID linkini yuboradi.
+    users.py dagi handle_text yoki cmd_start bu linkni ushlaydi
+    va anime kartasini ko'rsatadi.
+    """
     genres_text = ", ".join((anime.genres or [])[:3]) or "Nomalum"
-    ep_text     = str(anime.episodes_count or anime.total_episodes or "?")
+    ep_text     = str(getattr(anime, "episodes_count", None) or anime.total_episodes or "?")
     thumb       = anime.inline_thumbnail_url or DEFAULT_THUMB
-    share_url   = _make_share_url(anime.id)
+    lock_icon   = "🔒 " if getattr(anime, "is_pro_locked", False) else ""
 
-    lock_icon = "🔒 " if anime.is_pro_locked else ""
+    share_url = f"https://t.me/{BOT_USERNAME}?start=anime_{anime.id}"
+
     desc = (
-        f"{lock_icon}⭐ {anime.rating:.1f} | "
-        f"📅 {anime.year or '—'} | "
-        f"🎭 {genres_text[:30]} | "
+        f"{lock_icon}⭐ {anime.rating:.1f}  "
+        f"📅 {anime.year or '—'}  "
+        f"🎭 {genres_text[:25]}  "
         f"📺 {ep_text} qism"
     )
 
-    # Inline tanlanganda faqat https link yuboriladi
-    # users.py dagi handle_text bu linkni ushlaydi va anime kartasini ko'rsatadi
     return InlineQueryResultArticle(
         id=str(anime.id),
         title=f"🎬 {lock_icon}{anime.title}",
         description=desc,
         thumbnail_url=thumb,
+        # Foydalanuvchi tanlasa — shu link chatga yuboriladi
+        # Bot handle_text orqali link kelganda anime kartasini yuboradi
         input_message_content=InputTextMessageContent(
             message_text=share_url,
         ),
@@ -76,7 +88,7 @@ async def query_anime(query: types.InlineQuery):
 
     async with AsyncSessionLocal() as session:
         if not search_text:
-            # Bo'sh qidiruv → Top 18: 9 ko'p ko'rilgan + 9 yuqori reyting
+            # Bo'sh qidiruv → Top 18
             top_views = (await session.execute(
                 select(Anime).order_by(Anime.views.desc()).limit(9)
             )).scalars().all()
@@ -96,16 +108,17 @@ async def query_anime(query: types.InlineQuery):
                     animes.append(a)
         else:
             result = await session.execute(
-                select(Anime).where(Anime.title.ilike(f"%{search_text}%")).limit(30)
+                select(Anime)
+                .where(Anime.title.ilike(f"%{search_text}%"))
+                .limit(30)
             )
             animes = result.scalars().all()
 
     results = []
     for anime in animes:
-        if not is_pro and anime.is_pro_locked:
+        # Oddiy user: pro_locked ko'rinmaydi
+        if not is_pro and getattr(anime, "is_pro_locked", False):
             continue
-        if getattr(anime, "is_hidden", False):
-            continue
-        results.append(_build_result(anime, is_pro))
+        results.append(_make_result(anime))
 
     await query.answer(results, cache_time=5, is_personal=True)

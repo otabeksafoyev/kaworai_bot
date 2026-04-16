@@ -1,5 +1,5 @@
 import asyncio
-from aiogram import Router, F, types
+from aiogram import Router, F
 from aiogram.types import (
     CallbackQuery, InlineKeyboardMarkup,
     InlineKeyboardButton, InputMediaPhoto, InputMediaVideo
@@ -16,11 +16,9 @@ from datetime import datetime
 import os
 
 callback_router = Router()
-
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
 
-# Qismlar bir sahifada ko'rsatiladi — sahifalash yo'q
-# Barcha qismlar bir marta chiqadi, 4 ta button qatorida
+EP_PAGE_SIZE = 12  # 4 ta × 3 qator
 
 
 # ── Pro tekshirish ───────────────────────────────────────────
@@ -45,15 +43,14 @@ def _anime_caption(anime: Anime) -> str:
     tags        = getattr(anime, "tags", None) or []
     tags_text   = ", ".join(tags[:3])
     lock_str    = " 🔒 Pro" if getattr(anime, "is_pro_locked", False) else ""
-
     status_map  = {
         "completed": "✅ Tugagan",
         "ongoing":   "📡 Davom etmoqda",
         "announced": "📢 Kutilmoqda",
     }
-    status_str  = status_map.get(getattr(anime, "status", "") or "", "")
+    status_str = status_map.get(getattr(anime, "status", "") or "", "")
 
-    cap = (
+    return (
         f"{emoji} <b>{anime.title}</b>"
         + (f" ({anime.year})" if anime.year else "")
         + lock_str + "\n\n"
@@ -64,14 +61,9 @@ def _anime_caption(anime: Anime) -> str:
         + f"🆔 Kod: <code>{anime.id}</code>\n\n"
         f"📖 {(anime.description or '')[:300]}"
     )
-    return cap
 
 
-def _share_url(anime_id: int) -> str:
-    return f"https://t.me/{BOT_USERNAME}?start=anime_{anime_id}"
-
-
-# ── Anime info klaviaturasi ──────────────────────────────────
+# ── Anime info keyboard ──────────────────────────────────────
 def _anime_info_kb(
     anime_id: int,
     has_episodes: bool,
@@ -92,8 +84,8 @@ def _anime_info_kb(
             callback_data=f"watch_start_{anime_id}"
         )])
         rows.append([InlineKeyboardButton(
-            text="📋 Qismlar ro'yxati",
-            callback_data=f"episodes_{anime_id}"
+            text="📋 Barcha qismlar",
+            callback_data=f"episodes_{anime_id}_0"
         )])
     else:
         rows.append([InlineKeyboardButton(
@@ -102,13 +94,12 @@ def _anime_info_kb(
         )])
 
     sub_icon = "🔔" if subscribed else "🔕"
-    sub_txt  = "Obunani bekor qilish" if subscribed else "🔔 Obuna bo'lish"
+    sub_txt  = "Obunani bekor qilish" if subscribed else "Obuna bo'lish"
     rows.append([InlineKeyboardButton(
         text=f"{sub_icon} {sub_txt}",
         callback_data=f"toggle_sub_{anime_id}"
     )])
 
-    # Ulashish — url button: chat ochiladi va link yuboriladi
     rows.append([InlineKeyboardButton(
         text="🔗 Ulashish",
         url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}%3Fstart%3Danime_{anime_id}"
@@ -120,7 +111,7 @@ def _anime_info_kb(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# ── Player klaviaturasi ──────────────────────────────────────
+# ── Player keyboard ──────────────────────────────────────────
 def _player_kb(
     anime_id: int,
     episode: int,
@@ -148,32 +139,33 @@ def _player_kb(
     if nav:
         rows.append(nav)
 
+    # Qaysi sahifada ekanligini hisoblash (qismlar ro'yxatiga qaytish uchun)
+    ep_page = max(0, (episode - 1) // EP_PAGE_SIZE)
     rows.append([
-        InlineKeyboardButton(text="📋 Qismlar", callback_data=f"episodes_{anime_id}"),
-        InlineKeyboardButton(text="🏠 Asosiy",  callback_data="main_menu"),
+        InlineKeyboardButton(
+            text="📋 Qismlar",
+            callback_data=f"episodes_{anime_id}_{ep_page}"
+        ),
+        InlineKeyboardButton(text="🏠 Asosiy", callback_data="main_menu"),
     ])
 
-    # Muammolar
     rows.append([InlineKeyboardButton(
         text="⚠️ Muammo bormi?",
         callback_data=f"problems_{anime_id}_{episode}"
     )])
 
-    # Obuna
     sub_icon = "🔔" if subscribed else "🔕"
-    sub_txt  = "Obunani bekor qilish" if subscribed else "🔔 Obuna bo'lish"
+    sub_txt  = "Obunani bekor qilish" if subscribed else "Obuna bo'lish"
     rows.append([InlineKeyboardButton(
         text=f"{sub_icon} {sub_txt}",
         callback_data=f"toggle_sub_{anime_id}"
     )])
 
-    # Ulashish — url button: chat ochiladi va link yuboriladi
     rows.append([InlineKeyboardButton(
         text="🔗 Ulashish",
         url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}%3Fstart%3Danime_{anime_id}"
     )])
 
-    # Baho
     if is_last and not user_rated:
         rows.append([InlineKeyboardButton(
             text="⭐ Baho berish", callback_data=f"rate_{anime_id}"
@@ -186,30 +178,110 @@ def _player_kb(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# ── Qismlar ro'yxati — barcha qismlar bir marta ──────────────
-def _episodes_kb(anime_id: int, episodes: list) -> InlineKeyboardMarkup:
+# ── Qismlar keyboard — 4×3 = 12 ta, sahifalash ──────────────
+def _episodes_kb(
+    anime_id: int,
+    episodes: list,
+    page: int = 0,
+) -> InlineKeyboardMarkup:
     """
-    Barcha qismlar bir marta chiqadi.
-    4 ta button bir qatorda.
-    Sahifalash yo'q.
+    12 ta qism ko'rsatiladi (4 ta × 3 qator).
+    12 tadan ko'p bo'lsa keyingi/oldingi sahifa tugmalari chiqadi.
     """
+    total       = len(episodes)
+    total_pages = max(1, (total + EP_PAGE_SIZE - 1) // EP_PAGE_SIZE)
+    page        = max(0, min(page, total_pages - 1))
+
+    start    = page * EP_PAGE_SIZE
+    end      = start + EP_PAGE_SIZE
+    page_eps = sorted(episodes, key=lambda e: e.episode)[start:end]
+
     rows = []
     row  = []
-    for ep in sorted(episodes, key=lambda e: e.episode):
+    for ep in page_eps:
         row.append(InlineKeyboardButton(
             text=str(ep.episode),
             callback_data=f"ep_{anime_id}_{ep.episode}"
         ))
-        if len(row) == 4:
+        if len(row) == 4:   # 4 ta × 3 qator = 12 ta
             rows.append(row)
             row = []
     if row:
         rows.append(row)
 
+    # Sahifa navigatsiyasi — faqat 12 dan ko'p bo'lsa
+    if total_pages > 1:
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(
+                text=f"⬅️ {page}",
+                callback_data=f"episodes_{anime_id}_{page - 1}"
+            ))
+        nav.append(InlineKeyboardButton(
+            text=f"📄 {page + 1}/{total_pages}",
+            callback_data="noop"
+        ))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton(
+                text=f"{page + 2} ➡️",
+                callback_data=f"episodes_{anime_id}_{page + 1}"
+            ))
+        rows.append(nav)
+
     rows.append([InlineKeyboardButton(
         text="🔙 Orqaga", callback_data=f"anime_info_{anime_id}"
     )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ── Video yuborish yordamchi ─────────────────────────────────
+async def _send_or_edit_video(
+    call: CallbackQuery,
+    ep_file_id: str,
+    caption: str,
+    kb: InlineKeyboardMarkup,
+    is_pro: bool,
+) -> None:
+    """
+    Pro user   → edit_media (xabar o'zgarmaydi, videolar to'planadi)
+    Oddiy user → avvalgi o'chirilmaydi, faqat video o'zgaradi (edit_media)
+                 Agar xabar video bo'lsa edit ishlaydi, bo'lmasa yangi yuboradi.
+
+    MUHIM: Oddiy user uchun protect_content=True (yuklab olish, forward blok).
+    """
+    if is_pro:
+        # Pro: edit_media — xabar saqlanib qoladi
+        try:
+            await call.message.edit_media(
+                InputMediaVideo(media=ep_file_id, caption=caption, parse_mode="HTML"),
+                reply_markup=kb
+            )
+            return
+        except Exception:
+            pass
+        # edit ishlamasa (masalan, dastlabki rasm xabari) — yangi yuborish
+        await call.message.answer_video(
+            video=ep_file_id, caption=caption,
+            reply_markup=kb, parse_mode="HTML"
+        )
+    else:
+        # Oddiy user: edit_media orqali VIDEO O'ZGARADI, xabar o'chмайди
+        # Agar avvalgi xabar video bo'lsa → edit ishlaydi
+        # Agar rasm/matn bo'lsa → yangi video yuboriladi (protect_content)
+        try:
+            await call.message.edit_media(
+                InputMediaVideo(media=ep_file_id, caption=caption, parse_mode="HTML"),
+                reply_markup=kb
+            )
+            return
+        except Exception:
+            pass
+        # edit ishlamadi (masalan, poster rasm edi) — yangi protect_content video
+        await call.message.answer_video(
+            video=ep_file_id, caption=caption,
+            reply_markup=kb, parse_mode="HTML",
+            protect_content=True
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -253,17 +325,17 @@ async def show_anime_info(call: CallbackQuery):
                 reply_markup=kb
             )
         else:
-            await call.message.edit_caption(caption=caption, reply_markup=kb, parse_mode="HTML")
+            try:
+                await call.message.edit_caption(caption=caption, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                await call.message.edit_text(caption, reply_markup=kb, parse_mode="HTML")
     except Exception:
-        try:
-            await call.message.edit_text(caption, reply_markup=kb, parse_mode="HTML")
-        except Exception:
-            await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
+        await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
     await call.answer()
 
 
 # ═══════════════════════════════════════════════════════════
-#  WATCH START
+#  WATCH START — 1-qismdan boshlash
 # ═══════════════════════════════════════════════════════════
 
 @callback_router.callback_query(F.data.startswith("watch_start_"))
@@ -280,9 +352,7 @@ async def watch_start(call: CallbackQuery):
             return await call.answer("🔒 Faqat Pro uchun!", show_alert=True)
 
         result = await session.execute(
-            select(Series)
-            .where(Series.anime_id == anime_id)
-            .order_by(Series.episode.asc())
+            select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
         )
         episodes    = result.scalars().all()
         user_rating = await get_user_rating(session, anime_id, user_id)
@@ -307,36 +377,12 @@ async def watch_start(call: CallbackQuery):
         await add_to_watch_history(session, user_id, anime_id, ep.episode)
         await record_view(session, anime_id, user_id)
 
-    # Pro → xabar saqlanib qoladi (o'chirilmaydi)
-    # Oddiy → yangi xabar, avvalgisi o'chib ketadi
-    if is_pro:
-        # Pro: edit_media bilan xabar o'zgartirish (o'chirmaydi)
-        try:
-            await call.message.edit_media(
-                InputMediaVideo(media=ep.file_id, caption=caption, parse_mode="HTML"),
-                reply_markup=kb
-            )
-        except Exception:
-            await call.message.answer_video(
-                video=ep.file_id, caption=caption,
-                reply_markup=kb, parse_mode="HTML"
-            )
-    else:
-        # Oddiy: xabarni protect_content bilan yuborish (yuklab olish, forward mumkin emas)
-        try:
-            await call.message.delete()
-        except Exception:
-            pass
-        await call.message.answer_video(
-            video=ep.file_id, caption=caption,
-            reply_markup=kb, parse_mode="HTML",
-            protect_content=True   # ← copy/forward/download bloklanadi
-        )
+    await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro)
     await call.answer()
 
 
 # ═══════════════════════════════════════════════════════════
-#  EPISODE — navigatsiya
+#  EPISODE — qism navigatsiyasi
 # ═══════════════════════════════════════════════════════════
 
 @callback_router.callback_query(F.data.startswith("ep_"))
@@ -360,9 +406,7 @@ async def show_episode(call: CallbackQuery):
             return await call.answer("🔒 Faqat Pro uchun!", show_alert=True)
 
         result = await session.execute(
-            select(Series)
-            .where(Series.anime_id == anime_id)
-            .order_by(Series.episode.asc())
+            select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
         )
         episodes    = result.scalars().all()
         user_rating = await get_user_rating(session, anime_id, user_id)
@@ -377,7 +421,7 @@ async def show_episode(call: CallbackQuery):
     is_last    = (episode == max_ep)
     user_rated = user_rating is not None
 
-    kb      = _player_kb(anime_id, episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
+    kb = _player_kb(anime_id, episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
     caption = (
         f"🎬 <b>{anime.title}</b>\n"
         f"▶️ {episode}-qism  |  📺 Jami: {total} qism"
@@ -389,40 +433,22 @@ async def show_episode(call: CallbackQuery):
             is_completed=(episode == max_ep)
         )
 
-    if is_pro:
-        # Pro: xabar o'zgartiriladi (o'chirmaydi)
-        try:
-            await call.message.edit_media(
-                InputMediaVideo(media=ep.file_id, caption=caption, parse_mode="HTML"),
-                reply_markup=kb
-            )
-        except Exception:
-            await call.message.answer_video(
-                video=ep.file_id, caption=caption,
-                reply_markup=kb, parse_mode="HTML"
-            )
-    else:
-        # Oddiy: avvalgisini o'chir, yangi protect_content bilan yuborish
-        try:
-            await call.message.delete()
-        except Exception:
-            pass
-        await call.message.answer_video(
-            video=ep.file_id, caption=caption,
-            reply_markup=kb, parse_mode="HTML",
-            protect_content=True
-        )
+    await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro)
     await call.answer()
 
 
 # ═══════════════════════════════════════════════════════════
-#  EPISODES LIST — barcha qismlar bir marta
+#  EPISODES LIST — 12 ta, sahifalash bilan
 # ═══════════════════════════════════════════════════════════
 
 @callback_router.callback_query(F.data.startswith("episodes_"))
 async def show_episodes_list(call: CallbackQuery):
-    anime_id = int(call.data.split("_")[1])
-    is_pro   = await _is_pro(call.from_user.id)
+    # Format: episodes_{anime_id}_{page}
+    parts    = call.data.split("_")
+    anime_id = int(parts[1])
+    page     = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
+    is_pro = await _is_pro(call.from_user.id)
 
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
@@ -432,25 +458,35 @@ async def show_episodes_list(call: CallbackQuery):
             return await call.answer("🔒 Faqat Pro uchun!", show_alert=True)
 
         result = await session.execute(
-            select(Series)
-            .where(Series.anime_id == anime_id)
-            .order_by(Series.episode.asc())
+            select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
         )
         episodes = result.scalars().all()
 
     if not episodes:
         return await call.answer("❌ Qismlar yo'q!", show_alert=True)
 
-    # Barcha qismlar bir marta — sahifalash yo'q
-    kb   = _episodes_kb(anime_id, episodes)
+    total       = len(episodes)
+    total_pages = max(1, (total + EP_PAGE_SIZE - 1) // EP_PAGE_SIZE)
+    page        = max(0, min(page, total_pages - 1))
+
+    kb   = _episodes_kb(anime_id, episodes, page)
     text = (
         f"🎬 <b>{anime.title}</b>\n"
-        f"📺 Jami {len(episodes)} qism — birini tanlang:"
+        f"📺 Jami {total} qism"
+        + (f"  |  📄 {page + 1}/{total_pages}-sahifa" if total_pages > 1 else "")
+        + "\n\nQaysi qismdan tomosha qilmoqchisiz?"
     )
+
     try:
         await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
         await call.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await call.answer()
+
+
+# noop — sahifa ko'rsatkichi uchun
+@callback_router.callback_query(F.data == "noop")
+async def noop_cb(call: CallbackQuery):
     await call.answer()
 
 
@@ -475,6 +511,7 @@ async def toggle_subscription(call: CallbackQuery):
                 show_alert=True
             )
 
+    # Anime info sahifasini yangilash
     await show_anime_info(CallbackQuery(
         id=call.id,
         from_user=call.from_user,
@@ -567,17 +604,13 @@ async def rate_anime(call: CallbackQuery):
     rows = []
     row  = []
     for i in range(1, 11):
-        row.append(InlineKeyboardButton(
-            text=str(i), callback_data=f"score_{anime_id}_{i}"
-        ))
+        row.append(InlineKeyboardButton(text=str(i), callback_data=f"score_{anime_id}_{i}"))
         if len(row) == 5:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
-    rows.append([InlineKeyboardButton(
-        text="❌ Bekor", callback_data=f"ep_{anime_id}_cancel"
-    )])
+    rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data=f"ep_{anime_id}_cancel")])
 
     await call.message.answer(
         "⭐ <b>Baho bering (1-10):</b>",
@@ -616,7 +649,7 @@ async def already_rated(call: CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════
-#  MAIN MENU — avvalgi xabar o'chib, /start ga o'tadi
+#  MAIN MENU
 # ═══════════════════════════════════════════════════════════
 
 @callback_router.callback_query(F.data == "main_menu")
@@ -641,7 +674,7 @@ async def no_episodes_cb(call: CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════
-#  WATCH (boshqa joylardan chaqirilgan)
+#  WATCH (pro_user boshqa joylardan chaqirganda)
 # ═══════════════════════════════════════════════════════════
 
 @callback_router.callback_query(
@@ -663,9 +696,7 @@ async def watch_anime(call: CallbackQuery):
             return await call.answer("🔒 Faqat Pro uchun!", show_alert=True)
 
         result = await session.execute(
-            select(Series)
-            .where(Series.anime_id == anime_id)
-            .order_by(Series.episode.asc())
+            select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
         )
         episodes    = result.scalars().all()
         user_rating = await get_user_rating(session, anime_id, user_id)
@@ -674,16 +705,13 @@ async def watch_anime(call: CallbackQuery):
     if not episodes:
         return await call.answer("❌ Hali qismlar qo'shilmagan!", show_alert=True)
 
-    ep = next(
-        (e for e in episodes if e.episode == ep_num), episodes[0]
-    ) if ep_num else episodes[0]
-
-    total      = len(episodes)
-    max_ep     = max(e.episode for e in episodes)
+    ep     = next((e for e in episodes if e.episode == ep_num), episodes[0]) if ep_num else episodes[0]
+    total  = len(episodes)
+    max_ep = max(e.episode for e in episodes)
     is_last    = (ep.episode == max_ep)
     user_rated = user_rating is not None
 
-    kb      = _player_kb(anime_id, ep.episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
+    kb = _player_kb(anime_id, ep.episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
     caption = (
         f"🎬 <b>{anime.title}</b>\n"
         f"▶️ {ep.episode}-qism  |  📺 Jami: {total} qism"
@@ -692,25 +720,5 @@ async def watch_anime(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         await add_to_watch_history(session, user_id, anime_id, ep.episode)
 
-    if is_pro:
-        try:
-            await call.message.edit_media(
-                InputMediaVideo(media=ep.file_id, caption=caption, parse_mode="HTML"),
-                reply_markup=kb
-            )
-        except Exception:
-            await call.message.answer_video(
-                video=ep.file_id, caption=caption,
-                reply_markup=kb, parse_mode="HTML"
-            )
-    else:
-        try:
-            await call.message.delete()
-        except Exception:
-            pass
-        await call.message.answer_video(
-            video=ep.file_id, caption=caption,
-            reply_markup=kb, parse_mode="HTML",
-            protect_content=True
-        )
+    await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro)
     await call.answer()
