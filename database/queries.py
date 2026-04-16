@@ -1,4 +1,4 @@
-from sqlalchemy import select, func, delete, update
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import (
     User, SubscriptionChannel, Anime, AnimeRating,
@@ -19,7 +19,6 @@ async def get_or_create_user(
 ) -> tuple:
     user = await session.get(User, telegram_id)
     if user:
-        # Username yangilash
         if username and user.username != username:
             user.username = username
             await session.commit()
@@ -54,7 +53,7 @@ async def get_all_channels(session: AsyncSession) -> list:
 async def get_news_channels(session: AsyncSession) -> list:
     result = await session.execute(
         select(SubscriptionChannel).where(
-            SubscriptionChannel.is_news == True,
+            SubscriptionChannel.is_news   == True,
             SubscriptionChannel.is_active == True
         )
     )
@@ -71,13 +70,9 @@ async def add_channel(
     username: str | None = None,
 ) -> SubscriptionChannel:
     ch = SubscriptionChannel(
-        channel_id=channel_id,
-        username=username,
-        channel_url=channel_url,
-        channel_name=channel_name,
-        is_active=True,
-        require_check=require_check,
-        is_news=is_news
+        channel_id=channel_id, username=username,
+        channel_url=channel_url, channel_name=channel_name,
+        is_active=True, require_check=require_check, is_news=is_news
     )
     session.add(ch)
     await session.commit()
@@ -223,7 +218,6 @@ async def is_subscribed_anime(
 async def get_anime_subscribers(
     session: AsyncSession, anime_id: int
 ) -> list[int]:
-    """Animega obuna bo'lgan barcha user_idlar."""
     result = await session.execute(
         select(AnimeSubscription.user_id).where(
             AnimeSubscription.anime_id == anime_id
@@ -233,7 +227,7 @@ async def get_anime_subscribers(
 
 
 # ═══════════════════════════════════════════════════════════
-#  WATCH HISTORY
+#  WATCH HISTORY — LIMIT YO'Q, TO'G'RI is_completed
 # ═══════════════════════════════════════════════════════════
 
 async def add_to_watch_history(
@@ -244,8 +238,11 @@ async def add_to_watch_history(
     is_completed: bool = False,
 ) -> None:
     """
-    Foydalanuvchi tomosha tarixiga qo'shadi.
-    Mavjud bo'lsa yangilaydi.
+    Watch historyga yozadi.
+    MUHIM o'zgarishlar:
+      - Limit YO'Q (eski 5 ta limit olib tashlandi)
+      - is_completed: haqiqiy oxirgi qismga yetganda True
+      - Taste profile ham yangilanadi
     """
     try:
         from database.models import UserWatchHistory
@@ -256,11 +253,15 @@ async def add_to_watch_history(
             )
         )
         hw = result.scalar_one_or_none()
+
         if hw:
+            # Faqat yuqori episode saqlanadi
             if episode > hw.last_episode:
                 hw.last_episode = episode
-            hw.is_completed = is_completed
-            hw.watched_at   = func.now()
+            # is_completed faqat True ga o'tadi, False ga qaytmaydi
+            if is_completed:
+                hw.is_completed = True
+            hw.watched_at = func.now()
         else:
             session.add(UserWatchHistory(
                 user_id=user_id,
@@ -268,7 +269,18 @@ async def add_to_watch_history(
                 last_episode=episode,
                 is_completed=is_completed,
             ))
+
         await session.commit()
+
+        # Taste profile yangilash
+        anime = await session.get(Anime, anime_id)
+        if anime:
+            try:
+                from utils.recommendation import update_taste_profile
+                await update_taste_profile(session, user_id, anime)
+            except Exception:
+                pass
+
     except Exception:
         pass
 
@@ -278,7 +290,7 @@ async def record_view(
     anime_id: int,
     user_id: int | None = None,
 ) -> None:
-    """Ko'rishni yozadi va views counterni oshiradi."""
+    """Ko'rishni yozadi va views counter oshiradi."""
     try:
         from database.models import ViewRecord
         session.add(ViewRecord(anime_id=anime_id, user_id=user_id))
@@ -305,13 +317,11 @@ async def get_anime_full_info(
         select(func.count(Series.id)).where(Series.anime_id == anime_id)
     )).scalar() or 0
 
-    # Obunalar
     sub_count = (await session.execute(
         select(func.count(AnimeSubscription.user_id))
         .where(AnimeSubscription.anime_id == anime_id)
     )).scalar() or 0
 
-    # Pro obunalar
     try:
         pro_sub_count = (await session.execute(
             select(func.count(AnimeSubscription.user_id))

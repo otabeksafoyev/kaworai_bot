@@ -1,6 +1,7 @@
 from aiogram.fsm.state import State, StatesGroup
 
 
+# 🔹 Anime qo‘shish
 class AddAnime(StatesGroup):
     waiting_id             = State()
     waiting_title          = State()
@@ -23,6 +24,7 @@ class AddAnime(StatesGroup):
     waiting_trailer        = State()
 
 
+# 🔹 Kanal qo‘shish
 class AddChannel(StatesGroup):
     waiting_name       = State()
     waiting_url        = State()
@@ -30,6 +32,7 @@ class AddChannel(StatesGroup):
     waiting_channel_id = State()
 
 
+# 🔹 Anime tahrirlash
 class EditAnime(StatesGroup):
     waiting_anime_id           = State()
     waiting_field              = State()
@@ -42,6 +45,7 @@ class EditAnime(StatesGroup):
     waiting_delete_ep_to       = State()
 
 
+# 🔹 Broadcast (xabar yuborish)
 class BroadcastState(StatesGroup):
     waiting_content            = State()
     waiting_media_type         = State()
@@ -55,8 +59,15 @@ class BroadcastState(StatesGroup):
     waiting_genre_channel      = State()
 
 
-
+# 🔹 PRO tizim
 class AdminProState(StatesGroup):
     waiting_user_id  = State()
     waiting_pro_days = State()
     waiting_msg_text = State()
+
+
+# 🔹 Episode qo‘shish (MUHIM — alohida class!)
+class AddEpisodeState(StatesGroup):
+    waiting_anime_id = State()
+    waiting_from_ep  = State()
+    waiting_to_ep    = State()
