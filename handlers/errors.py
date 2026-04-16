@@ -14,6 +14,7 @@ Asosiy maqsadlar:
 
 from __future__ import annotations
 
+import html
 import logging
 import time
 import traceback
@@ -110,11 +111,16 @@ async def _notify_admin(event: ErrorEvent) -> None:
     tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     tb_tail = tb[-1500:]  # Telegram xabarlari 4096 belgidan ko'p bo'la olmaydi
     where = _describe_event(event)
+    # Tracebacklar odatda `<module>`, `<stdin>`, `list[dict[...]]` kabi HTML
+    # ko'rinishida yozilgan matnlarni o'z ichiga oladi. Escape qilmasak,
+    # Telegram parserga noto'g'ri tag ko'rinib send_message xato beradi va
+    # admin xabarni umuman olmaydi.
     text = (
         "🚨 <b>Bot xatosi</b>\n"
-        f"<code>{type(exc).__name__}</code>: {str(exc)[:300]}\n\n"
-        f"<i>Event:</i> <code>{where[:200]}</code>\n\n"
-        f"<pre>{tb_tail}</pre>"
+        f"<code>{html.escape(type(exc).__name__)}</code>: "
+        f"{html.escape(str(exc)[:300])}\n\n"
+        f"<i>Event:</i> <code>{html.escape(where[:200])}</code>\n\n"
+        f"<pre>{html.escape(tb_tail)}</pre>"
     )
     try:
         await bot.send_message(admin_id, text, parse_mode="HTML", disable_web_page_preview=True)
