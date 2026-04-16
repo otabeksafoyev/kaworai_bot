@@ -19,10 +19,14 @@ from database.queries import (
     get_all_channels, add_channel, remove_channel, toggle_channel, get_news_channels
 )
 from data import config
+from utils.security import esc, parse_admin_ids
 
 admin_router = Router()
 
-ADMINS            = os.getenv("ADMIN_ID", "").split(",")
+# `parse_admin_ids` bo'sh stringlarni filtrlaydi — bu muhim, chunki
+# `"".split(",")` list `[""]` ni qaytaradi va bu avtorizatsiya mantig'ida
+# xatolarga sabab bo'lishi mumkin.
+ADMINS            = parse_admin_ids(os.getenv("ADMIN_ID", ""))
 SECRET_CHANNEL_ID = config.SECRET_CHANNEL_ID
 NEWS_CHANNEL_ID   = config.NEWS_CHANNEL_ID
 BOT_USERNAME      = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
@@ -452,8 +456,10 @@ async def _show_user_info(msg: Message, user_id: int):
 
     pro_status  = "✅ Ha" if is_pro else "❌ Yo'q"
     joined_str  = user.joined_at.strftime("%d.%m.%Y") if user.joined_at else "—"
-    username    = user.username or "—"
-    full_name   = user.full_name or "—"
+    # Foydalanuvchining full_name va username'i ishonchli bo'lmagan
+    # matn — HTML injection'dan himoya uchun ekran qilamiz.
+    username    = esc(user.username) if user.username else "—"
+    full_name   = esc(user.full_name) if user.full_name else "—"
 
     text = (
         f"👤 <b>Foydalanuvchi</b>\n\n"
@@ -586,7 +592,7 @@ async def pm_pro_list(call: types.CallbackQuery):
     now  = datetime.utcnow()
     text = f"⭐ <b>Pro foydalanuvchilar ({len(users)} ta):</b>\n\n"
     for i, u in enumerate(users[:25], 1):
-        uname = f"@{u.username}" if u.username else "—"
+        uname = f"@{esc(u.username)}" if u.username else "—"
         if u.pro_until:
             days_left = (u.pro_until - now).days
             until_str = u.pro_until.strftime("%d.%m.%Y") + f" ({days_left}k)"
@@ -616,8 +622,10 @@ async def pm_admin_list(call: types.CallbackQuery):
     if admins:
         text += f"🛠 <b>Adminlar ({len(admins)} ta):</b>\n\n"
         for i, a in enumerate(admins, 1):
-            nick = a.nickname or "—"
-            text += f"{i}. <code>{a.telegram_id}</code> — {nick} ({a.role})\n"
+            # Nickname odatda admin tomonidan yoziladi, lekin baribir
+            # HTML injection'dan himoya uchun ekran qilamiz.
+            nick = esc(a.nickname) if a.nickname else "—"
+            text += f"{i}. <code>{a.telegram_id}</code> — {nick} ({esc(a.role)})\n"
     else:
         text += "🛠 Qo'shimcha adminlar yo'q."
 

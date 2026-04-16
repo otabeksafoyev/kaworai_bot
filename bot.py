@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from loader import bot, dp
 from database.engine import init_db
 from middlewares.subscription import SubscriptionMiddleware
+from middlewares.throttling import ThrottlingMiddleware
 
 from handlers.admin import admin_router
 from handlers.callbacks import callback_router
@@ -50,6 +51,12 @@ async def main():
     dp.include_router(callback_router)
     dp.include_router(inline_router)
     dp.include_router(genre_router)
+
+    # Throttling middleware — foydalanuvchi spam / brute-force qilishining
+    # oldini oladi. Handler qabul qilinganidan oldin ishga tushadi, shuning
+    # uchun uni subscription middleware'dan oldin qo'shamiz.
+    dp.message.middleware(ThrottlingMiddleware())
+    dp.callback_query.middleware(ThrottlingMiddleware())
 
     # Obuna tekshiruv middleware
     dp.message.middleware(SubscriptionMiddleware())

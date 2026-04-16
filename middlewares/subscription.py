@@ -3,9 +3,12 @@ from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 from database.engine import AsyncSessionLocal
 from database.queries import get_active_channels
+from utils.security import parse_admin_ids
 import os
 
-ADMINS = os.getenv("ADMIN_ID", "").split(",")
+# `parse_admin_ids` bo'sh ID'larni filtrlaydi — aks holda `""` qiymati
+# admin ro'yxatida qoladi va kelajakdagi tekshiruvlarni xatolashtirishi mumkin.
+ADMINS = parse_admin_ids(os.getenv("ADMIN_ID", ""))
 
 
 def get_sub_keyboard(channels: list):
