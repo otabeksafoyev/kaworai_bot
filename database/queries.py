@@ -83,16 +83,14 @@ async def add_channel(
 
     # Avval `channel_id` orqali qidiramiz (u unique). Topilmasa — `channel_url`.
     if channel_id is not None:
-        existing = (await session.execute(
-            select(SubscriptionChannel)
-            .where(SubscriptionChannel.channel_id == channel_id)
-        )).scalar_one_or_none()
+        existing = (
+            await session.execute(select(SubscriptionChannel).where(SubscriptionChannel.channel_id == channel_id))
+        ).scalar_one_or_none()
 
     if existing is None and channel_url:
-        existing = (await session.execute(
-            select(SubscriptionChannel)
-            .where(SubscriptionChannel.channel_url == channel_url)
-        )).scalar_one_or_none()
+        existing = (
+            await session.execute(select(SubscriptionChannel).where(SubscriptionChannel.channel_url == channel_url))
+        ).scalar_one_or_none()
 
     if existing is not None:
         # Takror ogohlantirishlari — faqat shu kategoriyada takrorlash taqiqlanadi.

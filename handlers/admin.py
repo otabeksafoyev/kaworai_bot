@@ -2452,6 +2452,7 @@ async def toggle_channel_cb(call: types.CallbackQuery):
         result = await toggle_channel(session, ch_id)
     try:
         from middlewares.subscription import invalidate_active_channels_cache
+
         invalidate_active_channels_cache()
     except Exception:
         pass
@@ -2470,6 +2471,7 @@ async def delete_channel_cb(call: types.CallbackQuery):
     if success:
         try:
             from middlewares.subscription import invalidate_active_channels_cache
+
             invalidate_active_channels_cache()
         except Exception:
             pass

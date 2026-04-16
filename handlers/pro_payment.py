@@ -451,7 +451,9 @@ async def receipt_received(msg: Message, state: FSMContext):
         channel_ok = False
         logger.exception(
             "receipt_received: failed to forward receipt to PAYMENT_CHANNEL_ID=%s user=%s plan=%s",
-            PAYMENT_CHANNEL_ID, user_id, plan_key,
+            PAYMENT_CHANNEL_ID,
+            user_id,
+            plan_key,
         )
         # Kanal ishlamasa — to'g'ridan-to'g'ri ADMIN_ID ga
         try:
@@ -476,7 +478,9 @@ async def receipt_received(msg: Message, state: FSMContext):
             admin_ok = False
             logger.exception(
                 "receipt_received: fallback send to ADMIN_ID=%s also failed user=%s plan=%s",
-                ADMIN_ID, user_id, plan_key,
+                ADMIN_ID,
+                user_id,
+                plan_key,
             )
     else:
         admin_ok = True
@@ -484,7 +488,9 @@ async def receipt_received(msg: Message, state: FSMContext):
     if not channel_ok and not admin_ok:
         logger.error(
             "receipt_received: receipt LOST (no admin received it) user=%s plan=%s username=%s",
-            user_id, plan_key, username,
+            user_id,
+            plan_key,
+            username,
         )
 
     admin_line = f"\n\n📩 Savollar uchun: @{esc(ADMIN_USERNAME)}" if ADMIN_USERNAME else ""
@@ -552,12 +558,16 @@ async def admin_confirm_pro(call: CallbackQuery):
     except Exception:
         logger.exception(
             "admin_confirm_pro: failed to notify user=%s about Pro activation (admin=%s)",
-            user_id, call.from_user.id,
+            user_id,
+            call.from_user.id,
         )
 
     logger.info(
         "admin_confirm_pro: admin=%s granted Pro user=%s plan=%s until=%s",
-        call.from_user.id, user_id, plan_key, until_str,
+        call.from_user.id,
+        user_id,
+        plan_key,
+        until_str,
     )
 
     # Admin kanalda xabarni yangilash
@@ -573,7 +583,8 @@ async def admin_confirm_pro(call: CallbackQuery):
     except Exception:
         logger.exception(
             "admin_confirm_pro: failed to update admin channel message admin=%s target=%s",
-            call.from_user.id, user_id,
+            call.from_user.id,
+            user_id,
         )
 
     await call.answer(f"✅ Pro faollashtirildi! ({until_str})", show_alert=True)
@@ -626,12 +637,15 @@ async def reject_reason_received(msg: Message, state: FSMContext):
     except Exception:
         logger.exception(
             "reject_reason_received: failed to notify user=%s about rejection (admin=%s)",
-            user_id, msg.from_user.id,
+            user_id,
+            msg.from_user.id,
         )
 
     logger.info(
         "reject_reason_received: admin=%s rejected user=%s has_reason=%s",
-        msg.from_user.id, user_id, bool(reason),
+        msg.from_user.id,
+        user_id,
+        bool(reason),
     )
 
     await msg.answer(f"✅ Foydalanuvchi ({user_id}) xabardor qilindi.")
@@ -696,12 +710,14 @@ async def admin_msg_send(msg: Message, state: FSMContext):
             )
         logger.info(
             "admin_msg_send: admin=%s sent message to user=%s",
-            msg.from_user.id, user_id,
+            msg.from_user.id,
+            user_id,
         )
         await msg.answer(f"✅ Xabar yuborildi (ID: {user_id})")
     except Exception as e:
         logger.exception(
             "admin_msg_send: failed to deliver admin message admin=%s target=%s",
-            msg.from_user.id, user_id,
+            msg.from_user.id,
+            user_id,
         )
         await msg.answer(f"❌ Xabar yuborib bo'lmadi: {e}")

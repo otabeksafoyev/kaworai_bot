@@ -102,12 +102,15 @@ async def add_admin_cmd(msg: Message):
     except Exception:
         logger.exception(
             "add_admin_cmd: failed to notify new admin=%s (owner=%s)",
-            new_admin_id, msg.from_user.id,
+            new_admin_id,
+            msg.from_user.id,
         )
 
     logger.info(
         "add_admin_cmd: owner=%s added admin=%s nickname=%s",
-        msg.from_user.id, new_admin_id, nickname,
+        msg.from_user.id,
+        new_admin_id,
+        nickname,
     )
 
     nick_str = f" ({nickname})" if nickname else ""
@@ -144,12 +147,14 @@ async def remove_admin_cmd(msg: Message):
     except Exception:
         logger.exception(
             "remove_admin_cmd: failed to notify removed admin=%s (owner=%s)",
-            target_id, msg.from_user.id,
+            target_id,
+            msg.from_user.id,
         )
 
     logger.info(
         "remove_admin_cmd: owner=%s removed admin=%s",
-        msg.from_user.id, target_id,
+        msg.from_user.id,
+        target_id,
     )
 
     await msg.answer(f"✅ <code>{target_id}</code> admin huquqi olib tashlandi.", parse_mode="HTML")
@@ -242,12 +247,16 @@ async def set_pro_cmd(msg: Message):
     except Exception:
         logger.exception(
             "set_pro_cmd: failed to notify user=%s about Pro activation (admin=%s)",
-            user_id, msg.from_user.id,
+            user_id,
+            msg.from_user.id,
         )
 
     logger.info(
         "set_pro_cmd: admin=%s granted Pro user=%s days=%s until=%s",
-        msg.from_user.id, user_id, days, until_str,
+        msg.from_user.id,
+        user_id,
+        days,
+        until_str,
     )
 
     await msg.answer(
@@ -282,12 +291,14 @@ async def remove_pro_cmd(msg: Message):
     except Exception:
         logger.exception(
             "remove_pro_cmd: failed to notify user=%s (admin=%s)",
-            user_id, msg.from_user.id,
+            user_id,
+            msg.from_user.id,
         )
 
     logger.info(
         "remove_pro_cmd: admin=%s removed Pro user=%s",
-        msg.from_user.id, user_id,
+        msg.from_user.id,
+        user_id,
     )
 
     await msg.answer(f"✅ <b>{esc(full_name)}</b> (<code>{user_id}</code>) Pro olib tashlandi.", parse_mode="HTML")
@@ -418,12 +429,16 @@ async def usr_pro_give(call: types.CallbackQuery):
     except Exception:
         logger.exception(
             "usr_pro_give: failed to notify user=%s (admin=%s)",
-            user_id, call.from_user.id,
+            user_id,
+            call.from_user.id,
         )
 
     logger.info(
         "usr_pro_give: admin=%s granted Pro user=%s days=%s until=%s",
-        call.from_user.id, user_id, days, until_str,
+        call.from_user.id,
+        user_id,
+        days,
+        until_str,
     )
 
     await call.answer(f"✅ {days} kunlik Pro berildi! ({until_str})", show_alert=True)
@@ -450,12 +465,14 @@ async def usr_remove_pro(call: types.CallbackQuery):
     except Exception:
         logger.exception(
             "usr_remove_pro: failed to notify user=%s (admin=%s)",
-            user_id, call.from_user.id,
+            user_id,
+            call.from_user.id,
         )
 
     logger.info(
         "usr_remove_pro: admin=%s removed Pro user=%s",
-        call.from_user.id, user_id,
+        call.from_user.id,
+        user_id,
     )
 
     await call.answer("✅ Pro olib tashlandi!", show_alert=True)

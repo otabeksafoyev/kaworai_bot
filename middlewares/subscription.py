@@ -91,13 +91,16 @@ async def _check_one(bot, user_id: int, ch) -> Any:
         # Sekin/ishlamayotgan kanal — foydalanuvchini bloklamaymiz.
         logger.warning(
             "subscription: get_chat_member timed out channel=%s user=%s",
-            getattr(ch, "channel_id", None), user_id,
+            getattr(ch, "channel_id", None),
+            user_id,
         )
     except Exception:
         # Kanal o'chirilgan, bot admin emas va hokazo — bloklamaymiz.
         logger.debug(
             "subscription: get_chat_member failed channel=%s user=%s",
-            getattr(ch, "channel_id", None), user_id, exc_info=True,
+            getattr(ch, "channel_id", None),
+            user_id,
+            exc_info=True,
         )
     return None
 

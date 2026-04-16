@@ -8,7 +8,6 @@ from aiogram.fsm.storage.redis import RedisStorage
 
 from data import config
 
-
 logging.basicConfig(level=logging.INFO)
 
 # Redis ulanishi — FSM state'ni saqlaydi. Jarayon restart bo'lsa ham
