@@ -1,23 +1,22 @@
 import asyncio
 import logging
-import sys
 import os
+import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from loader import bot, dp
 from database.engine import init_db
+from handlers.admin import admin_router
+from handlers.admin_pro import pro_admin_router
+from handlers.callbacks import callback_router
+from handlers.genres import genre_router
+from handlers.inline import inline_router
+from handlers.pro_payment import pro_payment_router
+from handlers.users import user_router
+from handlers.users_pro import pro_user_router
+from loader import bot, dp
 from middlewares.subscription import SubscriptionMiddleware
 from middlewares.throttling import ThrottlingMiddleware
-
-from handlers.admin import admin_router
-from handlers.callbacks import callback_router
-from handlers.users import user_router
-from handlers.inline import inline_router
-from handlers.genres import genre_router
-from handlers.admin_pro import pro_admin_router
-from handlers.users_pro import pro_user_router
-from handlers.pro_payment import pro_payment_router
 
 
 async def on_startup():
@@ -37,7 +36,7 @@ async def main():
         handlers=[
             logging.StreamHandler(sys.stdout),
             logging.FileHandler("bot.log", encoding="utf-8"),
-        ]
+        ],
     )
 
     await on_startup()

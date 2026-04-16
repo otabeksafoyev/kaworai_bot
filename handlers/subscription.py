@@ -20,10 +20,7 @@ async def check_subscription_handler(call: CallbackQuery, session_maker: async_s
     not_subscribed = []
     for partner in partners:
         try:
-            member = await bot.get_chat_member(
-                chat_id=partner.channel_id,
-                user_id=call.from_user.id
-            )
+            member = await bot.get_chat_member(chat_id=partner.channel_id, user_id=call.from_user.id)
             if member.status in ("left", "kicked", "banned"):
                 not_subscribed.append(partner)
         except Exception:
@@ -42,7 +39,6 @@ async def check_subscription_handler(call: CallbackQuery, session_maker: async_s
         # Hammaga obuna bo'ldi!
         await call.message.delete()
         await call.message.answer(
-            "✅ <b>Rahmat! Endi botdan to'liq foydalanishingiz mumkin.</b>\n\n"
-            "🎌 /start — boshiga qaytish"
+            "✅ <b>Rahmat! Endi botdan to'liq foydalanishingiz mumkin.</b>\n\n🎌 /start — boshiga qaytish"
         )
         await call.answer("✅ Obuna tasdiqlandi!", show_alert=True)

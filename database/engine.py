@@ -1,8 +1,9 @@
 import os
+
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base
 
 load_dotenv()
 DB_URL = os.getenv("DB_URL")
@@ -18,11 +19,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
 )
 
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
+AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
 # Barcha migration — mavjud bo'lsa o'tkazib yuboradi
 MIGRATIONS = [
@@ -112,11 +109,6 @@ MIGRATIONS = [
 async def init_db():
     try:
         # Avval modellarni import qilish (jadval yaratish uchun)
-        from database.models import (
-            User, Admin, Anime, Series, SubscriptionChannel,
-            AnimeRating, AnimeSubscription, RelatedContent,
-            UserWatchHistory, UserTasteProfile, ViewRecord
-        )
 
         async with engine.begin() as conn:
             # SQLAlchemy modellari orqali asosiy jadvallarni yaratish

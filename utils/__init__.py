@@ -1,3 +1,3 @@
-from .redis_helpers import set_watching, get_watching, clear_watching
+from .redis_helpers import clear_watching, get_watching, set_watching
 
-__all__ = ["set_watching", "get_watching", "clear_watching"]
+__all__ = ["clear_watching", "get_watching", "set_watching"]

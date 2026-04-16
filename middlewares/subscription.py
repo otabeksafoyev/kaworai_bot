@@ -1,10 +1,12 @@
+import os
 from typing import Any, Awaitable, Callable
+
 from aiogram import BaseMiddleware
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import CallbackQuery, Message
+
 from database.engine import AsyncSessionLocal
 from database.queries import get_active_channels
 from utils.security import parse_admin_ids
-import os
 
 # `parse_admin_ids` bo'sh ID'larni filtrlaydi — aks holda `""` qiymati
 # admin ro'yxatida qoladi va kelajakdagi tekshiruvlarni xatolashtirishi mumkin.
@@ -12,16 +14,17 @@ ADMINS = parse_admin_ids(os.getenv("ADMIN_ID", ""))
 
 
 def get_sub_keyboard(channels: list):
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
     buttons = []
     for ch in channels:
-        buttons.append([
-            InlineKeyboardButton(text=f"📢 {ch.channel_name}", url=ch.channel_url)
-        ])
-    buttons.append([
-        InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_subs"),
-        InlineKeyboardButton(text="❌ Chiqish", callback_data="cancel_sub_check"),
-    ])
+        buttons.append([InlineKeyboardButton(text=f"📢 {ch.channel_name}", url=ch.channel_url)])
+    buttons.append(
+        [
+            InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_subs"),
+            InlineKeyboardButton(text="❌ Chiqish", callback_data="cancel_sub_check"),
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -45,12 +48,7 @@ async def check_subscription(bot, user_id: int, channels: list) -> list:
 
 
 class SubscriptionMiddleware(BaseMiddleware):
-    async def __call__(
-        self,
-        handler: Callable[[Any, dict], Awaitable[Any]],
-        event: Any,
-        data: dict
-    ) -> Any:
+    async def __call__(self, handler: Callable[[Any, dict], Awaitable[Any]], event: Any, data: dict) -> Any:
         if isinstance(event, Message):
             user = event.from_user
         elif isinstance(event, CallbackQuery):
@@ -76,9 +74,8 @@ class SubscriptionMiddleware(BaseMiddleware):
         not_subbed = await check_subscription(bot, user.id, channels)
 
         if not_subbed:
-            text = (
-                "⚠️ <b>Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:</b>\n\n"
-                + "\n".join(f"• {ch.channel_name}" for ch in not_subbed)
+            text = "⚠️ <b>Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:</b>\n\n" + "\n".join(
+                f"• {ch.channel_name}" for ch in not_subbed
             )
             kb = get_sub_keyboard(not_subbed)
             if isinstance(event, Message):
