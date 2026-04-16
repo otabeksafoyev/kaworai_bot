@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # ── Asosiy ───────────────────────────────────────────────
     BOT_TOKEN: str
     ADMIN_ID: int
-    DB_URL: str
+    DATABASE_URL: str
     REDIS_URL: str
 
     # ── Kanallar ─────────────────────────────────────────────
