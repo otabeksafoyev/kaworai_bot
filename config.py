@@ -14,22 +14,22 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # ── Asosiy ───────────────────────────────────────────────
     BOT_TOKEN: str
-    ADMIN_ID:  int
-    DB_URL:    str
+    ADMIN_ID: int
+    DB_URL: str
     REDIS_URL: str
 
     # ── Kanallar ─────────────────────────────────────────────
     SECRET_CHANNEL_ID: int = 0
-    NEWS_CHANNEL_ID:   int = 0
+    NEWS_CHANNEL_ID: int = 0
 
     # ── Pro to'lov tizimi (.env orqali majburiy) ─────────────
     PAYMENT_CHANNEL_ID: int
-    CARD_NUMBER:        str
-    CARD_OWNER:         str
-    ADMIN_USERNAME:     str
+    CARD_NUMBER: str
+    CARD_OWNER: str
+    ADMIN_USERNAME: str
 
     class Config:
-        env_file          = ".env"
+        env_file = ".env"
         env_file_encoding = "utf-8"
 
 

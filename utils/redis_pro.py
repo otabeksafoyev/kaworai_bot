@@ -7,9 +7,10 @@ TTL: recommendation = 5 daqiqa, trending = 10 daqiqa
 """
 
 import json
-from typing import Any, Optional
-import redis.asyncio as aioredis
 import os
+from typing import Any, Optional
+
+import redis.asyncio as aioredis
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -27,26 +28,33 @@ async def get_redis() -> aioredis.Redis:
 def _rec_key(user_id: int) -> str:
     return f"rec:{user_id}"
 
+
 def _trending_key(content_type: str = "all") -> str:
     return f"trending:{content_type}"
+
 
 def _top_key(content_type: str = "all") -> str:
     return f"top:{content_type}"
 
+
 def _rising_key(content_type: str = "all") -> str:
     return f"rising:{content_type}"
+
 
 def _hidden_key(content_type: str = "all") -> str:
     return f"hidden:{content_type}"
 
+
 def _taste_key(user_id: int) -> str:
     return f"taste:{user_id}"
+
 
 def _related_key(anime_id: int) -> str:
     return f"related:{anime_id}"
 
 
 # ─── Generic get/set ──────────────────────────────────────
+
 
 async def cache_get(key: str) -> Optional[Any]:
     try:
@@ -86,12 +94,13 @@ async def cache_delete_pattern(pattern: str) -> None:
 
 # ─── Pro-specific cache funksiyalari ─────────────────────
 
+
 async def get_cached_recommendations(user_id: int) -> Optional[list]:
     return await cache_get(_rec_key(user_id))
 
 
 async def set_cached_recommendations(user_id: int, items: list) -> None:
-    await cache_set(_rec_key(user_id), items, ttl=300)   # 5 daqiqa
+    await cache_set(_rec_key(user_id), items, ttl=300)  # 5 daqiqa
 
 
 async def invalidate_user_cache(user_id: int) -> None:
@@ -105,7 +114,7 @@ async def get_cached_trending(content_type: str = "all") -> Optional[list]:
 
 
 async def set_cached_trending(items: list, content_type: str = "all") -> None:
-    await cache_set(_trending_key(content_type), items, ttl=600)   # 10 daqiqa
+    await cache_set(_trending_key(content_type), items, ttl=600)  # 10 daqiqa
 
 
 async def get_cached_top(content_type: str = "all") -> Optional[list]:
@@ -113,7 +122,7 @@ async def get_cached_top(content_type: str = "all") -> Optional[list]:
 
 
 async def set_cached_top(items: list, content_type: str = "all") -> None:
-    await cache_set(_top_key(content_type), items, ttl=1800)   # 30 daqiqa
+    await cache_set(_top_key(content_type), items, ttl=1800)  # 30 daqiqa
 
 
 async def get_cached_rising(content_type: str = "all") -> Optional[list]:
@@ -129,7 +138,7 @@ async def get_cached_hidden(content_type: str = "all") -> Optional[list]:
 
 
 async def set_cached_hidden(items: list, content_type: str = "all") -> None:
-    await cache_set(_hidden_key(content_type), items, ttl=3600)   # 1 soat
+    await cache_set(_hidden_key(content_type), items, ttl=3600)  # 1 soat
 
 
 async def get_cached_related(anime_id: int) -> Optional[list]:

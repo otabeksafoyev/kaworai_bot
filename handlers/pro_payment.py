@@ -3,24 +3,24 @@ Kaworai Pro — Obuna to'lov tizimi
 5 sahifa, bitta xabar ichida edit_message orqali navigatsiya.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from aiogram import Router, F, types
-from aiogram.types import (
-    Message, CallbackQuery,
-    InlineKeyboardMarkup, InlineKeyboardButton,
-)
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 from sqlalchemy import select
 
-from database.engine import AsyncSessionLocal
-from database.models import User, Admin
-from loader import bot
 from data import config
+from database.engine import AsyncSessionLocal
+from database.models import Admin, User
+from loader import bot
 from utils.security import esc, parse_admin_ids
 
 logger = logging.getLogger(__name__)
@@ -33,26 +33,29 @@ pro_payment_router = Router()
 # username bor edi — bu PII sizlanish xavfi edi. Endi default bo'sh va
 # .env sozlanmasa, matnlarda "—" ko'rinadi.
 PAYMENT_CHANNEL_ID = getattr(config, "PAYMENT_CHANNEL_ID", 0)
-CARD_NUMBER        = getattr(config, "CARD_NUMBER",       "")
-CARD_OWNER         = getattr(config, "CARD_OWNER",        "")
-ADMIN_USERNAME     = getattr(config, "ADMIN_USERNAME",    "")
-ADMIN_ID           = getattr(config, "ADMIN_ID",          None)
+CARD_NUMBER = getattr(config, "CARD_NUMBER", "")
+CARD_OWNER = getattr(config, "CARD_OWNER", "")
+ADMIN_USERNAME = getattr(config, "ADMIN_USERNAME", "")
+ADMIN_ID = getattr(config, "ADMIN_ID", None)
 
 # ── Narxlar ────────────────────────────────────────────────
 PLANS = {
-    "1":  {"label": "❤️ 1 oylik",        "price": "9.000",  "months": 1},
-    "2":  {"label": "🔥 2 oylik",         "price": "16.000", "months": 2},
-    "3":  {"label": "❤️‍🔥 3 oylik",      "price": "21.000", "months": 3},
-    "6":  {"label": "⚡ 6 oylik",         "price": "39.000", "months": 6},
-    "12": {"label": "🌙 1 yillik",        "price": "69.000", "months": 12},
+    "1": {"label": "❤️ 1 oylik", "price": "9.000", "months": 1},
+    "2": {"label": "🔥 2 oylik", "price": "16.000", "months": 2},
+    "3": {"label": "❤️‍🔥 3 oylik", "price": "21.000", "months": 3},
+    "6": {"label": "⚡ 6 oylik", "price": "39.000", "months": 6},
+    "12": {"label": "🌙 1 yillik", "price": "69.000", "months": 12},
 }
+
 
 # ── FSM ────────────────────────────────────────────────────
 class ProPaymentState(StatesGroup):
     waiting_receipt = State()
 
+
 class AdminRejectState(StatesGroup):
     waiting_reason = State()
+
 
 class AdminMsgState(StatesGroup):
     waiting_msg = State()
@@ -61,15 +64,14 @@ class AdminMsgState(StatesGroup):
 # ── Admin tekshirish ────────────────────────────────────────
 async def _is_admin(user_id: int) -> bool:
     import os
+
     admins_env = parse_admin_ids(os.getenv("ADMIN_ID", ""))
     if str(user_id) in admins_env:
         return True
     if ADMIN_ID and str(user_id) == str(ADMIN_ID):
         return True
     async with AsyncSessionLocal() as session:
-        r = await session.execute(
-            select(Admin).where(Admin.telegram_id == user_id)
-        )
+        r = await session.execute(select(Admin).where(Admin.telegram_id == user_id))
         return r.scalar_one_or_none() is not None
 
 
@@ -80,7 +82,7 @@ async def _check_pro(user_id: int) -> bool:
         if not user or not user.is_pro:
             return False
         if user.pro_until and user.pro_until < datetime.utcnow():
-            user.is_pro    = False
+            user.is_pro = False
             user.pro_until = None
             await session.commit()
             return False
@@ -90,6 +92,7 @@ async def _check_pro(user_id: int) -> bool:
 # ═══════════════════════════════════════════════════════════
 #  SAHIFA TEXTLARI VA KEYBOARDLARI
 # ═══════════════════════════════════════════════════════════
+
 
 def _page1_text() -> str:
     return (
@@ -109,10 +112,12 @@ def _page1_text() -> str:
 
 
 def _page1_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🟢 Sotib olish", callback_data="pro_page2")],
-        [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🟢 Sotib olish", callback_data="pro_page2")],
+            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")],
+        ]
+    )
 
 
 def _page2_text() -> str:
@@ -131,27 +136,30 @@ def _page2_text() -> str:
 
 
 def _page2_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❤️ 1 oylik",            callback_data="pro_plan_1")],
-        [
-            InlineKeyboardButton(text="🔥 2 oylik (-11%)",      callback_data="pro_plan_2"),
-            InlineKeyboardButton(text="❤️‍🔥 3 oylik (-22%)",   callback_data="pro_plan_3"),
-        ],
-        [
-            InlineKeyboardButton(text="⚡ 6 oylik (-28%)",      callback_data="pro_plan_6"),
-            InlineKeyboardButton(text="🌙 1 yillik (-40%)",     callback_data="pro_plan_12"),
-        ],
-        [InlineKeyboardButton(text="🔙 Ortga", callback_data="pro_page1")],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="❤️ 1 oylik", callback_data="pro_plan_1")],
+            [
+                InlineKeyboardButton(text="🔥 2 oylik (-11%)", callback_data="pro_plan_2"),
+                InlineKeyboardButton(text="❤️‍🔥 3 oylik (-22%)", callback_data="pro_plan_3"),
+            ],
+            [
+                InlineKeyboardButton(text="⚡ 6 oylik (-28%)", callback_data="pro_plan_6"),
+                InlineKeyboardButton(text="🌙 1 yillik (-40%)", callback_data="pro_plan_12"),
+            ],
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data="pro_page1")],
+        ]
+    )
 
 
 def _page3_text(plan_key: str) -> str:
     plan = PLANS[plan_key]
-    card_line  = f"💳 Karta raqam: <code>{esc(CARD_NUMBER)}</code>\n" if CARD_NUMBER else ""
-    owner_line = f"👤 Qabul qiluvchi: {esc(CARD_OWNER)}\n"            if CARD_OWNER  else ""
+    card_line = f"💳 Karta raqam: <code>{esc(CARD_NUMBER)}</code>\n" if CARD_NUMBER else ""
+    owner_line = f"👤 Qabul qiluvchi: {esc(CARD_OWNER)}\n" if CARD_OWNER else ""
     admin_line = (
         f"📩 Savollar bormi?\n👉 @{esc(ADMIN_USERNAME)} ga murojaat qiling"
-        if ADMIN_USERNAME else "📩 Savollar bormi?\n👉 Adminga murojaat qiling"
+        if ADMIN_USERNAME
+        else "📩 Savollar bormi?\n👉 Adminga murojaat qiling"
     )
     return (
         "💳 <b>Kaworai Pro obunasini faollashtirish</b>\n\n"
@@ -172,13 +180,12 @@ def _page3_text(plan_key: str) -> str:
 
 
 def _page3_kb(plan_key: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="📸 Chekni yuborish",
-            callback_data=f"pro_send_receipt_{plan_key}"
-        )],
-        [InlineKeyboardButton(text="🔙 Ortga", callback_data="pro_page2")],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📸 Chekni yuborish", callback_data=f"pro_send_receipt_{plan_key}")],
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data="pro_page2")],
+        ]
+    )
 
 
 def _page4_text() -> str:
@@ -195,13 +202,15 @@ def _page4_text() -> str:
 
 
 def _page4_kb(plan_key: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Ortga", callback_data=f"pro_plan_{plan_key}")],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data=f"pro_plan_{plan_key}")],
+        ]
+    )
 
 
 def _admin_caption(user_id: int, username, full_name: str, plan_key: str) -> str:
-    plan  = PLANS[plan_key]
+    plan = PLANS[plan_key]
     # Foydalanuvchi tanlay oladigan maydonlar (full_name, username) ni
     # ishonchli emas, shuning uchun HTML injection'dan oldini olish uchun
     # ularni ekran qilamiz.
@@ -218,18 +227,21 @@ def _admin_caption(user_id: int, username, full_name: str, plan_key: str) -> str
 
 
 def _admin_kb(user_id: int, plan_key: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Tasdiqlash",    callback_data=f"pro_confirm_{user_id}_{plan_key}"),
-            InlineKeyboardButton(text="❌ Tasdiqlanmadi", callback_data=f"pro_reject_{user_id}_{plan_key}"),
-        ],
-        [InlineKeyboardButton(text="✉️ Xabar yuborish",  callback_data=f"pro_msg_{user_id}")],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"pro_confirm_{user_id}_{plan_key}"),
+                InlineKeyboardButton(text="❌ Tasdiqlanmadi", callback_data=f"pro_reject_{user_id}_{plan_key}"),
+            ],
+            [InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}")],
+        ]
+    )
 
 
 # ═══════════════════════════════════════════════════════════
 #  1-SAHIFA
 # ═══════════════════════════════════════════════════════════
+
 
 @pro_payment_router.callback_query(F.data == "kawaii_pass")
 async def pro_page1(call: CallbackQuery, state: FSMContext):
@@ -266,31 +278,29 @@ async def _show_pro_active_menu(call: CallbackQuery):
         if user and user.pro_until:
             until_str = f"\n📅 Pro tugash sanasi: <b>{user.pro_until.strftime('%d.%m.%Y')}</b>"
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🤖 AI Tavsiyalar",    callback_data="pro_recommend"),
-            InlineKeyboardButton(text="😌 Kayfiyatim",       callback_data="pro_mood"),
-        ],
-        [
-            InlineKeyboardButton(text="🔥 Trending",         callback_data="pro_trending"),
-            InlineKeyboardButton(text="⭐ Top reyting",       callback_data="pro_top"),
-        ],
-        [
-            InlineKeyboardButton(text="📈 Rising",           callback_data="pro_rising"),
-            InlineKeyboardButton(text="💎 Hidden Gems",      callback_data="pro_hidden"),
-        ],
-        [
-            InlineKeyboardButton(text="▶️ Davom ettirish",   callback_data="pro_continue"),
-            InlineKeyboardButton(text="👤 Mening didim",     callback_data="pro_taste"),
-        ],
-        [InlineKeyboardButton(text="🏠 Asosiy menyu",        callback_data="main_menu")],
-    ])
-
-    text = (
-        "⚡ <b>Kaworai Pro</b>\n\n"
-        f"✅ Siz Pro foydalanuvchisiz!{until_str}\n\n"
-        "Nima qilmoqchisiz?"
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🤖 AI Tavsiyalar", callback_data="pro_recommend"),
+                InlineKeyboardButton(text="😌 Kayfiyatim", callback_data="pro_mood"),
+            ],
+            [
+                InlineKeyboardButton(text="🔥 Trending", callback_data="pro_trending"),
+                InlineKeyboardButton(text="⭐ Top reyting", callback_data="pro_top"),
+            ],
+            [
+                InlineKeyboardButton(text="📈 Rising", callback_data="pro_rising"),
+                InlineKeyboardButton(text="💎 Hidden Gems", callback_data="pro_hidden"),
+            ],
+            [
+                InlineKeyboardButton(text="▶️ Davom ettirish", callback_data="pro_continue"),
+                InlineKeyboardButton(text="👤 Mening didim", callback_data="pro_taste"),
+            ],
+            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")],
+        ]
     )
+
+    text = f"⚡ <b>Kaworai Pro</b>\n\n✅ Siz Pro foydalanuvchisiz!{until_str}\n\nNima qilmoqchisiz?"
 
     try:
         await call.message.edit_text(
@@ -322,6 +332,7 @@ async def back_to_page1(call: CallbackQuery, state: FSMContext):
 #  2-SAHIFA — Narxlar
 # ═══════════════════════════════════════════════════════════
 
+
 @pro_payment_router.callback_query(F.data == "pro_page2")
 async def pro_page2(call: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -343,6 +354,7 @@ async def pro_page2(call: CallbackQuery, state: FSMContext):
 # ═══════════════════════════════════════════════════════════
 #  3-SAHIFA — To'lov ma'lumotlari
 # ═══════════════════════════════════════════════════════════
+
 
 @pro_payment_router.callback_query(F.data.startswith("pro_plan_"))
 async def pro_page3(call: CallbackQuery, state: FSMContext):
@@ -373,6 +385,7 @@ async def pro_page3(call: CallbackQuery, state: FSMContext):
 #  4-SAHIFA — Chek yuborish ekrani
 # ═══════════════════════════════════════════════════════════
 
+
 @pro_payment_router.callback_query(F.data.startswith("pro_send_receipt_"))
 async def pro_page4(call: CallbackQuery, state: FSMContext):
     plan_key = call.data.replace("pro_send_receipt_", "")
@@ -399,23 +412,21 @@ async def pro_page4(call: CallbackQuery, state: FSMContext):
 #  CHEK QABUL QILISH
 # ═══════════════════════════════════════════════════════════
 
-@pro_payment_router.message(
-    ProPaymentState.waiting_receipt,
-    F.photo | F.document
-)
-async def receipt_received(msg: Message, state: FSMContext):
-    data     = await state.get_data()
-    plan_key = data.get("plan_key", "1")
-    plan     = PLANS.get(plan_key, PLANS["1"])
 
-    user_id   = msg.from_user.id
-    username  = msg.from_user.username
+@pro_payment_router.message(ProPaymentState.waiting_receipt, F.photo | F.document)
+async def receipt_received(msg: Message, state: FSMContext):
+    data = await state.get_data()
+    plan_key = data.get("plan_key", "1")
+    plan = PLANS.get(plan_key, PLANS["1"])
+
+    user_id = msg.from_user.id
+    username = msg.from_user.username
     full_name = msg.from_user.full_name
 
     await state.clear()
 
-    caption   = _admin_caption(user_id, username, full_name, plan_key)
-    admin_kb  = _admin_kb(user_id, plan_key)
+    caption = _admin_caption(user_id, username, full_name, plan_key)
+    admin_kb = _admin_kb(user_id, plan_key)
 
     # Admin kanaliga yuborish
     try:
@@ -476,17 +487,13 @@ async def receipt_received(msg: Message, state: FSMContext):
             user_id, plan_key, username,
         )
 
-    admin_line = (
-        f"\n\n📩 Savollar uchun: @{esc(ADMIN_USERNAME)}"
-        if ADMIN_USERNAME else ""
-    )
+    admin_line = f"\n\n📩 Savollar uchun: @{esc(ADMIN_USERNAME)}" if ADMIN_USERNAME else ""
     await msg.answer(
         "✅ <b>Chek qabul qilindi!</b>\n\n"
         f"📦 Muddat: <b>{plan['label']}</b>\n"
         f"💰 Summa: <b>{plan['price']} so'm</b>\n\n"
         "⏳ Adminlar tekshirib, tez orada Pro'ni yoqib berishadi.\n"
-        "Odatda <b>5–30 daqiqa</b> ichida aktivlanadi."
-        + admin_line,
+        "Odatda <b>5–30 daqiqa</b> ichida aktivlanadi." + admin_line,
         parse_mode="HTML",
     )
 
@@ -494,8 +501,7 @@ async def receipt_received(msg: Message, state: FSMContext):
 @pro_payment_router.message(ProPaymentState.waiting_receipt)
 async def receipt_wrong_format(msg: Message):
     await msg.answer(
-        "❌ Iltimos, <b>rasm</b> yoki <b>fayl</b> yuboring!\n\n"
-        "📸 To'lov chekining skrinshoti bo'lishi kerak.",
+        "❌ Iltimos, <b>rasm</b> yoki <b>fayl</b> yuboring!\n\n📸 To'lov chekining skrinshoti bo'lishi kerak.",
         parse_mode="HTML",
     )
 
@@ -504,15 +510,16 @@ async def receipt_wrong_format(msg: Message):
 #  ADMIN: TASDIQLASH
 # ═══════════════════════════════════════════════════════════
 
+
 @pro_payment_router.callback_query(F.data.startswith("pro_confirm_"))
 async def admin_confirm_pro(call: CallbackQuery):
     if not await _is_admin(call.from_user.id):
         return await call.answer("❌ Faqat adminlar!", show_alert=True)
 
-    parts    = call.data.replace("pro_confirm_", "").split("_")
-    user_id  = int(parts[0])
+    parts = call.data.replace("pro_confirm_", "").split("_")
+    user_id = int(parts[0])
     plan_key = parts[1]
-    plan     = PLANS.get(plan_key, PLANS["1"])
+    plan = PLANS.get(plan_key, PLANS["1"])
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
@@ -576,13 +583,14 @@ async def admin_confirm_pro(call: CallbackQuery):
 #  ADMIN: RAD ETISH
 # ═══════════════════════════════════════════════════════════
 
+
 @pro_payment_router.callback_query(F.data.startswith("pro_reject_"))
 async def admin_reject_start(call: CallbackQuery, state: FSMContext):
     if not await _is_admin(call.from_user.id):
         return await call.answer("❌ Faqat adminlar!", show_alert=True)
 
-    parts    = call.data.replace("pro_reject_", "").split("_")
-    user_id  = int(parts[0])
+    parts = call.data.replace("pro_reject_", "").split("_")
+    user_id = int(parts[0])
     plan_key = parts[1]
 
     await state.update_data(reject_user_id=user_id, reject_plan=plan_key)
@@ -599,7 +607,7 @@ async def admin_reject_start(call: CallbackQuery, state: FSMContext):
 
 @pro_payment_router.message(AdminRejectState.waiting_reason)
 async def reject_reason_received(msg: Message, state: FSMContext):
-    data    = await state.get_data()
+    data = await state.get_data()
     user_id = data.get("reject_user_id")
     await state.clear()
 
@@ -633,6 +641,7 @@ async def reject_reason_received(msg: Message, state: FSMContext):
 #  ADMIN: BOT ORQALI XABAR YUBORISH
 # ═══════════════════════════════════════════════════════════
 
+
 @pro_payment_router.callback_query(F.data.startswith("pro_msg_"))
 async def admin_msg_start(call: CallbackQuery, state: FSMContext):
     if not await _is_admin(call.from_user.id):
@@ -643,8 +652,7 @@ async def admin_msg_start(call: CallbackQuery, state: FSMContext):
     await state.set_state(AdminMsgState.waiting_msg)
 
     await call.message.answer(
-        f"✉️ <b>Foydalanuvchi ({user_id}) ga xabar yozing:</b>\n\n"
-        "Matn, rasm, video — barchasi bo'lishi mumkin.",
+        f"✉️ <b>Foydalanuvchi ({user_id}) ga xabar yozing:</b>\n\nMatn, rasm, video — barchasi bo'lishi mumkin.",
         parse_mode="HTML",
     )
     await call.answer()
@@ -652,7 +660,7 @@ async def admin_msg_start(call: CallbackQuery, state: FSMContext):
 
 @pro_payment_router.message(AdminMsgState.waiting_msg)
 async def admin_msg_send(msg: Message, state: FSMContext):
-    data    = await state.get_data()
+    data = await state.get_data()
     user_id = data.get("msg_target_user")
     await state.clear()
 

@@ -15,13 +15,13 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from aiogram import Router, F, types
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import F, Router, types
 from aiogram.filters import Command
-from sqlalchemy import select, func
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from sqlalchemy import func, select
 
 from database.engine import AsyncSessionLocal
-from database.models import Anime, Admin, User, Series, AnimeSubscription
+from database.models import Admin, Anime, AnimeSubscription, Series, User
 from database.queries import get_anime_full_info
 from utils.security import esc, parse_admin_ids
 
@@ -32,7 +32,7 @@ pro_admin_router = Router()
 # Bo'sh ID'larni filtrlash — `"".split(",")` `[""]` qaytaradi, natijada
 # har qanday foydalanuvchi bo'sh string bilan taqqoslansa admin deb
 # tan olinishi xavfi bor.
-OWNER_IDS = parse_admin_ids(os.getenv("ADMIN_ID", ""))   # .env dagi asosiy adminlar
+OWNER_IDS = parse_admin_ids(os.getenv("ADMIN_ID", ""))  # .env dagi asosiy adminlar
 
 
 def _is_owner(user_id: int) -> bool:
@@ -57,6 +57,7 @@ def _yes_no(val: bool) -> str:
 #  ADMIN QO'SHISH / O'CHIRISH
 # ═══════════════════════════════════════════════════════════
 
+
 @pro_admin_router.message(Command("add_admin"))
 async def add_admin_cmd(msg: Message):
     if not _is_owner(msg.from_user.id):
@@ -65,9 +66,8 @@ async def add_admin_cmd(msg: Message):
     parts = msg.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
         return await msg.answer(
-            "Format: <code>/add_admin 123456789</code>\n"
-            "Ixtiyoriy: <code>/add_admin 123456789 Ism</code>",
-            parse_mode="HTML"
+            "Format: <code>/add_admin 123456789</code>\nIxtiyoriy: <code>/add_admin 123456789 Ism</code>",
+            parse_mode="HTML",
         )
 
     new_admin_id = int(parts[1])
@@ -96,11 +96,8 @@ async def add_admin_cmd(msg: Message):
     try:
         await msg.bot.send_message(
             chat_id=new_admin_id,
-            text=(
-                "✅ <b>Siz Kaworai botiga admin qilib qo'shildingiz!</b>\n\n"
-                "Admin panelga kirish: /admin"
-            ),
-            parse_mode="HTML"
+            text=("✅ <b>Siz Kaworai botiga admin qilib qo'shildingiz!</b>\n\nAdmin panelga kirish: /admin"),
+            parse_mode="HTML",
         )
     except Exception:
         logger.exception(
@@ -114,10 +111,7 @@ async def add_admin_cmd(msg: Message):
     )
 
     nick_str = f" ({nickname})" if nickname else ""
-    await msg.answer(
-        f"✅ <code>{new_admin_id}</code>{nick_str} admin qilindi!",
-        parse_mode="HTML"
-    )
+    await msg.answer(f"✅ <code>{new_admin_id}</code>{nick_str} admin qilindi!", parse_mode="HTML")
 
 
 @pro_admin_router.message(Command("remove_admin"))
@@ -127,9 +121,7 @@ async def remove_admin_cmd(msg: Message):
 
     parts = msg.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        return await msg.answer(
-            "Format: <code>/remove_admin 123456789</code>", parse_mode="HTML"
-        )
+        return await msg.answer("Format: <code>/remove_admin 123456789</code>", parse_mode="HTML")
 
     target_id = int(parts[1])
 
@@ -147,9 +139,7 @@ async def remove_admin_cmd(msg: Message):
 
     try:
         await msg.bot.send_message(
-            chat_id=target_id,
-            text="❌ <b>Admin huquqingiz olib tashlandi.</b>",
-            parse_mode="HTML"
+            chat_id=target_id, text="❌ <b>Admin huquqingiz olib tashlandi.</b>", parse_mode="HTML"
         )
     except Exception:
         logger.exception(
@@ -180,32 +170,27 @@ async def list_admins_cmd(msg: Message):
     if admins:
         text += f"🛠 <b>Adminlar ({len(admins)} ta):</b>\n\n"
         for i, a in enumerate(admins, 1):
-            nick     = esc(a.nickname) if a.nickname else "—"
+            nick = esc(a.nickname) if a.nickname else "—"
             added_at = a.added_at.strftime("%d.%m.%Y") if a.added_at else "—"
-            text    += (
-                f"{i}. <code>{a.telegram_id}</code> — {nick}\n"
-                f"   Rol: {esc(a.role)} | Qo'shilgan: {added_at}\n\n"
-            )
+            text += f"{i}. <code>{a.telegram_id}</code> — {nick}\n   Rol: {esc(a.role)} | Qo'shilgan: {added_at}\n\n"
     else:
         text += "🛠 Qo'shimcha adminlar yo'q."
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="admin_add_hint")
-    ]])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="admin_add_hint")]]
+    )
     await msg.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @pro_admin_router.callback_query(F.data == "admin_add_hint")
 async def admin_add_hint(call: types.CallbackQuery):
-    await call.answer(
-        "Admin qo'shish:\n/add_admin 123456789",
-        show_alert=True
-    )
+    await call.answer("Admin qo'shish:\n/add_admin 123456789", show_alert=True)
 
 
 # ═══════════════════════════════════════════════════════════
 #  PRO USER BOSHQARUV — ID ORQALI
 # ═══════════════════════════════════════════════════════════
+
 
 @pro_admin_router.message(Command("set_pro"))
 async def set_pro_cmd(msg: Message):
@@ -219,11 +204,11 @@ async def set_pro_cmd(msg: Message):
             "<code>/set_pro 123456789</code>      — 30 kun\n"
             "<code>/set_pro 123456789 60</code>   — 60 kun\n"
             "<code>/set_pro 123456789 0</code>    — abadiy",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
 
     user_id = int(parts[1])
-    days    = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else 30
+    days = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else 30
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
@@ -233,11 +218,11 @@ async def set_pro_cmd(msg: Message):
         now = datetime.utcnow()
         if days == 0:
             user.pro_until = None
-            until_str      = "Abadiy ♾️"
+            until_str = "Abadiy ♾️"
         else:
             base = user.pro_until if (user.pro_until and user.pro_until > now) else now
             user.pro_until = base + timedelta(days=days)
-            until_str      = user.pro_until.strftime("%d.%m.%Y")
+            until_str = user.pro_until.strftime("%d.%m.%Y")
 
         user.is_pro = True
         await session.commit()
@@ -252,7 +237,7 @@ async def set_pro_cmd(msg: Message):
                 "⚡ Barcha Pro imkoniyatlardan foydalaning!\n"
                 "👉 /start → 🟢 Kaworai Pro"
             ),
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
     except Exception:
         logger.exception(
@@ -266,9 +251,7 @@ async def set_pro_cmd(msg: Message):
     )
 
     await msg.answer(
-        f"✅ <b>{esc(full_name)}</b> (<code>{user_id}</code>) Pro qilindi!\n"
-        f"📅 Muddat: {until_str}",
-        parse_mode="HTML"
+        f"✅ <b>{esc(full_name)}</b> (<code>{user_id}</code>) Pro qilindi!\n📅 Muddat: {until_str}", parse_mode="HTML"
     )
 
 
@@ -279,9 +262,7 @@ async def remove_pro_cmd(msg: Message):
 
     parts = msg.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        return await msg.answer(
-            "Format: <code>/remove_pro 123456789</code>", parse_mode="HTML"
-        )
+        return await msg.answer("Format: <code>/remove_pro 123456789</code>", parse_mode="HTML")
 
     user_id = int(parts[1])
     async with AsyncSessionLocal() as session:
@@ -289,16 +270,14 @@ async def remove_pro_cmd(msg: Message):
         if not user:
             return await msg.answer(f"❌ User <code>{user_id}</code> topilmadi!", parse_mode="HTML")
 
-        user.is_pro    = False
+        user.is_pro = False
         user.pro_until = None
         await session.commit()
         full_name = user.full_name or str(user_id)
 
     try:
         await msg.bot.send_message(
-            chat_id=user_id,
-            text="❌ <b>Kaworai Pro obunangiz bekor qilindi.</b>",
-            parse_mode="HTML"
+            chat_id=user_id, text="❌ <b>Kaworai Pro obunangiz bekor qilindi.</b>", parse_mode="HTML"
         )
     except Exception:
         logger.exception(
@@ -311,15 +290,13 @@ async def remove_pro_cmd(msg: Message):
         msg.from_user.id, user_id,
     )
 
-    await msg.answer(
-        f"✅ <b>{esc(full_name)}</b> (<code>{user_id}</code>) Pro olib tashlandi.",
-        parse_mode="HTML"
-    )
+    await msg.answer(f"✅ <b>{esc(full_name)}</b> (<code>{user_id}</code>) Pro olib tashlandi.", parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
 #  USER INFO
 # ═══════════════════════════════════════════════════════════
+
 
 @pro_admin_router.message(Command("user_info"))
 async def user_info_cmd(msg: Message):
@@ -328,9 +305,7 @@ async def user_info_cmd(msg: Message):
 
     parts = msg.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        return await msg.answer(
-            "Format: <code>/user_info 123456789</code>", parse_mode="HTML"
-        )
+        return await msg.answer("Format: <code>/user_info 123456789</code>", parse_mode="HTML")
 
     user_id = int(parts[1])
     async with AsyncSessionLocal() as session:
@@ -340,28 +315,31 @@ async def user_info_cmd(msg: Message):
 
         try:
             from database.models import UserWatchHistory
-            watch_count = (await session.execute(
-                select(func.count(UserWatchHistory.id))
-                .where(UserWatchHistory.user_id == user_id)
-            )).scalar() or 0
+
+            watch_count = (
+                await session.execute(
+                    select(func.count(UserWatchHistory.id)).where(UserWatchHistory.user_id == user_id)
+                )
+            ).scalar() or 0
         except Exception:
             logger.exception("user_info_cmd: watch count failed user=%s", user_id)
             watch_count = 0
 
         try:
-            sub_count = (await session.execute(
-                select(func.count(AnimeSubscription.user_id))
-                .where(AnimeSubscription.user_id == user_id)
-            )).scalar() or 0
+            sub_count = (
+                await session.execute(
+                    select(func.count(AnimeSubscription.user_id)).where(AnimeSubscription.user_id == user_id)
+                )
+            ).scalar() or 0
         except Exception:
             logger.exception("user_info_cmd: subscription count failed user=%s", user_id)
             sub_count = 0
 
-    now    = datetime.utcnow()
+    now = datetime.utcnow()
     is_pro = user.is_pro and (not user.pro_until or user.pro_until > now)
 
     if user.pro_until:
-        days_left  = (user.pro_until - now).days
+        days_left = (user.pro_until - now).days
         until_full = f"{user.pro_until.strftime('%d.%m.%Y')} ({days_left} kun qoldi)"
     else:
         until_full = "Abadiy ♾️" if user.is_pro else "—"
@@ -385,22 +363,24 @@ async def user_info_cmd(msg: Message):
         f"🔔 Obunalar: {sub_count} ta"
     )
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ 30 kun Pro",  callback_data=f"usr_pro_{user_id}_30"),
-            InlineKeyboardButton(text="✅ 90 kun Pro",  callback_data=f"usr_pro_{user_id}_90"),
-        ],
-        [
-            InlineKeyboardButton(text="❌ Pro olish",   callback_data=f"usr_remvpro_{user_id}"),
-        ],
-        [
-            InlineKeyboardButton(text="📉 7 kun qisq.", callback_data=f"usr_reduce_{user_id}_7"),
-            InlineKeyboardButton(text="📉 30 kun qisq.",callback_data=f"usr_reduce_{user_id}_30"),
-        ],
-        [
-            InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}"),
-        ],
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ 30 kun Pro", callback_data=f"usr_pro_{user_id}_30"),
+                InlineKeyboardButton(text="✅ 90 kun Pro", callback_data=f"usr_pro_{user_id}_90"),
+            ],
+            [
+                InlineKeyboardButton(text="❌ Pro olish", callback_data=f"usr_remvpro_{user_id}"),
+            ],
+            [
+                InlineKeyboardButton(text="📉 7 kun qisq.", callback_data=f"usr_reduce_{user_id}_7"),
+                InlineKeyboardButton(text="📉 30 kun qisq.", callback_data=f"usr_reduce_{user_id}_30"),
+            ],
+            [
+                InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}"),
+            ],
+        ]
+    )
     await msg.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
@@ -409,19 +389,19 @@ async def usr_pro_give(call: types.CallbackQuery):
     if not await _is_admin(call.from_user.id):
         return
 
-    parts   = call.data.replace("usr_pro_", "").split("_")
+    parts = call.data.replace("usr_pro_", "").split("_")
     user_id = int(parts[0])
-    days    = int(parts[1]) if len(parts) > 1 else 30
+    days = int(parts[1]) if len(parts) > 1 else 30
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         if not user:
             return await call.answer("❌ User topilmadi!", show_alert=True)
 
-        now  = datetime.utcnow()
+        now = datetime.utcnow()
         base = user.pro_until if (user.pro_until and user.pro_until > now) else now
         user.pro_until = base + timedelta(days=days)
-        user.is_pro    = True
+        user.is_pro = True
         await session.commit()
         until_str = user.pro_until.strftime("%d.%m.%Y")
 
@@ -433,7 +413,7 @@ async def usr_pro_give(call: types.CallbackQuery):
                 f"📅 Tugash sanasi: <b>{until_str}</b>\n\n"
                 "👉 /start → 🟢 Kaworai Pro"
             ),
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
     except Exception:
         logger.exception(
@@ -459,15 +439,13 @@ async def usr_remove_pro(call: types.CallbackQuery):
         user = await session.get(User, user_id)
         if not user:
             return await call.answer("❌ User topilmadi!", show_alert=True)
-        user.is_pro    = False
+        user.is_pro = False
         user.pro_until = None
         await session.commit()
 
     try:
         await call.bot.send_message(
-            chat_id=user_id,
-            text="❌ <b>Kaworai Pro obunangiz bekor qilindi.</b>",
-            parse_mode="HTML"
+            chat_id=user_id, text="❌ <b>Kaworai Pro obunangiz bekor qilindi.</b>", parse_mode="HTML"
         )
     except Exception:
         logger.exception(
@@ -488,9 +466,9 @@ async def usr_reduce_pro(call: types.CallbackQuery):
     if not await _is_admin(call.from_user.id):
         return
 
-    parts   = call.data.replace("usr_reduce_", "").split("_")
+    parts = call.data.replace("usr_reduce_", "").split("_")
     user_id = int(parts[0])
-    days    = int(parts[1])
+    days = int(parts[1])
 
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
@@ -501,9 +479,9 @@ async def usr_reduce_pro(call: types.CallbackQuery):
         if user.pro_until:
             user.pro_until = user.pro_until - timedelta(days=days)
             if user.pro_until <= now:
-                user.is_pro    = False
+                user.is_pro = False
                 user.pro_until = None
-                result_msg     = f"Pro {days} kun qisqartirildi — muddati tugadi."
+                result_msg = f"Pro {days} kun qisqartirildi — muddati tugadi."
             else:
                 result_msg = f"Pro {days} kun qisqartirildi. Yangi: {user.pro_until.strftime('%d.%m.%Y')}"
         else:
@@ -517,6 +495,7 @@ async def usr_reduce_pro(call: types.CallbackQuery):
 #  ANIME INFO
 # ═══════════════════════════════════════════════════════════
 
+
 @pro_admin_router.message(Command("anime_info"))
 async def anime_info_cmd(msg: Message):
     if not await _is_admin(msg.from_user.id):
@@ -524,9 +503,7 @@ async def anime_info_cmd(msg: Message):
 
     parts = msg.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        return await msg.answer(
-            "Format: <code>/anime_info 1234</code>", parse_mode="HTML"
-        )
+        return await msg.answer("Format: <code>/anime_info 1234</code>", parse_mode="HTML")
 
     anime_id = int(parts[1])
     async with AsyncSessionLocal() as session:
@@ -536,12 +513,9 @@ async def anime_info_cmd(msg: Message):
         return await msg.answer(f"❌ ID {anime_id} topilmadi!")
 
     genres_str = ", ".join(info["genres"][:5]) or "—"
-    tags_str   = ", ".join(info["tags"][:5])   or "—"
-    mood_str   = ", ".join(info["mood"][:3])   or "—"
-    added_at   = (
-        info["added_at"].strftime("%d.%m.%Y %H:%M")
-        if info.get("added_at") else "Nomalum"
-    )
+    tags_str = ", ".join(info["tags"][:5]) or "—"
+    mood_str = ", ".join(info["mood"][:3]) or "—"
+    added_at = info["added_at"].strftime("%d.%m.%Y %H:%M") if info.get("added_at") else "Nomalum"
     added_by = "Nomalum"
     if info.get("added_by_id"):
         added_by = f"<code>{info['added_by_id']}</code>"
@@ -549,15 +523,14 @@ async def anime_info_cmd(msg: Message):
             added_by += f" (@{info['added_by_username']})"
 
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
-    emoji      = type_emoji.get(info["type"], "🎬")
+    emoji = type_emoji.get(info["type"], "🎬")
 
     # Anime metadata adminlar kiritadi, lekin ba'zi maydonlar tashqi
     # manbalardan olingan bo'lishi mumkin — HTML xavfsiz bo'lishi uchun
     # barcha dinamik satrlarni ekran qilamiz.
     text = (
         f"📋 <b>Anime ma'lumotlari</b>\n\n"
-        f"{emoji} <b>{esc(info['title'])}</b>"
-        + (f" ({info['year']})" if info.get("year") else "") + "\n"
+        f"{emoji} <b>{esc(info['title'])}</b>" + (f" ({info['year']})" if info.get("year") else "") + "\n"
         f"🆔 ID: <code>{info['id']}</code>\n"
         f"📁 Tur: {info['type']}\n"
         f"📊 Status: {info.get('status', '—')}\n\n"
@@ -575,22 +548,21 @@ async def anime_info_cmd(msg: Message):
         f"📅 Qo'shilgan: {added_at}"
     )
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🔒 Pro-lock toggle", callback_data=f"adm_prolock_{anime_id}"),
-            InlineKeyboardButton(text="📢 Kanalga post",    callback_data=f"postch_all_{anime_id}"),
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🔒 Pro-lock toggle", callback_data=f"adm_prolock_{anime_id}"),
+                InlineKeyboardButton(text="📢 Kanalga post", callback_data=f"postch_all_{anime_id}"),
+            ]
         ]
-    ])
+    )
 
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
 
     try:
         if anime and anime.poster_file_id:
-            await msg.answer_photo(
-                photo=anime.poster_file_id,
-                caption=text, reply_markup=kb, parse_mode="HTML"
-            )
+            await msg.answer_photo(photo=anime.poster_file_id, caption=text, reply_markup=kb, parse_mode="HTML")
         else:
             await msg.answer(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
@@ -619,21 +591,20 @@ async def adm_prolock_toggle(call: types.CallbackQuery):
 #  PRO USERLAR RO'YXATI
 # ═══════════════════════════════════════════════════════════
 
+
 @pro_admin_router.message(Command("pro_users"))
 async def list_pro_users(msg: Message):
     if not await _is_admin(msg.from_user.id):
         return
 
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(User).where(User.is_pro == True).order_by(User.pro_until.desc())
-        )
+        result = await session.execute(select(User).where(User.is_pro == True).order_by(User.pro_until.desc()))
         users = result.scalars().all()
 
     if not users:
         return await msg.answer("❌ Pro foydalanuvchilar yo'q!")
 
-    now  = datetime.utcnow()
+    now = datetime.utcnow()
     text = f"⭐ <b>Pro foydalanuvchilar ({len(users)} ta):</b>\n\n"
 
     for i, u in enumerate(users[:30], 1):
@@ -644,10 +615,7 @@ async def list_pro_users(msg: Message):
         else:
             until_str = "Abadiy"
         expired = " ⚠️" if (u.pro_until and u.pro_until < now) else ""
-        text += (
-            f"{i}. <code>{u.telegram_id}</code> {uname}\n"
-            f"   📅 {until_str}{expired}\n\n"
-        )
+        text += f"{i}. <code>{u.telegram_id}</code> {uname}\n   📅 {until_str}{expired}\n\n"
 
     await msg.answer(text, parse_mode="HTML")
 
@@ -656,41 +624,31 @@ async def list_pro_users(msg: Message):
 #  PRO STATISTIKA
 # ═══════════════════════════════════════════════════════════
 
+
 @pro_admin_router.message(Command("pro_stats"))
 async def pro_stats_cmd(msg: Message):
     if not await _is_admin(msg.from_user.id):
         return
 
     async with AsyncSessionLocal() as session:
-        total_users  = await session.scalar(select(func.count(User.telegram_id)))
-        pro_users    = await session.scalar(
-            select(func.count(User.telegram_id)).where(User.is_pro == True)
-        )
+        total_users = await session.scalar(select(func.count(User.telegram_id)))
+        pro_users = await session.scalar(select(func.count(User.telegram_id)).where(User.is_pro == True))
         total_animes = await session.scalar(select(func.count(Anime.id)))
-        locked_count = await session.scalar(
-            select(func.count(Anime.id)).where(Anime.is_pro_locked == True)
-        )
+        locked_count = await session.scalar(select(func.count(Anime.id)).where(Anime.is_pro_locked == True))
         ep_count = await session.scalar(select(func.count(Series.id)))
 
-        now     = datetime.utcnow()
+        now = datetime.utcnow()
         expired = await session.scalar(
             select(func.count(User.telegram_id)).where(
-                User.is_pro    == True,
-                User.pro_until != None,
-                User.pro_until <  now
+                User.is_pro == True, User.pro_until != None, User.pro_until < now
             )
         )
 
-        top3 = (await session.execute(
-            select(Anime.title, Anime.views)
-            .order_by(Anime.views.desc())
-            .limit(3)
-        )).fetchall()
+        top3 = (
+            await session.execute(select(Anime.title, Anime.views).order_by(Anime.views.desc()).limit(3))
+        ).fetchall()
 
-    top3_text = "\n".join(
-        f"  {i+1}. {esc(r[0])} — {r[1]} ko'rish"
-        for i, r in enumerate(top3)
-    )
+    top3_text = "\n".join(f"  {i + 1}. {esc(r[0])} — {r[1]} ko'rish" for i, r in enumerate(top3))
 
     await msg.answer(
         f"📊 <b>Kaworai Pro Statistika</b>\n\n"
@@ -701,5 +659,5 @@ async def pro_stats_cmd(msg: Message):
         f"  🔒 Pro-locked: {locked_count}\n"
         f"🎞 Qismlar: <b>{ep_count}</b>\n\n"
         f"🔥 Top 3:\n{top3_text}",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
