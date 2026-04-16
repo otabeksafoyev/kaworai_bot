@@ -6,7 +6,6 @@ Baho: 1-10 (avvalgi tizim saqlangan)
 import asyncio
 import logging
 import os
-from datetime import datetime
 
 from aiogram import F, Router, types
 from aiogram.filters import CommandObject, CommandStart
@@ -24,6 +23,7 @@ from database.queries import (
     is_subscribed_anime,
 )
 from middlewares.subscription import check_subscription, get_sub_keyboard
+from utils.time import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +226,7 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int):
             return
 
         user = await session.get(User, user_id)
-        now = datetime.utcnow()
+        now = utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         ep_res = await session.execute(
@@ -316,7 +316,7 @@ async def watch_start(call: types.CallbackQuery):
             return await call.answer("❌ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
-        now = datetime.utcnow()
+        now = utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         if anime.is_pro_locked and not is_pro:
@@ -388,7 +388,7 @@ async def episode_select(call: types.CallbackQuery):
             return await call.answer("❌ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
-        now = datetime.utcnow()
+        now = utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         if anime.is_pro_locked and not is_pro:
@@ -461,7 +461,7 @@ async def episode_page_change(call: types.CallbackQuery):
             return await call.answer("❌ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
-        now = datetime.utcnow()
+        now = utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         all_eps_res = await session.execute(
@@ -502,7 +502,7 @@ async def episode_navigate(call: types.CallbackQuery):
             return await call.answer("❌ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
-        now = datetime.utcnow()
+        now = utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         if anime.is_pro_locked and not is_pro:
@@ -587,7 +587,7 @@ async def show_episodes_list(call: types.CallbackQuery):
             return await call.answer("❌ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
-        now = datetime.utcnow()
+        now = utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         if anime.is_pro_locked and not is_pro:
@@ -644,7 +644,7 @@ async def toggle_subscription(call: types.CallbackQuery):
 
         anime = await session.get(Anime, anime_id)
         user = await session.get(User, user_id)
-        now = datetime.utcnow()
+        now = utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         all_eps_res = await session.execute(

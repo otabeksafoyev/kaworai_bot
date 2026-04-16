@@ -3,7 +3,7 @@ Kaworai Pro — Obuna to'lov tizimi
 5 sahifa, bitta xabar ichida edit_message orqali navigatsiya.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -21,6 +21,7 @@ from database.engine import AsyncSessionLocal
 from database.models import Admin, User
 from loader import bot
 from utils.security import esc, parse_admin_ids
+from utils.time import utcnow
 
 pro_payment_router = Router()
 
@@ -78,7 +79,7 @@ async def _check_pro(user_id: int) -> bool:
         user = await session.get(User, user_id)
         if not user or not user.is_pro:
             return False
-        if user.pro_until and user.pro_until < datetime.utcnow():
+        if user.pro_until and user.pro_until < utcnow():
             user.is_pro = False
             user.pro_until = None
             await session.commit()
@@ -504,7 +505,7 @@ async def admin_confirm_pro(call: CallbackQuery):
         if not user:
             return await call.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
 
-        now = datetime.utcnow()
+        now = utcnow()
         if user.pro_until and user.pro_until > now:
             user.pro_until = user.pro_until + timedelta(days=30 * plan["months"])
         else:

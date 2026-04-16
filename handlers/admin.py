@@ -1,6 +1,6 @@
 import asyncio
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
@@ -22,6 +22,7 @@ from database.models import Admin, Anime, RelatedContent, Series, SubscriptionCh
 from database.queries import add_channel, get_all_channels, get_news_channels, remove_channel, toggle_channel
 from states.admin_states import AddAnime, AddChannel, AdminProState, BroadcastState, EditAnime
 from utils.security import esc, parse_admin_ids
+from utils.time import utcnow
 
 admin_router = Router()
 
@@ -393,7 +394,7 @@ async def _do_set_pro(msg: Message, user_id: int, days: int):
         if not user:
             return await msg.answer(f"❌ User <code>{user_id}</code> topilmadi!", parse_mode="HTML")
 
-        now = datetime.utcnow()
+        now = utcnow()
         if days == 0:
             user.pro_until = None
             until_str = "Abadiy"
@@ -462,7 +463,7 @@ async def _show_user_info(msg: Message, user_id: int):
         except Exception:
             sub_count = 0
 
-    now = datetime.utcnow()
+    now = utcnow()
     is_pro = user.is_pro and (not user.pro_until or user.pro_until > now)
 
     if user.pro_until:
@@ -562,7 +563,7 @@ async def _do_set_pro_cb(call: types.CallbackQuery, user_id: int, days: int):
         user = await session.get(User, user_id)
         if not user:
             return await call.answer("❌ Topilmadi!", show_alert=True)
-        now = datetime.utcnow()
+        now = utcnow()
         base = user.pro_until if (user.pro_until and user.pro_until > now) else now
         user.pro_until = base + timedelta(days=days)
         user.is_pro = True
@@ -584,7 +585,7 @@ async def _do_reduce_pro_cb(call: types.CallbackQuery, user_id: int, days: int):
         user = await session.get(User, user_id)
         if not user or not user.is_pro:
             return await call.answer("❌ User Pro emas!", show_alert=True)
-        now = datetime.utcnow()
+        now = utcnow()
         if user.pro_until:
             user.pro_until = user.pro_until - timedelta(days=days)
             if user.pro_until <= now:
@@ -612,7 +613,7 @@ async def pm_pro_list(call: types.CallbackQuery):
         await call.answer("❌ Pro foydalanuvchilar yo'q!", show_alert=True)
         return
 
-    now = datetime.utcnow()
+    now = utcnow()
     text = f"⭐ <b>Pro foydalanuvchilar ({len(users)} ta):</b>\n\n"
     for i, u in enumerate(users[:25], 1):
         uname = f"@{esc(u.username)}" if u.username else "—"
@@ -804,7 +805,7 @@ async def pm_stats(call: types.CallbackQuery):
         total_animes = await session.scalar(select(func.count(Anime.id)))
         locked_count = await session.scalar(select(func.count(Anime.id)).where(Anime.is_pro_locked == True))
         ep_count = await session.scalar(select(func.count(Series.id)))
-        now = datetime.utcnow()
+        now = utcnow()
         expired = await session.scalar(
             select(func.count(User.telegram_id)).where(
                 User.is_pro == True, User.pro_until != None, User.pro_until < now

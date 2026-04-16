@@ -10,10 +10,13 @@ Tuzatilgan muammolar:
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Anime, RelatedContent, Series, UserTasteProfile, UserWatchHistory, ViewRecord
+from utils.time import utcnow
 
 # ═══════════════════════════════════════════════════════════
 #  MOOD XARITASI
@@ -408,9 +411,8 @@ async def get_trending(
     is_pro: bool = False,
 ) -> list[dict]:
     """So'nggi 7 kunda eng ko'p ko'rilganlar."""
-    from datetime import datetime, timedelta
 
-    week_ago = datetime.utcnow() - timedelta(days=7)
+    week_ago = utcnow() - timedelta(days=7)
 
     subq = (
         select(ViewRecord.anime_id, func.count(ViewRecord.id).label("cnt"))
@@ -456,9 +458,8 @@ async def get_rising(
     is_pro: bool = False,
 ) -> list[dict]:
     """So'nggi 3 kunda tez o'sayotganlar."""
-    from datetime import datetime, timedelta
 
-    three_days = datetime.utcnow() - timedelta(days=3)
+    three_days = utcnow() - timedelta(days=3)
 
     subq = (
         select(ViewRecord.anime_id, func.count(ViewRecord.id).label("cnt"))
@@ -673,9 +674,8 @@ async def recalculate_popularity(
     anime_id: int,
 ) -> float:
     """Popularity score = views_7d × 0.4 + rating × 0.4 + admin_pop × 0.2"""
-    from datetime import datetime, timedelta
 
-    week_ago = datetime.utcnow() - timedelta(days=7)
+    week_ago = utcnow() - timedelta(days=7)
 
     cnt = (
         await session.execute(
