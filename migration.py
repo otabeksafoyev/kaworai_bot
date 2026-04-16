@@ -40,14 +40,11 @@ SQL_STATEMENTS = [
 
 
 async def run():
-    # Avvalgi versiyada `DB_URL` ishlatilardi — eski sozlamalar buzilmasligi
-    # uchun fallback sifatida qoldirildi.
-    db_url = os.getenv("DATABASE_URL", "") or os.getenv("DB_URL", "")
+    db_url = os.getenv("DATABASE_URL", "").strip()
     # asyncpg.connect `postgresql+asyncpg://` ni qabul qilmaydi — SQLAlchemy
     # driver prefiksi bo'lsa olib tashlaymiz.
     db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
-    # Railway `postgres://` variantini ham beradi — asyncpg buni qabul qiladi,
-    # tegmaymiz.
+    # Railway `postgres://` variantini ham beradi — asyncpg buni qabul qiladi.
 
     if not db_url:
         print("❌ DATABASE_URL .env da topilmadi!")

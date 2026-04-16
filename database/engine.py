@@ -1,4 +1,6 @@
 import os
+import re
+import sys
 
 from dotenv import load_dotenv
 from sqlalchemy import text
@@ -6,17 +8,54 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import declarative_base
 
 load_dotenv()
-# Railway Postgres plugin standart ravishda `DATABASE_URL` degan o'zgaruvchi
-# beradi — shuning uchun loyiha shu nomda yuklanadi. Eski sozlamalarda `DB_URL`
-# bo'lsa ham ishlashi uchun fallback qo'shildi.
-DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
 
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    # Railway/Heroku `postgres://` beradi, SQLAlchemy+asyncpg esa
-    # `postgresql+asyncpg://` kutadi — avtomatik to'g'irlaymiz.
+
+def _mask_db_url(url: str) -> str:
+    """Parolni yashirib URL'ni qaytaradi — deploy logida ko'rsatish uchun."""
+    return re.sub(r"(://[^:@/]+):([^@/]+)@", r"\1:***@", url)
+
+
+# Railway Postgres plugin standart ravishda `DATABASE_URL` degan o'zgaruvchi
+# beradi. Loyiha faqat shu nomdan o'qiydi — eski `DB_URL` qo'llab-quvvatlanmaydi.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+# ── Xato holatlarni erta (modul yuklanishida) ushlaydi ──
+# Shunday qilib Railway log'ida aniq sabab ko'rinadi, `localhost:8080`'ga
+# ulanib jim yiqilmaydi.
+if not DATABASE_URL:
+    print(
+        "--- [FATAL] DATABASE_URL muhit o'zgaruvchisi bo'sh yoki qo'yilmagan.\n"
+        "Railway'da Postgres plugin qo'shib, kaworai_bot servisiga DATABASE_URL\n"
+        "o'zgaruvchisini Reference qilib qo'ying (${{Postgres.DATABASE_URL}}) yoki\n"
+        "qo'lda `postgresql://user:pass@postgres.railway.internal:5432/railway` yozing.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+# Railway/Heroku reference syntaksi hal bo'lmasdan qolgan bo'lsa —
+# `${{Postgres.DATABASE_URL}}` kabi matn kelsa — aniq xato yozib tushamiz.
+if "${" in DATABASE_URL or "{{" in DATABASE_URL:
+    print(
+        f"--- [FATAL] DATABASE_URL hal qilinmagan Railway reference'iga o'xshaydi:\n"
+        f"    {DATABASE_URL}\n"
+        "Bu Postgres servisi boshqacha nomlanganligidan bo'lishi mumkin. Reference\n"
+        "o'rniga Postgres servisidan to'liq URL'ni nusxalab qo'ying yoki servis\n"
+        "nomini tekshiring.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+# Sxema prefiksini normallashtirish:
+#   postgres://...          → postgresql+asyncpg://...
+#   postgresql://...        → postgresql+asyncpg://...
+#   postgresql+asyncpg://.. → shu holicha
+if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL[len("postgres://") :]
-elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL[len("postgresql://") :]
+
+# Qaysi DB'ga ulanayotganimizni ko'rsatamiz (parol yashirilgan).
+print(f"--- [INFO] DATABASE_URL: {_mask_db_url(DATABASE_URL)}")
 
 Base = declarative_base()
 
