@@ -11,6 +11,7 @@ Admin panel qo'shimcha buyruqlari:
   /pro_stats               — statistika
 """
 
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -23,6 +24,8 @@ from database.engine import AsyncSessionLocal
 from database.models import Admin, Anime, AnimeSubscription, Series, User
 from database.queries import get_anime_full_info
 from utils.security import esc, parse_admin_ids
+
+logger = logging.getLogger(__name__)
 
 pro_admin_router = Router()
 
@@ -97,7 +100,18 @@ async def add_admin_cmd(msg: Message):
             parse_mode="HTML",
         )
     except Exception:
-        pass
+        logger.exception(
+            "add_admin_cmd: failed to notify new admin=%s (owner=%s)",
+            new_admin_id,
+            msg.from_user.id,
+        )
+
+    logger.info(
+        "add_admin_cmd: owner=%s added admin=%s nickname=%s",
+        msg.from_user.id,
+        new_admin_id,
+        nickname,
+    )
 
     nick_str = f" ({nickname})" if nickname else ""
     await msg.answer(f"✅ <code>{new_admin_id}</code>{nick_str} admin qilindi!", parse_mode="HTML")
@@ -131,7 +145,17 @@ async def remove_admin_cmd(msg: Message):
             chat_id=target_id, text="❌ <b>Admin huquqingiz olib tashlandi.</b>", parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "remove_admin_cmd: failed to notify removed admin=%s (owner=%s)",
+            target_id,
+            msg.from_user.id,
+        )
+
+    logger.info(
+        "remove_admin_cmd: owner=%s removed admin=%s",
+        msg.from_user.id,
+        target_id,
+    )
 
     await msg.answer(f"✅ <code>{target_id}</code> admin huquqi olib tashlandi.", parse_mode="HTML")
 
@@ -221,7 +245,19 @@ async def set_pro_cmd(msg: Message):
             parse_mode="HTML",
         )
     except Exception:
-        pass
+        logger.exception(
+            "set_pro_cmd: failed to notify user=%s about Pro activation (admin=%s)",
+            user_id,
+            msg.from_user.id,
+        )
+
+    logger.info(
+        "set_pro_cmd: admin=%s granted Pro user=%s days=%s until=%s",
+        msg.from_user.id,
+        user_id,
+        days,
+        until_str,
+    )
 
     await msg.answer(
         f"✅ <b>{esc(full_name)}</b> (<code>{user_id}</code>) Pro qilindi!\n📅 Muddat: {until_str}", parse_mode="HTML"
@@ -253,7 +289,17 @@ async def remove_pro_cmd(msg: Message):
             chat_id=user_id, text="❌ <b>Kaworai Pro obunangiz bekor qilindi.</b>", parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "remove_pro_cmd: failed to notify user=%s (admin=%s)",
+            user_id,
+            msg.from_user.id,
+        )
+
+    logger.info(
+        "remove_pro_cmd: admin=%s removed Pro user=%s",
+        msg.from_user.id,
+        user_id,
+    )
 
     await msg.answer(f"✅ <b>{esc(full_name)}</b> (<code>{user_id}</code>) Pro olib tashlandi.", parse_mode="HTML")
 
@@ -287,6 +333,7 @@ async def user_info_cmd(msg: Message):
                 )
             ).scalar() or 0
         except Exception:
+            logger.exception("user_info_cmd: watch count failed user=%s", user_id)
             watch_count = 0
 
         try:
@@ -296,6 +343,7 @@ async def user_info_cmd(msg: Message):
                 )
             ).scalar() or 0
         except Exception:
+            logger.exception("user_info_cmd: subscription count failed user=%s", user_id)
             sub_count = 0
 
     now = datetime.utcnow()
@@ -379,7 +427,19 @@ async def usr_pro_give(call: types.CallbackQuery):
             parse_mode="HTML",
         )
     except Exception:
-        pass
+        logger.exception(
+            "usr_pro_give: failed to notify user=%s (admin=%s)",
+            user_id,
+            call.from_user.id,
+        )
+
+    logger.info(
+        "usr_pro_give: admin=%s granted Pro user=%s days=%s until=%s",
+        call.from_user.id,
+        user_id,
+        days,
+        until_str,
+    )
 
     await call.answer(f"✅ {days} kunlik Pro berildi! ({until_str})", show_alert=True)
 
@@ -403,7 +463,17 @@ async def usr_remove_pro(call: types.CallbackQuery):
             chat_id=user_id, text="❌ <b>Kaworai Pro obunangiz bekor qilindi.</b>", parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "usr_remove_pro: failed to notify user=%s (admin=%s)",
+            user_id,
+            call.from_user.id,
+        )
+
+    logger.info(
+        "usr_remove_pro: admin=%s removed Pro user=%s",
+        call.from_user.id,
+        user_id,
+    )
 
     await call.answer("✅ Pro olib tashlandi!", show_alert=True)
 
@@ -513,6 +583,10 @@ async def anime_info_cmd(msg: Message):
         else:
             await msg.answer(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
+        logger.exception(
+            "anime_info_cmd: failed to render poster for anime=%s, falling back to text",
+            anime_id,
+        )
         await msg.answer(text, reply_markup=kb, parse_mode="HTML")
 
 

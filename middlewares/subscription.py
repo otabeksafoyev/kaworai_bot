@@ -1,4 +1,7 @@
+import asyncio
+import logging
 import os
+import time
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
@@ -11,6 +14,51 @@ from utils.security import parse_admin_ids
 # `parse_admin_ids` bo'sh ID'larni filtrlaydi — aks holda `""` qiymati
 # admin ro'yxatida qoladi va kelajakdagi tekshiruvlarni xatolashtirishi mumkin.
 ADMINS = parse_admin_ids(os.getenv("ADMIN_ID", ""))
+
+logger = logging.getLogger(__name__)
+
+
+# ───────────────────────────────────────────────────────────────
+# Performance: SubscriptionMiddleware har bir xabar/callback uchun
+# `get_active_channels` ni chaqiradi. 200k foydalanuvchi ko'lamida
+# bu DB ga sekundiga yuzlab so'rov degani. Natija qisqa TTL xotira
+# keshida saqlanadi. Admin kanal qo'shsa/o'chirsa
+# `invalidate_active_channels_cache()` chaqiriladi.
+# ───────────────────────────────────────────────────────────────
+_ACTIVE_CHANNELS_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
+_ACTIVE_CHANNELS_TTL = 60.0  # soniya
+_ACTIVE_CHANNELS_LOCK = asyncio.Lock()
+
+
+async def _load_active_channels() -> list:
+    """Baza'dan faol kanallarni oladi (keshsiz)."""
+    async with AsyncSessionLocal() as session:
+        return await get_active_channels(session)
+
+
+async def get_cached_active_channels() -> list:
+    """TTL kesh bilan faol kanallar ro'yxatini qaytaradi."""
+    now = time.monotonic()
+    data = _ACTIVE_CHANNELS_CACHE["data"]
+    if data is not None and (now - _ACTIVE_CHANNELS_CACHE["ts"]) < _ACTIVE_CHANNELS_TTL:
+        return data
+
+    async with _ACTIVE_CHANNELS_LOCK:
+        # double-check — boshqa coroutine allaqachon yangilagan bo'lishi mumkin
+        now = time.monotonic()
+        data = _ACTIVE_CHANNELS_CACHE["data"]
+        if data is not None and (now - _ACTIVE_CHANNELS_CACHE["ts"]) < _ACTIVE_CHANNELS_TTL:
+            return data
+        fresh = await _load_active_channels()
+        _ACTIVE_CHANNELS_CACHE["data"] = fresh
+        _ACTIVE_CHANNELS_CACHE["ts"] = time.monotonic()
+        return fresh
+
+
+def invalidate_active_channels_cache() -> None:
+    """Admin kanal qo'shgani/o'chirganida/yoqqanida chaqiriladi."""
+    _ACTIVE_CHANNELS_CACHE["data"] = None
+    _ACTIVE_CHANNELS_CACHE["ts"] = 0.0
 
 
 def get_sub_keyboard(channels: list):
@@ -28,23 +76,51 @@ def get_sub_keyboard(channels: list):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+async def _check_one(bot, user_id: int, ch) -> Any:
+    """Bitta kanalga obuna tekshiruvi — timeout bilan himoyalangan."""
+    if not ch.require_check or not ch.channel_id:
+        return None
+    try:
+        member = await asyncio.wait_for(
+            bot.get_chat_member(chat_id=ch.channel_id, user_id=user_id),
+            timeout=5.0,
+        )
+        if member.status in ("left", "kicked", "banned"):
+            return ch
+    except asyncio.TimeoutError:
+        # Sekin/ishlamayotgan kanal — foydalanuvchini bloklamaymiz.
+        logger.warning(
+            "subscription: get_chat_member timed out channel=%s user=%s",
+            getattr(ch, "channel_id", None),
+            user_id,
+        )
+    except Exception:
+        # Kanal o'chirilgan, bot admin emas va hokazo — bloklamaymiz.
+        logger.debug(
+            "subscription: get_chat_member failed channel=%s user=%s",
+            getattr(ch, "channel_id", None),
+            user_id,
+            exc_info=True,
+        )
+    return None
+
+
 async def check_subscription(bot, user_id: int, channels: list) -> list:
     """
     Faqat require_check=True va channel_id mavjud kanallarni tekshiradi.
     Qolganlar — faqat ko'rsatiladi, tekshirilmaydi.
+
+    Tekshiruv parallel ravishda bajariladi — ketma-ket loop har kanal
+    uchun Telegram API kechikishini user-kutish vaqtiga qo'shib yuboradi.
     """
-    not_subbed = []
-    for ch in channels:
-        if not ch.require_check or not ch.channel_id:
-            # Tekshiruv kerak emas — o'tkazib yuborish
-            continue
-        try:
-            member = await bot.get_chat_member(chat_id=ch.channel_id, user_id=user_id)
-            if member.status in ("left", "kicked", "banned"):
-                not_subbed.append(ch)
-        except Exception:
-            continue
-    return not_subbed
+    relevant = [ch for ch in channels if ch.require_check and ch.channel_id]
+    if not relevant:
+        return []
+    results = await asyncio.gather(
+        *(_check_one(bot, user_id, ch) for ch in relevant),
+        return_exceptions=False,
+    )
+    return [ch for ch in results if ch is not None]
 
 
 class SubscriptionMiddleware(BaseMiddleware):
@@ -64,8 +140,13 @@ class SubscriptionMiddleware(BaseMiddleware):
         if isinstance(event, CallbackQuery) and event.data in ("check_subs", "cancel_sub_check"):
             return await handler(event, data)
 
-        async with AsyncSessionLocal() as session:
-            channels = await get_active_channels(session)
+        try:
+            channels = await get_cached_active_channels()
+        except Exception:
+            # DB vaqtinchalik yiqilgan bo'lsa — foydalanuvchini bloklamaslik
+            # yaxshiroq, chunki bu UX uchun juda ko'rinadigan muammo.
+            logger.exception("subscription: failed to load active channels")
+            return await handler(event, data)
 
         if not channels:
             return await handler(event, data)

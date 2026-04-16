@@ -3,6 +3,7 @@ Kaworai Pro — Pro User Handler (tuzatilgan)
 Barcha edit_caption → safe_edit() orqali ishlaydi.
 """
 
+import logging
 from datetime import datetime
 
 from aiogram import F, Router, types
@@ -11,6 +12,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database.engine import AsyncSessionLocal
 from database.models import Anime, User
+
+logger = logging.getLogger(__name__)
 
 pro_user_router = Router()
 

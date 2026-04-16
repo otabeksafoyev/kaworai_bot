@@ -9,6 +9,7 @@ from database.engine import init_db
 from handlers.admin import admin_router
 from handlers.admin_pro import pro_admin_router
 from handlers.callbacks import callback_router
+from handlers.errors import error_router
 from handlers.genres import genre_router
 from handlers.inline import inline_router
 from handlers.pro_payment import pro_payment_router
@@ -40,6 +41,10 @@ async def main():
     )
 
     await on_startup()
+
+    # Global xato handleri — BIRINCHI ulanishi kerak, shunda
+    # boshqa routerlardagi tutilmagan istisnolar shu yerga tushadi.
+    dp.include_router(error_router)
 
     # Routerlar (pro_payment ENG BIRINCHI — kawaii_pass ni ushlaydi)
     dp.include_router(pro_payment_router)
