@@ -22,10 +22,14 @@ from sqlalchemy import select, func
 from database.engine import AsyncSessionLocal
 from database.models import Anime, Admin, User, Series, AnimeSubscription
 from database.queries import get_anime_full_info
+from utils.security import esc, parse_admin_ids
 
 pro_admin_router = Router()
 
-OWNER_IDS = os.getenv("ADMIN_ID", "").split(",")   # .env dagi asosiy adminlar
+# Bo'sh ID'larni filtrlash — `"".split(",")` `[""]` qaytaradi, natijada
+# har qanday foydalanuvchi bo'sh string bilan taqqoslansa admin deb
+# tan olinishi xavfi bor.
+OWNER_IDS = parse_admin_ids(os.getenv("ADMIN_ID", ""))   # .env dagi asosiy adminlar
 
 
 def _is_owner(user_id: int) -> bool:
@@ -157,11 +161,11 @@ async def list_admins_cmd(msg: Message):
     if admins:
         text += f"🛠 <b>Adminlar ({len(admins)} ta):</b>\n\n"
         for i, a in enumerate(admins, 1):
-            nick     = a.nickname or "—"
+            nick     = esc(a.nickname) if a.nickname else "—"
             added_at = a.added_at.strftime("%d.%m.%Y") if a.added_at else "—"
             text    += (
                 f"{i}. <code>{a.telegram_id}</code> — {nick}\n"
-                f"   Rol: {a.role} | Qo'shilgan: {added_at}\n\n"
+                f"   Rol: {esc(a.role)} | Qo'shilgan: {added_at}\n\n"
             )
     else:
         text += "🛠 Qo'shimcha adminlar yo'q."
@@ -235,7 +239,7 @@ async def set_pro_cmd(msg: Message):
         pass
 
     await msg.answer(
-        f"✅ <b>{full_name}</b> (<code>{user_id}</code>) Pro qilindi!\n"
+        f"✅ <b>{esc(full_name)}</b> (<code>{user_id}</code>) Pro qilindi!\n"
         f"📅 Muddat: {until_str}",
         parse_mode="HTML"
     )
@@ -273,7 +277,7 @@ async def remove_pro_cmd(msg: Message):
         pass
 
     await msg.answer(
-        f"✅ <b>{full_name}</b> (<code>{user_id}</code>) Pro olib tashlandi.",
+        f"✅ <b>{esc(full_name)}</b> (<code>{user_id}</code>) Pro olib tashlandi.",
         parse_mode="HTML"
     )
 
@@ -328,11 +332,15 @@ async def user_info_cmd(msg: Message):
     pro_status = "✅ Ha" if is_pro else "❌ Yo'q"
     joined_str = user.joined_at.strftime("%d.%m.%Y") if user.joined_at else "—"
 
+    # Foydalanuvchining full_name va username ishonchli emas —
+    # HTML injection'dan himoyalanish uchun ekran qilamiz.
+    fn_display = esc(user.full_name) if user.full_name else "—"
+    un_display = esc(user.username) if user.username else "—"
     text = (
         f"👤 <b>Foydalanuvchi</b>\n\n"
         f"🆔 ID: <code>{user.telegram_id}</code>\n"
-        f"📛 Ism: <b>{user.full_name or '—'}</b>\n"
-        f"🔗 @{user.username or '—'}\n"
+        f"📛 Ism: <b>{fn_display}</b>\n"
+        f"🔗 @{un_display}\n"
         f"📅 Ro'yxatdan: {joined_str}\n\n"
         f"⭐ Pro: {pro_status}\n"
         f"📅 Pro tugashi: {until_full}\n\n"
@@ -490,9 +498,12 @@ async def anime_info_cmd(msg: Message):
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
     emoji      = type_emoji.get(info["type"], "🎬")
 
+    # Anime metadata adminlar kiritadi, lekin ba'zi maydonlar tashqi
+    # manbalardan olingan bo'lishi mumkin — HTML xavfsiz bo'lishi uchun
+    # barcha dinamik satrlarni ekran qilamiz.
     text = (
         f"📋 <b>Anime ma'lumotlari</b>\n\n"
-        f"{emoji} <b>{info['title']}</b>"
+        f"{emoji} <b>{esc(info['title'])}</b>"
         + (f" ({info['year']})" if info.get("year") else "") + "\n"
         f"🆔 ID: <code>{info['id']}</code>\n"
         f"📁 Tur: {info['type']}\n"
@@ -569,7 +580,7 @@ async def list_pro_users(msg: Message):
     text = f"⭐ <b>Pro foydalanuvchilar ({len(users)} ta):</b>\n\n"
 
     for i, u in enumerate(users[:30], 1):
-        uname = f"@{u.username}" if u.username else "—"
+        uname = f"@{esc(u.username)}" if u.username else "—"
         if u.pro_until:
             days_left = (u.pro_until - now).days
             until_str = f"{u.pro_until.strftime('%d.%m.%Y')} ({days_left}k)"
@@ -620,7 +631,7 @@ async def pro_stats_cmd(msg: Message):
         )).fetchall()
 
     top3_text = "\n".join(
-        f"  {i+1}. {r[0]} — {r[1]} ko'rish"
+        f"  {i+1}. {esc(r[0])} — {r[1]} ko'rish"
         for i, r in enumerate(top3)
     )
 

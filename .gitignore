@@ -10,6 +10,11 @@ venv/
 .venv/
 env/
 
+# Loglar — ba'zi yozuvlar foydalanuvchi ma'lumotlarini o'z ichiga
+# olishi mumkin, shuning uchun hech qachon commit qilinmasligi kerak.
+*.log
+bot.log
+
 # IDE
 .idea/
 .vscode/

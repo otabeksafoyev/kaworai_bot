@@ -1,27 +1,32 @@
 """
-Yangilangan config.py
-Mavjud config.py ga quyidagi yangi o'zgaruvchilarni QO'SHING.
+Konfiguratsiya — barcha maxfiy qiymatlar .env orqali yuklanadi.
+
+Avval bu faylda PAYMENT_CHANNEL_ID, CARD_NUMBER, CARD_OWNER va ADMIN_USERNAME
+uchun to'g'ridan-to'g'ri kodda qattiq yozilgan qiymatlar bor edi. Bu xavfli:
+karta raqami va qabul qiluvchi ismi PII/moliya ma'lumoti hisoblanadi va hech
+qachon git repozitoriyasiga tushmasligi kerak. Endi ularning hammasi .env
+fayli orqali sozlanadi.
 """
 
 from pydantic_settings import BaseSettings
-from typing import Optional
 
 
 class Settings(BaseSettings):
+    # ── Asosiy ───────────────────────────────────────────────
     BOT_TOKEN: str
     ADMIN_ID:  int
-    DB_URL:    str = "postgresql+asyncpg://user:pass@localhost/animebot"
-    REDIS_URL: str = "redis://localhost:6379/0"
+    DB_URL:    str
+    REDIS_URL: str
 
-    # ── Mavjud ──
+    # ── Kanallar ─────────────────────────────────────────────
     SECRET_CHANNEL_ID: int = 0
     NEWS_CHANNEL_ID:   int = 0
 
-    # ── YANGI: Pro to'lov tizimi ──
-    PAYMENT_CHANNEL_ID: int    = -1003525618102   # Chek yuboradigan kanal
-    CARD_NUMBER:        str    = "5614 6829 1317 5461"
-    CARD_OWNER:         str    = "Saidova Yulduz"
-    ADMIN_USERNAME:     str    = "safoyev9225"
+    # ── Pro to'lov tizimi (.env orqali majburiy) ─────────────
+    PAYMENT_CHANNEL_ID: int
+    CARD_NUMBER:        str
+    CARD_OWNER:         str
+    ADMIN_USERNAME:     str
 
     class Config:
         env_file          = ".env"

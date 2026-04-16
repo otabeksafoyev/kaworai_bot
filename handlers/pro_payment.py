@@ -20,14 +20,19 @@ from database.engine import AsyncSessionLocal
 from database.models import User, Admin
 from loader import bot
 from data import config
+from utils.security import esc, parse_admin_ids
 
 pro_payment_router = Router()
 
 # ── Konfiguratsiya ─────────────────────────────────────────
-PAYMENT_CHANNEL_ID = getattr(config, "PAYMENT_CHANNEL_ID", -1003525618102)
-CARD_NUMBER        = getattr(config, "CARD_NUMBER",       "5614 6829 1317 5461")
-CARD_OWNER         = getattr(config, "CARD_OWNER",        "Saidova Yulduz")
-ADMIN_USERNAME     = getattr(config, "ADMIN_USERNAME",    "safoyev9225")
+# Barcha PII/to'lov sozlamalari .env dan keladi.
+# Ilgari bu yerda xardkod qilingan karta raqami/egasining ismi va admin
+# username bor edi — bu PII sizlanish xavfi edi. Endi default bo'sh va
+# .env sozlanmasa, matnlarda "—" ko'rinadi.
+PAYMENT_CHANNEL_ID = getattr(config, "PAYMENT_CHANNEL_ID", 0)
+CARD_NUMBER        = getattr(config, "CARD_NUMBER",       "")
+CARD_OWNER         = getattr(config, "CARD_OWNER",        "")
+ADMIN_USERNAME     = getattr(config, "ADMIN_USERNAME",    "")
 ADMIN_ID           = getattr(config, "ADMIN_ID",          None)
 
 # ── Narxlar ────────────────────────────────────────────────
@@ -53,8 +58,8 @@ class AdminMsgState(StatesGroup):
 # ── Admin tekshirish ────────────────────────────────────────
 async def _is_admin(user_id: int) -> bool:
     import os
-    admins_env = os.getenv("ADMIN_ID", "")
-    if str(user_id) in admins_env.split(","):
+    admins_env = parse_admin_ids(os.getenv("ADMIN_ID", ""))
+    if str(user_id) in admins_env:
         return True
     if ADMIN_ID and str(user_id) == str(ADMIN_ID):
         return True
@@ -139,13 +144,18 @@ def _page2_kb() -> InlineKeyboardMarkup:
 
 def _page3_text(plan_key: str) -> str:
     plan = PLANS[plan_key]
+    card_line  = f"💳 Karta raqam: <code>{esc(CARD_NUMBER)}</code>\n" if CARD_NUMBER else ""
+    owner_line = f"👤 Qabul qiluvchi: {esc(CARD_OWNER)}\n"            if CARD_OWNER  else ""
+    admin_line = (
+        f"📩 Savollar bormi?\n👉 @{esc(ADMIN_USERNAME)} ga murojaat qiling"
+        if ADMIN_USERNAME else "📩 Savollar bormi?\n👉 Adminga murojaat qiling"
+    )
     return (
         "💳 <b>Kaworai Pro obunasini faollashtirish</b>\n\n"
         "Kaworai Pro olish uchun quyidagi bosqichlarni bajaring:\n\n"
         "1️⃣ <b>To'lovni amalga oshiring</b>\n"
         f"💰 {plan['label']} narxi: <b>{plan['price']} so'm</b>\n"
-        f"💳 Karta raqam: <code>{CARD_NUMBER}</code>\n"
-        f"👤 Qabul qiluvchi: {CARD_OWNER}\n\n"
+        f"{card_line}{owner_line}\n"
         "2️⃣ <b>Chekni yuboring</b>\n"
         "📸 To'lov qilganingizdan so'ng, chek (skrinshot)ni "
         "pastdagi tugma orqali yuboring\n\n"
@@ -154,7 +164,7 @@ def _page3_text(plan_key: str) -> str:
         "❗️ <b>Muhim:</b>\n"
         "• To'lovni faqat yuqoridagi karta raqamiga yuboring\n"
         "• Chek aniq va tushunarli bo'lishi kerak\n\n"
-        f"📩 Savollar bormi?\n👉 @{ADMIN_USERNAME} ga murojaat qiling"
+        f"{admin_line}"
     )
 
 
@@ -189,10 +199,13 @@ def _page4_kb(plan_key: str) -> InlineKeyboardMarkup:
 
 def _admin_caption(user_id: int, username, full_name: str, plan_key: str) -> str:
     plan  = PLANS[plan_key]
-    uname = f"@{username}" if username else "—"
+    # Foydalanuvchi tanlay oladigan maydonlar (full_name, username) ni
+    # ishonchli emas, shuning uchun HTML injection'dan oldini olish uchun
+    # ularni ekran qilamiz.
+    uname = f"@{esc(username)}" if username else "—"
     return (
         "💳 <b>Yangi Pro obuna so'rovi!</b>\n\n"
-        f"👤 Foydalanuvchi: <b>{full_name}</b>\n"
+        f"👤 Foydalanuvchi: <b>{esc(full_name)}</b>\n"
         f"🆔 ID: <code>{user_id}</code>\n"
         f"📱 Username: {uname}\n"
         f"📦 Muddat: <b>{plan['label']}</b>\n"
@@ -441,13 +454,17 @@ async def receipt_received(msg: Message, state: FSMContext):
         except Exception:
             pass
 
+    admin_line = (
+        f"\n\n📩 Savollar uchun: @{esc(ADMIN_USERNAME)}"
+        if ADMIN_USERNAME else ""
+    )
     await msg.answer(
         "✅ <b>Chek qabul qilindi!</b>\n\n"
         f"📦 Muddat: <b>{plan['label']}</b>\n"
         f"💰 Summa: <b>{plan['price']} so'm</b>\n\n"
         "⏳ Adminlar tekshirib, tez orada Pro'ni yoqib berishadi.\n"
-        "Odatda <b>5–30 daqiqa</b> ichida aktivlanadi.\n\n"
-        f"📩 Savollar uchun: @{ADMIN_USERNAME}",
+        "Odatda <b>5–30 daqiqa</b> ichida aktivlanadi."
+        + admin_line,
         parse_mode="HTML",
     )
 
@@ -509,7 +526,9 @@ async def admin_confirm_pro(call: CallbackQuery):
     # Admin kanalda xabarni yangilash
     try:
         old = call.message.caption or call.message.text or ""
-        new = old + f"\n\n✅ <b>TASDIQLANDI</b> — @{call.from_user.username or call.from_user.id}"
+        # Admin username / ID — HTML injection'dan himoya uchun ekran qilinadi.
+        approver = f"@{esc(call.from_user.username)}" if call.from_user.username else esc(call.from_user.id)
+        new = old + f"\n\n✅ <b>TASDIQLANDI</b> — {approver}"
         if call.message.caption:
             await call.message.edit_caption(caption=new, parse_mode="HTML")
         else:
@@ -554,10 +573,13 @@ async def reject_reason_received(msg: Message, state: FSMContext):
     reason = msg.text.strip() if msg.text and msg.text.lower() not in ("yo'q", "yoq") else None
 
     try:
+        admin_line = f"📩 Savollar uchun: @{esc(ADMIN_USERNAME)}" if ADMIN_USERNAME else ""
         text = (
             "❌ <b>Kaworai Pro so'rovingiz rad etildi.</b>\n\n"
-            + (f"📝 Sabab: {reason}\n\n" if reason else "")
-            + f"📩 Savollar uchun: @{ADMIN_USERNAME}"
+            # Admin kiritgan sabab — HTML teglarini ehtiyot choralari bilan
+            # foydalanuvchiga yuborishdan oldin ekran qilamiz.
+            + (f"📝 Sabab: {esc(reason)}\n\n" if reason else "")
+            + admin_line
         )
         await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
     except Exception:
