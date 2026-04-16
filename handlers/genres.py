@@ -33,32 +33,38 @@ GENRES = {
     "Psixologik": "🧠 Psychological",
 }
 
+# Aliases — har qanday tilda/formatda yozilgan janrni GENRES kalitiga
+# (o'zbekcha kanonik nom, masalan "Jang") aylantirish uchun xarita.
+# Eski ma'lumotlarda ingliz tilidagi yozuvlar ham bor, shuning uchun
+# ikkala til ham bitta kalitga yig'iladi.
 GENRE_ALIASES = {
-    "Sci-Fi": "SciFi",
-    "Slice of Life": "SliceOfLife",
-    "sci-fi": "SciFi",
-    "slice of life": "SliceOfLife",
-    "action": "Action",
-    "adventure": "Adventure",
-    "comedy": "Comedy",
+    # Inglizcha → o'zbekcha kanonik
+    "action": "Jang",
+    "adventure": "Sarguzasht",
+    "comedy": "Komediya",
     "drama": "Drama",
-    "fantasy": "Fantasy",
-    "horror": "Horror",
-    "mystery": "Mystery",
-    "romance": "Romance",
-    "scifi": "SciFi",
-    "sliceoflife": "SliceOfLife",
-    "sports": "Sports",
-    "sport": "Sports",
-    "supernatural": "Supernatural",
-    "thriller": "Thriller",
-    "mecha": "Mecha",
-    "magic": "Magic",
-    "school": "School",
-    "shounen": "Shounen",
-    "shoujo": "Shoujo",
+    "fantasy": "Fantaziya",
+    "horror": "Qo'rqinchli",
+    "mystery": "Sirli",
+    "romance": "Romantika",
+    "sci-fi": "Ilmiy fantastika",
+    "scifi": "Ilmiy fantastika",
+    "sci fi": "Ilmiy fantastika",
+    "slice of life": "Oddiy hayot",
+    "sliceoflife": "Oddiy hayot",
+    "sports": "Sport",
+    "sport": "Sport",
+    "supernatural": "G'ayritabiiy",
+    "thriller": "Triller",
+    "mecha": "Mexanik",
+    "magic": "Sehr",
+    "school": "Maktab",
+    "shounen": "Shonen",
+    "shonen": "Shonen",
+    "shoujo": "Shojo",
+    "shojo": "Shojo",
     "isekai": "Isekai",
-    "psychological": "Psychological",
+    "psychological": "Psixologik",
 }
 
 GENRE_PAGE_SIZE = 8
@@ -66,13 +72,25 @@ ANIME_PAGE_SIZE = 6
 
 
 def normalize_genre(g: str) -> str:
+    """
+    Janr qatorini kanonik GENRES kalitiga aylantiradi.
+
+    1) Agar aynan GENRES kalitlaridan biri bo'lsa — shu holicha qoladi.
+    2) Agar GENRE_ALIASES da bo'lsa — shunga mos kanonik kalit qaytariladi.
+    3) Aks holda kirishning o'zi qaytariladi (qidirishda mos kelmaydi,
+       lekin ma'lumotlar buzilmaydi).
+    """
+    if not g:
+        return ""
     g = g.strip()
-    if g in GENRE_ALIASES:
-        return GENRE_ALIASES[g]
-    if g.lower() in GENRE_ALIASES:
-        return GENRE_ALIASES[g.lower()]
-    for key in GENRES:
-        if key.lower() == g.lower():
+    if g in GENRES:
+        return g
+    lower = g.lower()
+    if lower in GENRE_ALIASES:
+        return GENRE_ALIASES[lower]
+    # emoji + matn formati bo'lsa ("⚔️ Action") — emoji olib qarab ko'ramiz
+    for key, label in GENRES.items():
+        if label.lower() == lower or key.lower() == lower:
             return key
     return g
 

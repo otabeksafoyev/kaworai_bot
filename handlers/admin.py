@@ -21,7 +21,9 @@ from data import config
 from database.engine import AsyncSessionLocal
 from database.models import Admin, Anime, RelatedContent, Series, SubscriptionChannel, User
 from database.queries import add_channel, get_all_channels, get_news_channels, remove_channel, toggle_channel
+from handlers.genres import GENRES, normalize_genre
 from states.admin_states import AddAnime, AddChannel, AdminProState, BroadcastState, EditAnime
+from utils.genre_picker import genre_picker_kb, genre_picker_text
 from utils.security import esc, parse_admin_ids
 
 logger = logging.getLogger(__name__)
@@ -941,22 +943,96 @@ async def process_desc(msg: Message, state: FSMContext):
     if msg.text == "🚫 Bekor qilish":
         await state.clear()
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
-    await state.update_data(desc=msg.text.strip())
+    await state.update_data(desc=msg.text.strip(), selected_genres=[])
     await state.set_state(AddAnime.waiting_genres)
-    await msg.answer("🎭 <b>Janrlar</b> (vergul bilan):\n<i>action, drama, fantasy</i>", parse_mode="HTML")
+    await msg.answer(
+        genre_picker_text([]),
+        parse_mode="HTML",
+        reply_markup=genre_picker_kb([], prefix="ag"),
+    )
+
+
+@admin_router.callback_query(F.data.startswith("ag_tog:"), AddAnime.waiting_genres)
+async def add_genre_toggle(call: types.CallbackQuery, state: FSMContext):
+    """Add anime — janrni tanlash/olib tashlash."""
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    key = call.data.split(":", 1)[1]
+    if key not in GENRES:
+        return await call.answer("❌ Noto'g'ri janr", show_alert=False)
+    data = await state.get_data()
+    selected: list[str] = list(data.get("selected_genres") or [])
+    if key in selected:
+        selected.remove(key)
+    else:
+        selected.append(key)
+    await state.update_data(selected_genres=selected)
+    try:
+        await call.message.edit_text(
+            genre_picker_text(selected),
+            parse_mode="HTML",
+            reply_markup=genre_picker_kb(selected, prefix="ag"),
+        )
+    except Exception:
+        # Xabar o'zgartirilmasa — sodir bo'lishi mumkin, lekin baribir xatolik chiqib yiqilmasin.
+        logger.debug("add_genre_toggle: edit_text failed", exc_info=True)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "ag_cancel", AddAnime.waiting_genres)
+async def add_genre_cancel(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    await state.clear()
+    try:
+        await call.message.edit_text("❌ Bekor qilindi.")
+    except Exception:
+        logger.debug("add_genre_cancel: edit_text failed", exc_info=True)
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "ag_done", AddAnime.waiting_genres)
+async def add_genre_done(call: types.CallbackQuery, state: FSMContext):
+    """Add anime — tanlangan janrlarni tasdiqlab, keyingi bosqichga o'tish."""
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    data = await state.get_data()
+    selected: list[str] = list(data.get("selected_genres") or [])
+    if not selected:
+        return await call.answer("❌ Kamida bitta janr tanlang!", show_alert=True)
+    await state.update_data(genres=selected)
+    await state.set_state(AddAnime.waiting_tags)
+    labels = ", ".join(GENRES.get(k, k) for k in selected)
+    try:
+        await call.message.edit_text(
+            f"🎭 <b>Janrlar saqlandi:</b> {esc(labels)}",
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.debug("add_genre_done: edit_text failed", exc_info=True)
+    await call.message.answer(
+        "🏷 <b>Teglar</b>:\n<i>dark, survival, revenge</i>",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_tags"),
+    )
+    await call.answer()
 
 
 @admin_router.message(AddAnime.waiting_genres)
-async def process_genres(msg: Message, state: FSMContext):
+async def genres_text_hint(msg: Message, state: FSMContext):
+    """Admin yozma matn yuborsa — tugmalardan foydalanishga undaydi."""
     if not await is_admin(msg.from_user.id):
         return
     if msg.text == "🚫 Bekor qilish":
         await state.clear()
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
-    await state.update_data(genres=[g.strip() for g in msg.text.split(",")])
-    await state.set_state(AddAnime.waiting_tags)
+    data = await state.get_data()
+    selected: list[str] = list(data.get("selected_genres") or [])
     await msg.answer(
-        "🏷 <b>Teglar</b>:\n<i>dark, survival, revenge</i>", parse_mode="HTML", reply_markup=_skip_kb("skip_tags")
+        "ℹ️ Iltimos, yuqoridagi tugmalar orqali janrlarni tanlang — matn bilan emas.\n" + genre_picker_text(selected),
+        parse_mode="HTML",
+        reply_markup=genre_picker_kb(selected, prefix="ag"),
     )
 
 
@@ -1608,10 +1684,34 @@ async def edit_field_selected(call: types.CallbackQuery, state: FSMContext):
         await call.answer()
         return
 
+    # Janrlarni tahrirlash — alohida picker orqali, matn bilan emas.
+    if field == "genres":
+        async with AsyncSessionLocal() as session:
+            anime = await session.get(Anime, anime_id)
+        current: list[str] = []
+        if anime:
+            from handlers.genres import parse_genres
+
+            raw = parse_genres(anime.genres)
+            seen: set[str] = set()
+            for g in raw:
+                k = normalize_genre(g)
+                if k in GENRES and k not in seen:
+                    current.append(k)
+                    seen.add(k)
+        await state.update_data(edit_field="genres", selected_genres=current)
+        await state.set_state(EditAnime.picking_genres)
+        await call.message.answer(
+            genre_picker_text(current),
+            parse_mode="HTML",
+            reply_markup=genre_picker_kb(current, prefix="eg"),
+        )
+        await call.answer()
+        return
+
     labels = {
         "title": "yangi nomini",
         "desc": "yangi tavsifini",
-        "genres": "janrlarini (vergul bilan)",
         "year": "yilini",
         "tags": "teglarini (vergul bilan)",
         "mood": "mood (vergul bilan)",
@@ -1671,8 +1771,6 @@ async def save_edit_value(msg: Message, state: FSMContext):
             anime.title = msg.text.strip()
         elif field == "desc":
             anime.description = msg.text.strip()
-        elif field == "genres":
-            anime.genres = [g.strip() for g in msg.text.split(",")]
         elif field == "tags":
             anime.tags = [t.strip() for t in msg.text.split(",")]
         elif field == "mood":
@@ -1712,6 +1810,101 @@ async def save_edit_value(msg: Message, state: FSMContext):
 
     await state.clear()
     await msg.answer(f"✅ <b>{title}</b> yangilandi!", reply_markup=admin_main_kb, parse_mode="HTML")
+
+
+# ─────────────────────────────────────────────
+# Edit anime — janr picker callbacklari
+# ─────────────────────────────────────────────
+
+
+@admin_router.callback_query(F.data.startswith("eg_tog:"), EditAnime.picking_genres)
+async def edit_genre_toggle(call: types.CallbackQuery, state: FSMContext):
+    """Tahrirlash jarayonida janrni tanlash/olib tashlash."""
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    key = call.data.split(":", 1)[1]
+    if key not in GENRES:
+        return await call.answer("❌ Noto'g'ri janr", show_alert=False)
+    data = await state.get_data()
+    selected: list[str] = list(data.get("selected_genres") or [])
+    if key in selected:
+        selected.remove(key)
+    else:
+        selected.append(key)
+    await state.update_data(selected_genres=selected)
+    try:
+        await call.message.edit_text(
+            genre_picker_text(selected),
+            parse_mode="HTML",
+            reply_markup=genre_picker_kb(selected, prefix="eg"),
+        )
+    except Exception:
+        logger.debug("edit_genre_toggle: edit_text failed", exc_info=True)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "eg_cancel", EditAnime.picking_genres)
+async def edit_genre_cancel(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    await state.clear()
+    try:
+        await call.message.edit_text("❌ Bekor qilindi.")
+    except Exception:
+        logger.debug("edit_genre_cancel: edit_text failed", exc_info=True)
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "eg_done", EditAnime.picking_genres)
+async def edit_genre_done(call: types.CallbackQuery, state: FSMContext):
+    """Tanlangan janrlarni bazaga saqlash."""
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    data = await state.get_data()
+    anime_id = data.get("edit_anime_id")
+    selected: list[str] = list(data.get("selected_genres") or [])
+    if not anime_id:
+        await state.clear()
+        return await call.answer("❌ Xatolik!", show_alert=True)
+    if not selected:
+        return await call.answer("❌ Kamida bitta janr tanlang!", show_alert=True)
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+        if not anime:
+            await state.clear()
+            return await call.answer("❌ Topilmadi!", show_alert=True)
+        anime.genres = selected
+        await session.commit()
+        title = anime.title
+    await state.clear()
+    labels = ", ".join(GENRES.get(k, k) for k in selected)
+    try:
+        await call.message.edit_text(
+            f"✅ <b>{esc(title)}</b> janrlari yangilandi:\n{esc(labels)}",
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.debug("edit_genre_done: edit_text failed", exc_info=True)
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.message(EditAnime.picking_genres)
+async def edit_genres_text_hint(msg: Message, state: FSMContext):
+    """Admin tugma o'rniga matn yozsa — eslatma."""
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    data = await state.get_data()
+    selected: list[str] = list(data.get("selected_genres") or [])
+    await msg.answer(
+        "ℹ️ Iltimos, yuqoridagi tugmalardan foydalaning — matn qabul qilinmaydi.\n" + genre_picker_text(selected),
+        parse_mode="HTML",
+        reply_markup=genre_picker_kb(selected, prefix="eg"),
+    )
 
 
 # ═══════════════════════════════════════════════════════════
