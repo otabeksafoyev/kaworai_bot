@@ -1,9 +1,8 @@
-from datetime import datetime
-
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Anime, AnimeRating, AnimeSubscription, Series, SubscriptionChannel, User
+from utils.time import utcnow
 
 # ═══════════════════════════════════════════════════════════
 #  USER
@@ -155,7 +154,7 @@ async def is_pro_user(session: AsyncSession, user_id: int) -> bool:
     user = await session.get(User, user_id)
     if not user or not user.is_pro:
         return False
-    if user.pro_until and user.pro_until < datetime.utcnow():
+    if user.pro_until and user.pro_until < utcnow():
         user.is_pro = False
         user.pro_until = None
         await session.commit()

@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
@@ -7,6 +6,7 @@ from sqlalchemy import select
 
 from database.engine import AsyncSessionLocal
 from database.models import Anime, User
+from utils.time import utcnow
 
 genre_router = Router()
 
@@ -99,7 +99,7 @@ async def _is_pro(user_id: int) -> bool:
         user = await session.get(User, user_id)
         if not user or not user.is_pro:
             return False
-        if user.pro_until and user.pro_until < datetime.utcnow():
+        if user.pro_until and user.pro_until < utcnow():
             user.is_pro = False
             user.pro_until = None
             await session.commit()
