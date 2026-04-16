@@ -37,6 +37,7 @@ class EditAnime(StatesGroup):
     waiting_anime_id = State()
     waiting_field = State()
     waiting_value = State()
+    picking_genres = State()
     waiting_episode_select = State()
     waiting_episode_video = State()
     waiting_delete_anime_id = State()
