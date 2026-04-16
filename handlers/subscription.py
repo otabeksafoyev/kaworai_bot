@@ -1,5 +1,6 @@
-# handlers/subscription.py
+import logging
 
+# handlers/subscription.py
 from aiogram import Router
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -7,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from database.queries.partners import get_active_partners
 from keyboards.subscription_kb import get_subscription_keyboard
 from loader import bot
+
+logger = logging.getLogger(__name__)
 
 subscription_router = Router()
 

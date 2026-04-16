@@ -10,6 +10,7 @@ Tuzatilgan muammolar:
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from sqlalchemy import func, select
@@ -17,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Anime, RelatedContent, Series, UserTasteProfile, UserWatchHistory, ViewRecord
 from utils.time import utcnow
+
+logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════
 #  MOOD XARITASI

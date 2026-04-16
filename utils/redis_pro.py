@@ -7,10 +7,13 @@ TTL: recommendation = 5 daqiqa, trending = 10 daqiqa
 """
 
 import json
+import logging
 import os
 from typing import Any, Optional
 
 import redis.asyncio as aioredis
+
+logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 

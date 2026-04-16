@@ -3,6 +3,7 @@ Kaworai Pro — Obuna to'lov tizimi
 5 sahifa, bitta xabar ichida edit_message orqali navigatsiya.
 """
 
+import logging
 from datetime import timedelta
 
 from aiogram import F, Router
@@ -22,6 +23,8 @@ from database.models import Admin, User
 from loader import bot
 from utils.security import esc, parse_admin_ids
 from utils.time import utcnow
+
+logger = logging.getLogger(__name__)
 
 pro_payment_router = Router()
 

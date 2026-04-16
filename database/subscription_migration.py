@@ -52,9 +52,12 @@ ALTER TABLE animes
 # ── Ishga tushirish (migration.py ga qo'shing yoki alohida) ──
 
 import asyncio
+import logging
 import os
 
 import asyncpg
+
+logger = logging.getLogger(__name__)
 
 
 async def run_migration():
@@ -65,16 +68,17 @@ async def run_migration():
         for stmt in stmts:
             try:
                 await conn.execute(stmt)
-                print(f"✅ {stmt[:60]}...")
+                logger.info("OK: %s...", stmt[:60])
             except Exception as e:
                 if "already exists" in str(e).lower():
-                    pass
-                else:
-                    print(f"⚠️ {str(e)[:80]}")
-        print("\n✅ Migration tugadi!")
+                    continue
+                logger.warning("Migration warning: %s", str(e)[:200])
+        logger.info("Migration tugadi.")
     finally:
         await conn.close()
 
 
 if __name__ == "__main__":
+    # Running this module directly should emit logs to the console.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
     asyncio.run(run_migration())

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from datetime import timedelta
 
@@ -23,6 +24,8 @@ from database.queries import add_channel, get_all_channels, get_news_channels, r
 from states.admin_states import AddAnime, AddChannel, AdminProState, BroadcastState, EditAnime
 from utils.security import esc, parse_admin_ids
 from utils.time import utcnow
+
+logger = logging.getLogger(__name__)
 
 admin_router = Router()
 

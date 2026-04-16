@@ -1,4 +1,5 @@
 import json
+import logging
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
@@ -7,6 +8,8 @@ from sqlalchemy import select
 from database.engine import AsyncSessionLocal
 from database.models import Anime, User
 from utils.time import utcnow
+
+logger = logging.getLogger(__name__)
 
 genre_router = Router()
 

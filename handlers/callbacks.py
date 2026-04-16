@@ -1,3 +1,4 @@
+import logging
 import os
 
 from aiogram import F, Router
@@ -16,6 +17,8 @@ from database.queries import (
     unsubscribe_anime,
 )
 from utils.time import utcnow
+
+logger = logging.getLogger(__name__)
 
 callback_router = Router()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")

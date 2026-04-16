@@ -1,8 +1,11 @@
+import logging
 import time
 
 from aiogram.fsm.storage.redis import RedisStorage
 
 from config import config
+
+logger = logging.getLogger(__name__)
 
 redis = RedisStorage.from_url(config.REDIS_URL).redis
 

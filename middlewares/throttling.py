@@ -1,3 +1,5 @@
+import logging
+
 # middlewares/throttling.py
 import time
 from typing import Any, Awaitable, Callable
@@ -5,6 +7,8 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 from cachetools import TTLCache
+
+logger = logging.getLogger(__name__)
 
 
 class ThrottlingMiddleware(BaseMiddleware):
