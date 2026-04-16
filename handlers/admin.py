@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from aiogram import Router, F, types, Bot
@@ -19,6 +20,8 @@ from database.queries import (
     get_all_channels, add_channel, remove_channel, toggle_channel, get_news_channels
 )
 from data import config
+
+logger = logging.getLogger(__name__)
 
 admin_router = Router()
 
@@ -122,9 +125,15 @@ async def _send_anime_post(bot: Bot, ch, anime: Anime, msg: Message = None) -> b
                 parse_mode="HTML"
             )
         return True
-    except Exception as e:
+    except Exception:
+        logger.exception(
+            "_send_anime_post: failed to send anime=%s to channel=%s (%s)",
+            getattr(anime, "id", None),
+            getattr(ch, "channel_id", None),
+            getattr(ch, "channel_name", None),
+        )
         if msg:
-            await msg.answer(f"⚠️ {ch.channel_name} ga yuborishda xato: {e}")
+            await msg.answer(f"⚠️ {ch.channel_name} ga yuborishda xato.")
         return False
 
 
@@ -230,7 +239,10 @@ async def pm_close(call: types.CallbackQuery):
     try:
         await call.message.edit_text("✅ Yopildi.")
     except Exception:
-        pass
+        logger.exception(
+            "pm_close: edit_text failed user=%s",
+            getattr(call.from_user, "id", None),
+        )
     await call.answer()
 
 
@@ -382,6 +394,14 @@ async def _do_set_pro(msg: Message, user_id: int, days: int):
         await session.commit()
         name = user.full_name or str(user_id)
 
+    logger.info(
+        "_do_set_pro: admin=%s granted Pro to user=%s days=%s until=%s",
+        msg.from_user.id,
+        user_id,
+        days,
+        until_str,
+    )
+
     try:
         await msg.bot.send_message(
             chat_id=user_id,
@@ -393,7 +413,11 @@ async def _do_set_pro(msg: Message, user_id: int, days: int):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "_do_set_pro: failed to notify user=%s about Pro activation (admin=%s)",
+            user_id,
+            msg.from_user.id,
+        )
 
     await msg.answer(
         f"✅ <b>{name}</b> (<code>{user_id}</code>) Pro qilindi!\n📅 {until_str}",
@@ -411,6 +435,12 @@ async def _do_remove_pro(msg: Message, user_id: int):
         await session.commit()
         name = user.full_name or str(user_id)
 
+    logger.info(
+        "_do_remove_pro: admin=%s removed Pro from user=%s",
+        msg.from_user.id,
+        user_id,
+    )
+
     try:
         await msg.bot.send_message(
             chat_id=user_id,
@@ -418,7 +448,11 @@ async def _do_remove_pro(msg: Message, user_id: int):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "_do_remove_pro: failed to notify user=%s about Pro revocation (admin=%s)",
+            user_id,
+            msg.from_user.id,
+        )
 
     await msg.answer(
         f"✅ <b>{name}</b> (<code>{user_id}</code>) Pro olib tashlandi.",
@@ -439,6 +473,10 @@ async def _show_user_info(msg: Message, user_id: int):
                 .where(AnimeSubscription.user_id == user_id)
             )).scalar() or 0
         except Exception:
+            logger.exception(
+                "_show_user_info: failed to count subscriptions for user=%s",
+                user_id,
+            )
             sub_count = 0
 
     now    = datetime.utcnow()
@@ -506,10 +544,19 @@ async def adm_remvpro(call: types.CallbackQuery):
         user.is_pro    = False
         user.pro_until = None
         await session.commit()
+    logger.info(
+        "adm_remvpro: admin=%s removed Pro from user=%s",
+        call.from_user.id,
+        user_id,
+    )
     try:
         await call.bot.send_message(user_id, "❌ <b>Kaworai Pro bekor qilindi.</b>", parse_mode="HTML")
     except Exception:
-        pass
+        logger.exception(
+            "adm_remvpro: failed to notify user=%s about Pro revocation (admin=%s)",
+            user_id,
+            call.from_user.id,
+        )
     await call.answer("✅ Pro olib tashlandi!", show_alert=True)
 
 
@@ -538,6 +585,13 @@ async def _do_set_pro_cb(call: types.CallbackQuery, user_id: int, days: int):
         user.is_pro    = True
         await session.commit()
         until_str = user.pro_until.strftime("%d.%m.%Y")
+    logger.info(
+        "_do_set_pro_cb: admin=%s granted Pro to user=%s days=%s until=%s",
+        call.from_user.id,
+        user_id,
+        days,
+        until_str,
+    )
     try:
         await call.bot.send_message(
             user_id,
@@ -545,7 +599,11 @@ async def _do_set_pro_cb(call: types.CallbackQuery, user_id: int, days: int):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "_do_set_pro_cb: failed to notify user=%s about Pro activation (admin=%s)",
+            user_id,
+            call.from_user.id,
+        )
     await call.answer(f"✅ {days} kun Pro berildi! ({until_str})", show_alert=True)
 
 
@@ -566,6 +624,13 @@ async def _do_reduce_pro_cb(call: types.CallbackQuery, user_id: int, days: int):
         else:
             res = "Abadiy Pro ni qisqartirish mumkin emas!"
         await session.commit()
+    logger.info(
+        "_do_reduce_pro_cb: admin=%s reduced Pro user=%s days=%s result=%s",
+        call.from_user.id,
+        user_id,
+        days,
+        res,
+    )
     await call.answer(res, show_alert=True)
 
 
@@ -598,6 +663,10 @@ async def pm_pro_list(call: types.CallbackQuery):
     try:
         await call.message.edit_text(text, parse_mode="HTML")
     except Exception:
+        logger.exception(
+            "pm_pro_list: edit_text failed, falling back to answer (admin=%s)",
+            getattr(call.from_user, "id", None),
+        )
         await call.message.answer(text, parse_mode="HTML")
     await call.answer()
 
@@ -624,6 +693,10 @@ async def pm_admin_list(call: types.CallbackQuery):
     try:
         await call.message.edit_text(text, parse_mode="HTML")
     except Exception:
+        logger.exception(
+            "pm_admin_list: edit_text failed, falling back to answer (admin=%s)",
+            getattr(call.from_user, "id", None),
+        )
         await call.message.answer(text, parse_mode="HTML")
     await call.answer()
 
@@ -640,6 +713,13 @@ async def _do_add_admin(msg: Message, new_id: int, nickname: str | None):
         session.add(Admin(telegram_id=new_id, nickname=nickname, role="admin"))
         await session.commit()
 
+    logger.info(
+        "_do_add_admin: owner=%s added new admin=%s nickname=%s",
+        msg.from_user.id,
+        new_id,
+        nickname,
+    )
+
     try:
         await msg.bot.send_message(
             new_id,
@@ -647,7 +727,11 @@ async def _do_add_admin(msg: Message, new_id: int, nickname: str | None):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "_do_add_admin: failed to notify new admin=%s (owner=%s)",
+            new_id,
+            msg.from_user.id,
+        )
 
     nick_str = f" ({nickname})" if nickname else ""
     await msg.answer(f"✅ <code>{new_id}</code>{nick_str} admin qilindi!",
@@ -666,11 +750,21 @@ async def _do_remove_admin(msg: Message, target_id: int):
         await session.delete(admin)
         await session.commit()
 
+    logger.info(
+        "_do_remove_admin: owner=%s removed admin=%s",
+        msg.from_user.id,
+        target_id,
+    )
+
     try:
         await msg.bot.send_message(target_id, "❌ <b>Admin huquqingiz olib tashlandi.</b>",
                                    parse_mode="HTML")
     except Exception:
-        pass
+        logger.exception(
+            "_do_remove_admin: failed to notify removed admin=%s (owner=%s)",
+            target_id,
+            msg.from_user.id,
+        )
 
     await msg.answer(f"✅ <code>{target_id}</code> admin emas endi.",
                      parse_mode="HTML", reply_markup=admin_main_kb)
@@ -729,6 +823,10 @@ async def _show_anime_info(msg: Message, anime_id: int):
         else:
             await msg.answer(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
+        logger.exception(
+            "_show_anime_info: failed to render poster for anime=%s, falling back to text",
+            anime_id,
+        )
         await msg.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
@@ -741,6 +839,12 @@ async def adm_prolock_toggle(call: types.CallbackQuery):
         if anime:
             anime.is_pro_locked = not anime.is_pro_locked
             await session.commit()
+            logger.info(
+                "adm_prolock_toggle (admin): admin=%s anime=%s new_pro_locked=%s",
+                call.from_user.id,
+                anime_id,
+                anime.is_pro_locked,
+            )
             s = "🔒 Pro-locked" if anime.is_pro_locked else "🔓 Ochiq"
             await call.answer(f"✅ {anime.title}: {s}", show_alert=True)
 
@@ -754,6 +858,12 @@ async def adm_hgem_toggle(call: types.CallbackQuery):
         if anime:
             anime.is_hidden_gem = not anime.is_hidden_gem
             await session.commit()
+            logger.info(
+                "adm_hgem_toggle: admin=%s anime=%s new_hidden_gem=%s",
+                call.from_user.id,
+                anime_id,
+                anime.is_hidden_gem,
+            )
             s = "💎 Hidden Gem: Ha" if anime.is_hidden_gem else "💎 Hidden Gem: Yo'q"
             await call.answer(f"✅ {anime.title}: {s}", show_alert=True)
 
@@ -798,6 +908,10 @@ async def pm_stats(call: types.CallbackQuery):
     try:
         await call.message.edit_text(text, parse_mode="HTML")
     except Exception:
+        logger.exception(
+            "pm_stats: edit_text failed, falling back to answer (admin=%s)",
+            getattr(call.from_user, "id", None),
+        )
         await call.message.answer(text, parse_mode="HTML")
     await call.answer()
 
@@ -836,6 +950,11 @@ async def pro_msg_send(msg: Message, state: FSMContext):
             await msg.bot.send_message(user_id, prefix + (msg.text or ""), parse_mode="HTML")
         await msg.answer(f"✅ Xabar yuborildi ({user_id})", reply_markup=admin_main_kb)
     except Exception as e:
+        logger.exception(
+            "pro_msg_send: failed to deliver admin message to user=%s (admin=%s)",
+            user_id,
+            msg.from_user.id,
+        )
         await msg.answer(f"❌ Yuborib bo'lmadi: {e}", reply_markup=admin_main_kb)
 
 
@@ -1286,7 +1405,11 @@ async def _save_anime(msg: Message, state: FSMContext, bot: Bot):
         else:
             await bot.send_message(chat_id=config.ADMIN_ID, text=info, parse_mode="HTML")
     except Exception:
-        pass
+        logger.exception(
+            "save_anime: failed to notify ADMIN_ID=%s about new anime=%s",
+            config.ADMIN_ID,
+            data.get("anime_id"),
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1313,7 +1436,10 @@ async def manage_close(call: types.CallbackQuery, state: FSMContext):
     try:
         await call.message.edit_text("✅ Yopildi.")
     except Exception:
-        pass
+        logger.exception(
+            "manage_close: edit_text failed (admin=%s)",
+            getattr(call.from_user, "id", None),
+        )
     await call.answer()
 
 
@@ -1383,8 +1509,19 @@ async def confirm_delete_anime(call: types.CallbackQuery):
             title = anime.title
             await session.delete(anime)
             await session.commit()
+            logger.info(
+                "confirm_delete_anime: admin=%s deleted anime=%s title=%s",
+                call.from_user.id,
+                anime_id,
+                title,
+            )
             await call.message.edit_text(f"✅ <b>{title}</b> o'chirildi!", parse_mode="HTML")
         else:
+            logger.warning(
+                "confirm_delete_anime: anime=%s not found (admin=%s)",
+                anime_id,
+                call.from_user.id,
+            )
             await call.message.edit_text("❌ Topilmadi!")
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
     await call.answer()
@@ -1395,7 +1532,10 @@ async def cancel_delete(call: types.CallbackQuery):
     try:
         await call.message.edit_text("❌ Bekor.")
     except Exception:
-        pass
+        logger.exception(
+            "cancel_delete: edit_text failed (admin=%s)",
+            getattr(call.from_user, "id", None),
+        )
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
     await call.answer()
 
@@ -1482,7 +1622,11 @@ async def edit_field_selected(call: types.CallbackQuery, state: FSMContext):
         try:
             await call.message.edit_text("❌ Bekor.")
         except Exception:
-            pass
+            logger.exception(
+                "edit_field_selected: cancel edit_text failed (admin=%s anime=%s)",
+                getattr(call.from_user, "id", None),
+                anime_id,
+            )
         await call.message.answer("Panel:", reply_markup=admin_main_kb)
         await call.answer()
         return
@@ -1801,11 +1945,20 @@ async def send_to_channel_with_media(call: types.CallbackQuery):
                 )
             sent += 1
         except Exception as e:
+            logger.exception(
+                "send_to_channel_with_media: failed to send anime=%s to channel=%s (media=%s)",
+                anime_id,
+                getattr(ch, "channel_id", None),
+                media_type,
+            )
             await call.message.answer(f"⚠️ {ch.channel_name}: {e}")
 
     try:
         await call.message.edit_text(f"✅ {sent} ta kanalga yuborildi!", parse_mode="HTML")
     except Exception:
+        logger.exception(
+            "send_to_channel_with_media: edit_text failed, falling back to answer",
+        )
         await call.message.answer(f"✅ {sent} ta kanalga yuborildi!")
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
     await call.answer()
@@ -1835,6 +1988,9 @@ async def send_to_channel_cb(call: types.CallbackQuery):
     try:
         await call.message.edit_text(f"✅ {sent} ta kanalga yuborildi!", parse_mode="HTML")
     except Exception:
+        logger.exception(
+            "send_to_channel_cb: edit_text failed, falling back to answer",
+        )
         await call.message.answer(f"✅ {sent} ta kanalga yuborildi!")
     await call.answer()
 
@@ -1861,7 +2017,10 @@ async def bc_cancel(call: types.CallbackQuery, state: FSMContext):
     try:
         await call.message.edit_text("❌ Bekor.")
     except Exception:
-        pass
+        logger.exception(
+            "bc_cancel: edit_text failed (admin=%s)",
+            getattr(call.from_user, "id", None),
+        )
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
     await call.answer()
 
@@ -2019,11 +2178,20 @@ async def bc_send_to_channel(call: types.CallbackQuery, state: FSMContext):
                 )
             sent += 1
         except Exception as e:
+            logger.exception(
+                "bc_send_with_media: failed to send anime=%s to channel=%s (media=%s)",
+                anime_id,
+                getattr(ch, "channel_id", None),
+                media_type,
+            )
             await call.message.answer(f"⚠️ {ch.channel_name}: {e}")
 
     try:
         await call.message.edit_text(f"✅ {sent} ta kanalga yuborildi!")
     except Exception:
+        logger.exception(
+            "bc_send_with_media: edit_text failed, falling back to answer",
+        )
         await call.message.answer(f"✅ {sent} ta kanalga yuborildi!")
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
     await call.answer()
@@ -2114,13 +2282,29 @@ async def broadcast_to_users(msg: Message, state: FSMContext):
         result   = await session.execute(select(User.telegram_id))
         user_ids = result.scalars().all()
     success = failed = 0
+    logger.info(
+        "broadcast_to_users: admin=%s starting broadcast to %s users",
+        msg.from_user.id,
+        len(user_ids),
+    )
     for uid in user_ids:
         try:
             await msg.copy_to(chat_id=uid)
             success += 1
             await asyncio.sleep(0.05)
         except Exception:
+            logger.exception(
+                "broadcast_to_users: failed to deliver to user=%s (admin=%s)",
+                uid,
+                msg.from_user.id,
+            )
             failed += 1
+    logger.info(
+        "broadcast_to_users: admin=%s finished broadcast ok=%s failed=%s",
+        msg.from_user.id,
+        success,
+        failed,
+    )
     await msg.answer(
         f"✅ Yuborildi!\n👤 OK: {success}\n❌ Xato: {failed}",
         reply_markup=admin_main_kb, parse_mode="HTML"
@@ -2154,25 +2338,46 @@ async def add_episode_from_channel(message: Message):
             try:
                 anime_id = int(line.split(":", 1)[1].strip())
             except Exception:
-                pass
+                logger.exception(
+                    "add_episode_from_channel: failed to parse anime_id from line=%r",
+                    line,
+                )
         elif ll.startswith(("qism:", "episode:", "part:")):
             try:
                 episode = int(line.split(":", 1)[1].strip())
             except Exception:
-                pass
+                logger.exception(
+                    "add_episode_from_channel: failed to parse episode from line=%r",
+                    line,
+                )
     if anime_id is None or episode is None:
+        logger.warning(
+            "add_episode_from_channel: missing anime_id=%s or episode=%s in caption=%r",
+            anime_id,
+            episode,
+            caption[:200],
+        )
         try:
             await message.answer("❌ Format:\n<b>ID: 388\nQism: 13</b>", parse_mode="HTML")
         except Exception:
-            pass
+            logger.exception(
+                "add_episode_from_channel: failed to reply with format hint",
+            )
         return
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
+            logger.warning(
+                "add_episode_from_channel: anime_id=%s not found",
+                anime_id,
+            )
             try:
                 await message.answer(f"❌ Anime ID {anime_id} topilmadi!")
             except Exception:
-                pass
+                logger.exception(
+                    "add_episode_from_channel: failed to reply about missing anime=%s",
+                    anime_id,
+                )
             return
         r       = await session.execute(
             select(func.max(Series.episode)).where(Series.anime_id == anime_id)
@@ -2182,10 +2387,20 @@ async def add_episode_from_channel(message: Message):
             episode = last_ep + 1
         session.add(Series(anime_id=anime_id, episode=episode, file_id=file_id))
         await session.commit()
+    logger.info(
+        "add_episode_from_channel: anime=%s episode=%s added (title=%s)",
+        anime_id,
+        episode,
+        anime.title,
+    )
     try:
         await message.answer(f"✅ <b>{anime.title}</b> — {episode}-qism!", parse_mode="HTML")
     except Exception:
-        pass
+        logger.exception(
+            "add_episode_from_channel: failed to reply in secret channel anime=%s episode=%s",
+            anime_id,
+            episode,
+        )
     try:
         await message.bot.send_message(
             config.ADMIN_ID,
@@ -2193,7 +2408,12 @@ async def add_episode_from_channel(message: Message):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "add_episode_from_channel: failed to notify ADMIN_ID=%s anime=%s episode=%s",
+            config.ADMIN_ID,
+            anime_id,
+            episode,
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2296,6 +2516,14 @@ async def confirm_del_eps(call: types.CallbackQuery):
         for ep in eps:
             await session.delete(ep)
         await session.commit()
+    logger.info(
+        "confirm_del_eps: admin=%s deleted episodes %s-%s (count=%s) for anime=%s",
+        call.from_user.id,
+        from_ep,
+        to_ep,
+        len(eps),
+        anime_id,
+    )
     await call.message.edit_text(f"✅ {from_ep}-{to_ep} ({len(eps)} ta) o'chirildi!")
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
     await call.answer()

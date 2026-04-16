@@ -3,6 +3,8 @@ Kaworai Pro — Pro User Handler (tuzatilgan)
 Barcha edit_caption → safe_edit() orqali ishlaydi.
 """
 
+import logging
+
 from aiogram import Router, F, types
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -10,6 +12,8 @@ from database.engine import AsyncSessionLocal
 from database.models import User, Anime
 from datetime import datetime
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 pro_user_router = Router()
 
@@ -41,6 +45,12 @@ async def safe_edit(call: types.CallbackQuery, text: str, reply_markup=None):
                 disable_web_page_preview=True,
             )
     except Exception:
+        logger.exception(
+            "safe_edit: edit failed for user=%s chat=%s message=%s, falling back to answer",
+            getattr(call.from_user, "id", None),
+            getattr(msg.chat, "id", None),
+            getattr(msg, "message_id", None),
+        )
         try:
             await msg.answer(
                 text=text,
@@ -49,7 +59,11 @@ async def safe_edit(call: types.CallbackQuery, text: str, reply_markup=None):
                 disable_web_page_preview=True,
             )
         except Exception:
-            pass
+            logger.exception(
+                "safe_edit: fallback answer also failed for user=%s chat=%s",
+                getattr(call.from_user, "id", None),
+                getattr(msg.chat, "id", None),
+            )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -65,6 +79,10 @@ async def check_pro(user_id: int) -> bool:
             user.is_pro    = False
             user.pro_until = None
             await session.commit()
+            logger.info(
+                "check_pro: Pro subscription expired for user=%s, downgraded",
+                user_id,
+            )
             return False
         return True
 
@@ -165,6 +183,10 @@ async def pro_recommend(call: types.CallbackQuery):
             profile = await get_or_create_taste_profile(session, call.from_user.id)
             identity = build_identity_label(profile)
     except Exception:
+        logger.exception(
+            "pro_recommend: failed to fetch recommendations for user=%s",
+            call.from_user.id,
+        )
         recs     = []
         identity = "🎌 Anime muxlisi"
 
@@ -219,6 +241,11 @@ async def pro_rec_next(call: types.CallbackQuery):
         async with AsyncSessionLocal() as session:
             recs = await get_recommendations(session, call.from_user.id, limit=8, is_pro=True)
     except Exception:
+        logger.exception(
+            "pro_rec_next: failed to fetch recommendations for user=%s idx=%s",
+            call.from_user.id,
+            idx,
+        )
         recs = []
 
     if not recs or idx >= len(recs):
@@ -282,6 +309,11 @@ async def mood_selected(call: types.CallbackQuery):
                 target_moods=[mood], limit=6, is_pro=True
             )
     except Exception:
+        logger.exception(
+            "mood_selected: failed to fetch mood recommendations for user=%s mood=%s",
+            call.from_user.id,
+            mood,
+        )
         recs = []
 
     if not recs:
@@ -335,6 +367,12 @@ async def mood_next(call: types.CallbackQuery):
                 target_moods=[mood], limit=6, is_pro=True
             )
     except Exception:
+        logger.exception(
+            "mood_next: failed to fetch mood recommendations for user=%s mood=%s idx=%s",
+            call.from_user.id,
+            mood,
+            idx,
+        )
         recs = []
 
     if not recs or idx >= len(recs):
@@ -391,6 +429,10 @@ async def pro_trending(call: types.CallbackQuery):
         async with AsyncSessionLocal() as session:
             items = await get_trending(session, limit=6, is_pro=True)
     except Exception:
+        logger.exception(
+            "pro_trending: failed to fetch trending for user=%s",
+            call.from_user.id,
+        )
         items = []
     await _show_list(call, items, "🔥 <b>Trending — Bu hafta eng ko'p ko'rilganlar</b>")
 
@@ -404,6 +446,10 @@ async def pro_top(call: types.CallbackQuery):
         async with AsyncSessionLocal() as session:
             items = await get_top_rated(session, limit=6, is_pro=True)
     except Exception:
+        logger.exception(
+            "pro_top: failed to fetch top-rated for user=%s",
+            call.from_user.id,
+        )
         items = []
     await _show_list(call, items, "⭐ <b>Top Reyting — Eng yuqori baholangan</b>")
 
@@ -417,6 +463,10 @@ async def pro_rising(call: types.CallbackQuery):
         async with AsyncSessionLocal() as session:
             items = await get_rising(session, limit=6, is_pro=True)
     except Exception:
+        logger.exception(
+            "pro_rising: failed to fetch rising for user=%s",
+            call.from_user.id,
+        )
         items = []
     await _show_list(call, items, "📈 <b>Rising — Tez o'sayotgan kontentlar</b>")
 
@@ -430,6 +480,10 @@ async def pro_hidden_gems(call: types.CallbackQuery):
         async with AsyncSessionLocal() as session:
             items = await get_hidden_gems(session, limit=6)
     except Exception:
+        logger.exception(
+            "pro_hidden_gems: failed to fetch hidden gems for user=%s",
+            call.from_user.id,
+        )
         items = []
     await _show_list(call, items, "💎 <b>Hidden Gems — Kam mashhur, lekin oltin!</b>")
 
@@ -450,6 +504,11 @@ async def show_related(call: types.CallbackQuery):
             anime = await session.get(Anime, anime_id)
         title = anime.title if anime else "Bu kontent"
     except Exception:
+        logger.exception(
+            "show_related: failed to fetch related content for user=%s anime_id=%s",
+            call.from_user.id,
+            anime_id,
+        )
         items = []
         title = "Bu kontent"
 
@@ -473,6 +532,10 @@ async def pro_smart_continue(call: types.CallbackQuery):
         async with AsyncSessionLocal() as session:
             items = await get_smart_continue(session, call.from_user.id)
     except Exception:
+        logger.exception(
+            "pro_smart_continue: failed to fetch smart-continue for user=%s",
+            call.from_user.id,
+        )
         items = []
 
     kb = InlineKeyboardBuilder()
@@ -530,6 +593,10 @@ async def pro_taste_profile(call: types.CallbackQuery):
         type_map  = {"anime": "🎌 Anime", "movie": "🎥 Kino", "serial": "📺 Serial", "dorama": "🌸 Dorama"}
         fav_type  = type_map.get(profile.fav_type or "anime", "🎌 Anime")
     except Exception:
+        logger.exception(
+            "pro_taste_profile: failed to load taste profile for user=%s",
+            call.from_user.id,
+        )
         identity  = "🎌 Anime muxlisi"
         g_text    = "  Hali ma'lumot yo'q"
         t_text    = "  Hali ma'lumot yo'q"

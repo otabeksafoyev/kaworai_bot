@@ -11,6 +11,7 @@ Admin panel qo'shimcha buyruqlari:
   /pro_stats               — statistika
 """
 
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -22,6 +23,8 @@ from sqlalchemy import select, func
 from database.engine import AsyncSessionLocal
 from database.models import Anime, Admin, User, Series, AnimeSubscription
 from database.queries import get_anime_full_info
+
+logger = logging.getLogger(__name__)
 
 pro_admin_router = Router()
 
@@ -85,6 +88,13 @@ async def add_admin_cmd(msg: Message):
         session.add(new_admin)
         await session.commit()
 
+    logger.info(
+        "add_admin_cmd: owner=%s added new admin=%s nickname=%s",
+        msg.from_user.id,
+        new_admin_id,
+        nickname,
+    )
+
     # Yangi adminga xabar
     try:
         await msg.bot.send_message(
@@ -96,7 +106,11 @@ async def add_admin_cmd(msg: Message):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "add_admin_cmd: failed to notify new admin=%s (owner=%s)",
+            new_admin_id,
+            msg.from_user.id,
+        )
 
     nick_str = f" ({nickname})" if nickname else ""
     await msg.answer(
@@ -130,6 +144,12 @@ async def remove_admin_cmd(msg: Message):
         await session.delete(admin)
         await session.commit()
 
+    logger.info(
+        "remove_admin_cmd: owner=%s removed admin=%s",
+        msg.from_user.id,
+        target_id,
+    )
+
     try:
         await msg.bot.send_message(
             chat_id=target_id,
@@ -137,7 +157,11 @@ async def remove_admin_cmd(msg: Message):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "remove_admin_cmd: failed to notify removed admin=%s (owner=%s)",
+            target_id,
+            msg.from_user.id,
+        )
 
     await msg.answer(f"✅ <code>{target_id}</code> admin huquqi olib tashlandi.", parse_mode="HTML")
 
@@ -220,6 +244,14 @@ async def set_pro_cmd(msg: Message):
         await session.commit()
         full_name = user.full_name or str(user_id)
 
+    logger.info(
+        "set_pro_cmd: admin=%s granted Pro to user=%s days=%s until=%s",
+        msg.from_user.id,
+        user_id,
+        days,
+        until_str,
+    )
+
     try:
         await msg.bot.send_message(
             chat_id=user_id,
@@ -232,7 +264,11 @@ async def set_pro_cmd(msg: Message):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "set_pro_cmd: failed to notify user=%s about Pro activation (admin=%s)",
+            user_id,
+            msg.from_user.id,
+        )
 
     await msg.answer(
         f"✅ <b>{full_name}</b> (<code>{user_id}</code>) Pro qilindi!\n"
@@ -263,6 +299,12 @@ async def remove_pro_cmd(msg: Message):
         await session.commit()
         full_name = user.full_name or str(user_id)
 
+    logger.info(
+        "remove_pro_cmd: admin=%s removed Pro from user=%s",
+        msg.from_user.id,
+        user_id,
+    )
+
     try:
         await msg.bot.send_message(
             chat_id=user_id,
@@ -270,7 +312,11 @@ async def remove_pro_cmd(msg: Message):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "remove_pro_cmd: failed to notify user=%s about Pro revocation (admin=%s)",
+            user_id,
+            msg.from_user.id,
+        )
 
     await msg.answer(
         f"✅ <b>{full_name}</b> (<code>{user_id}</code>) Pro olib tashlandi.",
@@ -306,6 +352,10 @@ async def user_info_cmd(msg: Message):
                 .where(UserWatchHistory.user_id == user_id)
             )).scalar() or 0
         except Exception:
+            logger.exception(
+                "user_info_cmd: failed to count watch history for user=%s",
+                user_id,
+            )
             watch_count = 0
 
         try:
@@ -314,6 +364,10 @@ async def user_info_cmd(msg: Message):
                 .where(AnimeSubscription.user_id == user_id)
             )).scalar() or 0
         except Exception:
+            logger.exception(
+                "user_info_cmd: failed to count subscriptions for user=%s",
+                user_id,
+            )
             sub_count = 0
 
     now    = datetime.utcnow()
@@ -380,6 +434,14 @@ async def usr_pro_give(call: types.CallbackQuery):
         await session.commit()
         until_str = user.pro_until.strftime("%d.%m.%Y")
 
+    logger.info(
+        "usr_pro_give: admin=%s granted Pro to user=%s days=%s until=%s",
+        call.from_user.id,
+        user_id,
+        days,
+        until_str,
+    )
+
     try:
         await call.bot.send_message(
             chat_id=user_id,
@@ -391,7 +453,11 @@ async def usr_pro_give(call: types.CallbackQuery):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "usr_pro_give: failed to notify user=%s about Pro activation (admin=%s)",
+            user_id,
+            call.from_user.id,
+        )
 
     await call.answer(f"✅ {days} kunlik Pro berildi! ({until_str})", show_alert=True)
 
@@ -410,6 +476,12 @@ async def usr_remove_pro(call: types.CallbackQuery):
         user.pro_until = None
         await session.commit()
 
+    logger.info(
+        "usr_remove_pro: admin=%s removed Pro from user=%s",
+        call.from_user.id,
+        user_id,
+    )
+
     try:
         await call.bot.send_message(
             chat_id=user_id,
@@ -417,7 +489,11 @@ async def usr_remove_pro(call: types.CallbackQuery):
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        logger.exception(
+            "usr_remove_pro: failed to notify user=%s about Pro revocation (admin=%s)",
+            user_id,
+            call.from_user.id,
+        )
 
     await call.answer("✅ Pro olib tashlandi!", show_alert=True)
 
@@ -437,6 +513,7 @@ async def usr_reduce_pro(call: types.CallbackQuery):
             return await call.answer("❌ User Pro emas!", show_alert=True)
 
         now = datetime.utcnow()
+        committed = True
         if user.pro_until:
             user.pro_until = user.pro_until - timedelta(days=days)
             if user.pro_until <= now:
@@ -447,7 +524,16 @@ async def usr_reduce_pro(call: types.CallbackQuery):
                 result_msg = f"Pro {days} kun qisqartirildi. Yangi: {user.pro_until.strftime('%d.%m.%Y')}"
         else:
             result_msg = "Abadiy Pro ni qisqartirish mumkin emas!"
-        await session.commit()
+            committed = False
+        if committed:
+            await session.commit()
+            logger.info(
+                "usr_reduce_pro: admin=%s reduced Pro user=%s days=%s result=%s",
+                call.from_user.id,
+                user_id,
+                days,
+                result_msg,
+            )
 
     await call.answer(result_msg, show_alert=True)
 
@@ -530,6 +616,10 @@ async def anime_info_cmd(msg: Message):
         else:
             await msg.answer(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
+        logger.exception(
+            "anime_info_cmd: failed to render poster for anime=%s, falling back to text",
+            anime_id,
+        )
         await msg.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
@@ -543,8 +633,21 @@ async def adm_prolock_toggle(call: types.CallbackQuery):
         if anime:
             anime.is_pro_locked = not anime.is_pro_locked
             await session.commit()
+            logger.info(
+                "adm_prolock_toggle (admin_pro): admin=%s anime=%s new_pro_locked=%s",
+                call.from_user.id,
+                anime_id,
+                anime.is_pro_locked,
+            )
             status = "🔒 Pro-locked" if anime.is_pro_locked else "🔓 Ochiq"
             await call.answer(f"✅ {anime.title}: {status}", show_alert=True)
+        else:
+            logger.warning(
+                "adm_prolock_toggle (admin_pro): anime=%s not found (admin=%s)",
+                anime_id,
+                call.from_user.id,
+            )
+            await call.answer("❌ Anime topilmadi!", show_alert=True)
 
 
 # ═══════════════════════════════════════════════════════════

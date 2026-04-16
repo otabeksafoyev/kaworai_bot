@@ -4,6 +4,7 @@ Kaworai Pro — Obuna to'lov tizimi
 """
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 
 from aiogram import Router, F, types
@@ -20,6 +21,8 @@ from database.engine import AsyncSessionLocal
 from database.models import User, Admin
 from loader import bot
 from data import config
+
+logger = logging.getLogger(__name__)
 
 pro_payment_router = Router()
 
@@ -75,6 +78,10 @@ async def _check_pro(user_id: int) -> bool:
             user.is_pro    = False
             user.pro_until = None
             await session.commit()
+            logger.info(
+                "_check_pro: Pro subscription expired for user=%s, downgraded",
+                user_id,
+            )
             return False
         return True
 
@@ -233,6 +240,10 @@ async def pro_page1(call: CallbackQuery, state: FSMContext):
             disable_web_page_preview=True,
         )
     except Exception:
+        logger.exception(
+            "pro_page1: edit failed for user=%s, falling back to answer",
+            call.from_user.id,
+        )
         await call.message.answer(
             text=_page1_text(),
             reply_markup=_page1_kb(),
@@ -283,6 +294,10 @@ async def _show_pro_active_menu(call: CallbackQuery):
             parse_mode="HTML",
         )
     except Exception:
+        logger.exception(
+            "_show_pro_active_menu: edit failed for user=%s, falling back to answer",
+            call.from_user.id,
+        )
         await call.message.answer(text=text, reply_markup=kb, parse_mode="HTML")
     await call.answer()
 
@@ -298,7 +313,10 @@ async def back_to_page1(call: CallbackQuery, state: FSMContext):
             disable_web_page_preview=True,
         )
     except Exception:
-        pass
+        logger.exception(
+            "back_to_page1: edit failed for user=%s",
+            call.from_user.id,
+        )
     await call.answer()
 
 
@@ -316,6 +334,10 @@ async def pro_page2(call: CallbackQuery, state: FSMContext):
             parse_mode="HTML",
         )
     except Exception:
+        logger.exception(
+            "pro_page2: edit failed for user=%s, falling back to answer",
+            call.from_user.id,
+        )
         await call.message.answer(
             text=_page2_text(),
             reply_markup=_page2_kb(),
@@ -344,6 +366,11 @@ async def pro_page3(call: CallbackQuery, state: FSMContext):
             disable_web_page_preview=True,
         )
     except Exception:
+        logger.exception(
+            "pro_page3: edit failed for user=%s plan=%s, falling back to answer",
+            call.from_user.id,
+            plan_key,
+        )
         await call.message.answer(
             text=_page3_text(plan_key),
             reply_markup=_page3_kb(plan_key),
@@ -371,6 +398,11 @@ async def pro_page4(call: CallbackQuery, state: FSMContext):
             disable_web_page_preview=False,
         )
     except Exception:
+        logger.exception(
+            "pro_page4: edit failed for user=%s plan=%s, falling back to answer",
+            call.from_user.id,
+            plan_key,
+        )
         await call.message.answer(
             text=_page4_text(),
             reply_markup=_page4_kb(plan_key),
@@ -402,6 +434,8 @@ async def receipt_received(msg: Message, state: FSMContext):
     admin_kb  = _admin_kb(user_id, plan_key)
 
     # Admin kanaliga yuborish
+    channel_ok = False
+    admin_ok   = False
     try:
         if msg.photo:
             await bot.send_photo(
@@ -419,7 +453,19 @@ async def receipt_received(msg: Message, state: FSMContext):
                 reply_markup=admin_kb,
                 parse_mode="HTML",
             )
+        channel_ok = True
+        logger.info(
+            "receipt_received: receipt forwarded to payment channel user=%s plan=%s",
+            user_id,
+            plan_key,
+        )
     except Exception:
+        logger.exception(
+            "receipt_received: failed to forward receipt to PAYMENT_CHANNEL_ID=%s user=%s plan=%s",
+            PAYMENT_CHANNEL_ID,
+            user_id,
+            plan_key,
+        )
         # Kanal ishlamasa — to'g'ridan-to'g'ri ADMIN_ID ga
         try:
             if msg.photo:
@@ -438,8 +484,28 @@ async def receipt_received(msg: Message, state: FSMContext):
                     reply_markup=admin_kb,
                     parse_mode="HTML",
                 )
+            admin_ok = True
+            logger.info(
+                "receipt_received: receipt forwarded to ADMIN_ID=%s user=%s plan=%s",
+                ADMIN_ID,
+                user_id,
+                plan_key,
+            )
         except Exception:
-            pass
+            logger.exception(
+                "receipt_received: fallback send to ADMIN_ID=%s also failed user=%s plan=%s",
+                ADMIN_ID,
+                user_id,
+                plan_key,
+            )
+
+    if not channel_ok and not admin_ok:
+        logger.error(
+            "receipt_received: receipt LOST (no admin received it) user=%s plan=%s username=%s",
+            user_id,
+            plan_key,
+            username,
+        )
 
     await msg.answer(
         "✅ <b>Chek qabul qilindi!</b>\n\n"
@@ -478,9 +544,16 @@ async def admin_confirm_pro(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         if not user:
+            logger.warning(
+                "admin_confirm_pro: target user=%s not found (admin=%s plan=%s)",
+                user_id,
+                call.from_user.id,
+                plan_key,
+            )
             return await call.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
 
         now = datetime.utcnow()
+        previous_until = user.pro_until
         if user.pro_until and user.pro_until > now:
             user.pro_until = user.pro_until + timedelta(days=30 * plan["months"])
         else:
@@ -489,6 +562,15 @@ async def admin_confirm_pro(call: CallbackQuery):
         user.is_pro = True
         await session.commit()
         until_str = user.pro_until.strftime("%d.%m.%Y")
+
+    logger.info(
+        "admin_confirm_pro: Pro granted admin=%s target=%s plan=%s previous_until=%s new_until=%s",
+        call.from_user.id,
+        user_id,
+        plan_key,
+        previous_until,
+        until_str,
+    )
 
     # Foydalanuvchiga xabar
     try:
@@ -504,7 +586,11 @@ async def admin_confirm_pro(call: CallbackQuery):
             parse_mode="HTML",
         )
     except Exception:
-        pass
+        logger.exception(
+            "admin_confirm_pro: failed to notify user=%s about Pro activation (admin=%s)",
+            user_id,
+            call.from_user.id,
+        )
 
     # Admin kanalda xabarni yangilash
     try:
@@ -515,7 +601,11 @@ async def admin_confirm_pro(call: CallbackQuery):
         else:
             await call.message.edit_text(text=new, parse_mode="HTML")
     except Exception:
-        pass
+        logger.exception(
+            "admin_confirm_pro: failed to update admin channel message admin=%s target=%s",
+            call.from_user.id,
+            user_id,
+        )
 
     await call.answer(f"✅ Pro faollashtirildi! ({until_str})", show_alert=True)
 
@@ -533,6 +623,13 @@ async def admin_reject_start(call: CallbackQuery, state: FSMContext):
     user_id  = int(parts[0])
     plan_key = parts[1]
 
+    logger.info(
+        "admin_reject_start: rejection started admin=%s target=%s plan=%s",
+        call.from_user.id,
+        user_id,
+        plan_key,
+    )
+
     await state.update_data(reject_user_id=user_id, reject_plan=plan_key)
     await state.set_state(AdminRejectState.waiting_reason)
 
@@ -549,9 +646,18 @@ async def admin_reject_start(call: CallbackQuery, state: FSMContext):
 async def reject_reason_received(msg: Message, state: FSMContext):
     data    = await state.get_data()
     user_id = data.get("reject_user_id")
+    plan_key = data.get("reject_plan")
     await state.clear()
 
     reason = msg.text.strip() if msg.text and msg.text.lower() not in ("yo'q", "yoq") else None
+
+    logger.info(
+        "reject_reason_received: rejection finalized admin=%s target=%s plan=%s has_reason=%s",
+        msg.from_user.id,
+        user_id,
+        plan_key,
+        bool(reason),
+    )
 
     try:
         text = (
@@ -561,7 +667,11 @@ async def reject_reason_received(msg: Message, state: FSMContext):
         )
         await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
     except Exception:
-        pass
+        logger.exception(
+            "reject_reason_received: failed to notify user=%s about rejection (admin=%s)",
+            user_id,
+            msg.from_user.id,
+        )
 
     await msg.answer(f"✅ Foydalanuvchi ({user_id}) xabardor qilindi.")
 
@@ -576,6 +686,11 @@ async def admin_msg_start(call: CallbackQuery, state: FSMContext):
         return await call.answer("❌ Faqat adminlar!", show_alert=True)
 
     user_id = int(call.data.replace("pro_msg_", ""))
+    logger.info(
+        "admin_msg_start: admin=%s started message flow to user=%s",
+        call.from_user.id,
+        user_id,
+    )
     await state.update_data(msg_target_user=user_id)
     await state.set_state(AdminMsgState.waiting_msg)
 
@@ -623,6 +738,16 @@ async def admin_msg_send(msg: Message, state: FSMContext):
                 text=prefix + (msg.text or ""),
                 parse_mode="HTML",
             )
+        logger.info(
+            "admin_msg_send: admin=%s sent message to user=%s",
+            msg.from_user.id,
+            user_id,
+        )
         await msg.answer(f"✅ Xabar yuborildi (ID: {user_id})")
     except Exception as e:
+        logger.exception(
+            "admin_msg_send: failed to deliver admin message admin=%s target=%s",
+            msg.from_user.id,
+            user_id,
+        )
         await msg.answer(f"❌ Xabar yuborib bo'lmadi: {e}")
