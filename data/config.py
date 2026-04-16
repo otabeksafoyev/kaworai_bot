@@ -23,7 +23,7 @@ ADMINS = _parse_admin_ids(env.str("ADMIN_ID", ""))
 # ADMIN_ID — asosiy owner. Bir nechta admin bo'lsa — birinchisini olamiz.
 ADMIN_ID = int(ADMINS[0]) if ADMINS else 0
 
-DB_URL = env.str("DB_URL")
+DATABASE_URL = env.str("DATABASE_URL")
 REDIS_URL = env.str("REDIS_URL")
 NEWS_CHANNEL_ID = env.int("NEWS_CHANNEL_ID")
 SECRET_CHANNEL_ID = env.int("SECRET_CHANNEL_ID")

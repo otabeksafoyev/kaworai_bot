@@ -6,12 +6,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import declarative_base
 
 load_dotenv()
-DB_URL = os.getenv("DB_URL")
+# Railway Postgres plugin standart ravishda `DATABASE_URL` degan o'zgaruvchi
+# beradi — shuning uchun loyiha shu nomda yuklanadi. Eski sozlamalarda `DB_URL`
+# bo'lsa ham ishlashi uchun fallback qo'shildi.
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
+
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    # Railway/Heroku `postgres://` beradi, SQLAlchemy+asyncpg esa
+    # `postgresql+asyncpg://` kutadi — avtomatik to'g'irlaymiz.
+    DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL[len("postgres://") :]
+elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL[len("postgresql://") :]
 
 Base = declarative_base()
 
 engine = create_async_engine(
-    DB_URL,
+    DATABASE_URL,
     echo=False,
     pool_size=20,
     max_overflow=30,

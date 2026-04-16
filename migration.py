@@ -40,15 +40,17 @@ SQL_STATEMENTS = [
 
 
 async def run():
-    db_url = os.getenv("DATABASE_URL", "")
-    if not db_url:
-        # .env dan DB_URL ni ham tekshirish
-        db_url = os.getenv("DB_URL", "")
-        # asyncpg uchun postgresql+asyncpg:// ni postgresql:// ga o'tkazish
-        db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    # Avvalgi versiyada `DB_URL` ishlatilardi — eski sozlamalar buzilmasligi
+    # uchun fallback sifatida qoldirildi.
+    db_url = os.getenv("DATABASE_URL", "") or os.getenv("DB_URL", "")
+    # asyncpg.connect `postgresql+asyncpg://` ni qabul qilmaydi — SQLAlchemy
+    # driver prefiksi bo'lsa olib tashlaymiz.
+    db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    # Railway `postgres://` variantini ham beradi — asyncpg buni qabul qiladi,
+    # tegmaymiz.
 
     if not db_url:
-        print("❌ DATABASE_URL yoki DB_URL .env da topilmadi!")
+        print("❌ DATABASE_URL .env da topilmadi!")
         return
 
     print(f"🔌 Ulanilmoqda: {db_url[:40]}...")
