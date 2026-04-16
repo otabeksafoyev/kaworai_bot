@@ -12,7 +12,10 @@ qalbakilashtirilishiga olib kelishi mumkin.
 from __future__ import annotations
 
 import html
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def esc(value: Any) -> str:

@@ -14,6 +14,7 @@ Filtr:
   - Pro user: hammasi ko'rinadi
 """
 
+import logging
 import os
 
 from aiogram import Router, types
@@ -26,6 +27,8 @@ from sqlalchemy import select
 from database.engine import AsyncSessionLocal
 from database.models import Anime, User
 from utils.time import utcnow
+
+logger = logging.getLogger(__name__)
 
 inline_router = Router()
 

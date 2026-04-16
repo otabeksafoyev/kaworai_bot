@@ -11,6 +11,7 @@ Admin panel qo'shimcha buyruqlari:
   /pro_stats               — statistika
 """
 
+import logging
 import os
 from datetime import timedelta
 
@@ -24,6 +25,8 @@ from database.models import Admin, Anime, AnimeSubscription, Series, User
 from database.queries import get_anime_full_info
 from utils.security import esc, parse_admin_ids
 from utils.time import utcnow
+
+logger = logging.getLogger(__name__)
 
 pro_admin_router = Router()
 

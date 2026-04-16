@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any, Awaitable, Callable
 
@@ -7,6 +8,8 @@ from aiogram.types import CallbackQuery, Message
 from database.engine import AsyncSessionLocal
 from database.queries import get_active_channels
 from utils.security import parse_admin_ids
+
+logger = logging.getLogger(__name__)
 
 # `parse_admin_ids` bo'sh ID'larni filtrlaydi — aks holda `""` qiymati
 # admin ro'yxatida qoladi va kelajakdagi tekshiruvlarni xatolashtirishi mumkin.

@@ -1,8 +1,12 @@
+import logging
+
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Anime, AnimeRating, AnimeSubscription, Series, SubscriptionChannel, User
 from utils.time import utcnow
+
+logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════
 #  USER

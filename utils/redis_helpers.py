@@ -1,9 +1,12 @@
-# utils/redis_helpers.py  (yangilangan, environs siz)
+import logging
 
+# utils/redis_helpers.py  (yangilangan, environs siz)
 import os
 
 import redis.asyncio as redis
 from dotenv import load_dotenv  # agar python-dotenv o'rnatilgan bo'lsa
+
+logger = logging.getLogger(__name__)
 
 # .env ni yuklash (agar loyihada allaqachon config.py da yuklanmagan bo'lsa)
 load_dotenv()  # bu .env faylini o'qiydi

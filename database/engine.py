@@ -1,9 +1,12 @@
+import logging
 import os
 
 from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 DB_URL = os.getenv("DB_URL")
@@ -125,12 +128,11 @@ async def init_db():
                     err = str(e).lower()
                     # Allaqachon mavjud bo'lsa — normal holat
                     if any(x in err for x in ("already exists", "duplicate", "already")):
-                        pass
-                    else:
-                        print(f"[MIGRATION WARNING] {str(e)[:80]}")
+                        continue
+                    logger.warning("Migration warning: %s", str(e)[:200])
 
-        print("--- [INFO] Baza jadvallari tayyor! ---")
+        logger.info("Baza jadvallari tayyor.")
 
-    except Exception as e:
-        print(f"--- [ERROR] Bazada xato: {e} ---")
+    except Exception:
+        logger.exception("Bazada xato")
         raise
