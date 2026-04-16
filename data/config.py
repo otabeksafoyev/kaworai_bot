@@ -18,19 +18,19 @@ def _parse_admin_ids(raw: str) -> list[str]:
 
 
 BOT_TOKEN = env.str("BOT_TOKEN")
-ADMINS    = _parse_admin_ids(env.str("ADMIN_ID", ""))
+ADMINS = _parse_admin_ids(env.str("ADMIN_ID", ""))
 
 # ADMIN_ID — asosiy owner. Bir nechta admin bo'lsa — birinchisini olamiz.
 ADMIN_ID = int(ADMINS[0]) if ADMINS else 0
 
-DB_URL            = env.str("DB_URL")
-REDIS_URL         = env.str("REDIS_URL")
-NEWS_CHANNEL_ID   = env.int("NEWS_CHANNEL_ID")
+DB_URL = env.str("DB_URL")
+REDIS_URL = env.str("REDIS_URL")
+NEWS_CHANNEL_ID = env.int("NEWS_CHANNEL_ID")
 SECRET_CHANNEL_ID = env.int("SECRET_CHANNEL_ID")
 
 # Pro to'lov tizimi — maxfiy PII/moliya ma'lumotlari
 # Bularning hammasi .env orqali taqdim etilishi kerak.
 PAYMENT_CHANNEL_ID = env.int("PAYMENT_CHANNEL_ID", 0)
-CARD_NUMBER        = env.str("CARD_NUMBER", "")
-CARD_OWNER         = env.str("CARD_OWNER", "")
-ADMIN_USERNAME     = env.str("ADMIN_USERNAME", "")
+CARD_NUMBER = env.str("CARD_NUMBER", "")
+CARD_OWNER = env.str("CARD_OWNER", "")
+ADMIN_USERNAME = env.str("ADMIN_USERNAME", "")

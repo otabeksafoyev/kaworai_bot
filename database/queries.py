@@ -1,15 +1,14 @@
-from sqlalchemy import select, func, delete
-from sqlalchemy.ext.asyncio import AsyncSession
-from database.models import (
-    User, SubscriptionChannel, Anime, AnimeRating,
-    Series, AnimeSubscription
-)
 from datetime import datetime
 
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from database.models import Anime, AnimeRating, AnimeSubscription, Series, SubscriptionChannel, User
 
 # ═══════════════════════════════════════════════════════════
 #  USER
 # ═══════════════════════════════════════════════════════════
+
 
 async def get_or_create_user(
     session: AsyncSession,
@@ -38,10 +37,9 @@ async def get_user_count(session: AsyncSession) -> int:
 #  CHANNELS
 # ═══════════════════════════════════════════════════════════
 
+
 async def get_active_channels(session: AsyncSession) -> list:
-    result = await session.execute(
-        select(SubscriptionChannel).where(SubscriptionChannel.is_active == True)
-    )
+    result = await session.execute(select(SubscriptionChannel).where(SubscriptionChannel.is_active == True))
     return result.scalars().all()
 
 
@@ -52,10 +50,7 @@ async def get_all_channels(session: AsyncSession) -> list:
 
 async def get_news_channels(session: AsyncSession) -> list:
     result = await session.execute(
-        select(SubscriptionChannel).where(
-            SubscriptionChannel.is_news   == True,
-            SubscriptionChannel.is_active == True
-        )
+        select(SubscriptionChannel).where(SubscriptionChannel.is_news == True, SubscriptionChannel.is_active == True)
     )
     return result.scalars().all()
 
@@ -70,9 +65,13 @@ async def add_channel(
     username: str | None = None,
 ) -> SubscriptionChannel:
     ch = SubscriptionChannel(
-        channel_id=channel_id, username=username,
-        channel_url=channel_url, channel_name=channel_name,
-        is_active=True, require_check=require_check, is_news=is_news
+        channel_id=channel_id,
+        username=username,
+        channel_url=channel_url,
+        channel_name=channel_name,
+        is_active=True,
+        require_check=require_check,
+        is_news=is_news,
     )
     session.add(ch)
     await session.commit()
@@ -81,17 +80,13 @@ async def add_channel(
 
 
 async def remove_channel(session: AsyncSession, ch_id: int) -> bool:
-    result = await session.execute(
-        delete(SubscriptionChannel).where(SubscriptionChannel.id == ch_id)
-    )
+    result = await session.execute(delete(SubscriptionChannel).where(SubscriptionChannel.id == ch_id))
     await session.commit()
     return result.rowcount > 0
 
 
 async def toggle_channel(session: AsyncSession, ch_id: int) -> bool | None:
-    result = await session.execute(
-        select(SubscriptionChannel).where(SubscriptionChannel.id == ch_id)
-    )
+    result = await session.execute(select(SubscriptionChannel).where(SubscriptionChannel.id == ch_id))
     ch = result.scalar_one_or_none()
     if not ch:
         return None
@@ -103,6 +98,7 @@ async def toggle_channel(session: AsyncSession, ch_id: int) -> bool | None:
 # ═══════════════════════════════════════════════════════════
 #  ANIME
 # ═══════════════════════════════════════════════════════════
+
 
 async def get_anime_by_id(session: AsyncSession, anime_id: int) -> Anime | None:
     return await session.get(Anime, anime_id)
@@ -117,21 +113,15 @@ async def get_all_animes(session: AsyncSession) -> list:
 #  RATING
 # ═══════════════════════════════════════════════════════════
 
-async def get_user_rating(
-    session: AsyncSession, anime_id: int, user_id: int
-) -> AnimeRating | None:
+
+async def get_user_rating(session: AsyncSession, anime_id: int, user_id: int) -> AnimeRating | None:
     result = await session.execute(
-        select(AnimeRating).where(
-            AnimeRating.anime_id == anime_id,
-            AnimeRating.user_id  == user_id
-        )
+        select(AnimeRating).where(AnimeRating.anime_id == anime_id, AnimeRating.user_id == user_id)
     )
     return result.scalar_one_or_none()
 
 
-async def add_or_update_rating(
-    session: AsyncSession, anime_id: int, user_id: int, score: int
-) -> float:
+async def add_or_update_rating(session: AsyncSession, anime_id: int, user_id: int, score: int) -> float:
     existing = await get_user_rating(session, anime_id, user_id)
     if existing:
         existing.score = score
@@ -139,17 +129,17 @@ async def add_or_update_rating(
         session.add(AnimeRating(anime_id=anime_id, user_id=user_id, score=score))
     await session.commit()
 
-    avg = (await session.execute(
-        select(func.avg(AnimeRating.score)).where(AnimeRating.anime_id == anime_id)
-    )).scalar() or 0.0
+    avg = (
+        await session.execute(select(func.avg(AnimeRating.score)).where(AnimeRating.anime_id == anime_id))
+    ).scalar() or 0.0
 
-    count = (await session.execute(
-        select(func.count(AnimeRating.id)).where(AnimeRating.anime_id == anime_id)
-    )).scalar() or 0
+    count = (
+        await session.execute(select(func.count(AnimeRating.id)).where(AnimeRating.anime_id == anime_id))
+    ).scalar() or 0
 
     anime = await session.get(Anime, anime_id)
     if anime:
-        anime.rating       = round(float(avg), 1)
+        anime.rating = round(float(avg), 1)
         anime.rating_count = count
         await session.commit()
 
@@ -160,12 +150,13 @@ async def add_or_update_rating(
 #  PRO USER
 # ═══════════════════════════════════════════════════════════
 
+
 async def is_pro_user(session: AsyncSession, user_id: int) -> bool:
     user = await session.get(User, user_id)
     if not user or not user.is_pro:
         return False
     if user.pro_until and user.pro_until < datetime.utcnow():
-        user.is_pro    = False
+        user.is_pro = False
         user.pro_until = None
         await session.commit()
         return False
@@ -176,14 +167,10 @@ async def is_pro_user(session: AsyncSession, user_id: int) -> bool:
 #  ANIME OBUNA
 # ═══════════════════════════════════════════════════════════
 
-async def subscribe_anime(
-    session: AsyncSession, anime_id: int, user_id: int
-) -> None:
+
+async def subscribe_anime(session: AsyncSession, anime_id: int, user_id: int) -> None:
     existing = await session.execute(
-        select(AnimeSubscription).where(
-            AnimeSubscription.anime_id == anime_id,
-            AnimeSubscription.user_id  == user_id
-        )
+        select(AnimeSubscription).where(AnimeSubscription.anime_id == anime_id, AnimeSubscription.user_id == user_id)
     )
     if existing.scalar_one_or_none():
         return
@@ -191,44 +178,29 @@ async def subscribe_anime(
     await session.commit()
 
 
-async def unsubscribe_anime(
-    session: AsyncSession, anime_id: int, user_id: int
-) -> None:
+async def unsubscribe_anime(session: AsyncSession, anime_id: int, user_id: int) -> None:
     await session.execute(
-        delete(AnimeSubscription).where(
-            AnimeSubscription.anime_id == anime_id,
-            AnimeSubscription.user_id  == user_id
-        )
+        delete(AnimeSubscription).where(AnimeSubscription.anime_id == anime_id, AnimeSubscription.user_id == user_id)
     )
     await session.commit()
 
 
-async def is_subscribed_anime(
-    session: AsyncSession, anime_id: int, user_id: int
-) -> bool:
+async def is_subscribed_anime(session: AsyncSession, anime_id: int, user_id: int) -> bool:
     result = await session.execute(
-        select(AnimeSubscription).where(
-            AnimeSubscription.anime_id == anime_id,
-            AnimeSubscription.user_id  == user_id
-        )
+        select(AnimeSubscription).where(AnimeSubscription.anime_id == anime_id, AnimeSubscription.user_id == user_id)
     )
     return result.scalar_one_or_none() is not None
 
 
-async def get_anime_subscribers(
-    session: AsyncSession, anime_id: int
-) -> list[int]:
-    result = await session.execute(
-        select(AnimeSubscription.user_id).where(
-            AnimeSubscription.anime_id == anime_id
-        )
-    )
+async def get_anime_subscribers(session: AsyncSession, anime_id: int) -> list[int]:
+    result = await session.execute(select(AnimeSubscription.user_id).where(AnimeSubscription.anime_id == anime_id))
     return [r[0] for r in result.fetchall()]
 
 
 # ═══════════════════════════════════════════════════════════
 #  WATCH HISTORY — LIMIT YO'Q, TO'G'RI is_completed
 # ═══════════════════════════════════════════════════════════
+
 
 async def add_to_watch_history(
     session: AsyncSession,
@@ -246,9 +218,10 @@ async def add_to_watch_history(
     """
     try:
         from database.models import UserWatchHistory
+
         result = await session.execute(
             select(UserWatchHistory).where(
-                UserWatchHistory.user_id  == user_id,
+                UserWatchHistory.user_id == user_id,
                 UserWatchHistory.anime_id == anime_id,
             )
         )
@@ -263,12 +236,14 @@ async def add_to_watch_history(
                 hw.is_completed = True
             hw.watched_at = func.now()
         else:
-            session.add(UserWatchHistory(
-                user_id=user_id,
-                anime_id=anime_id,
-                last_episode=episode,
-                is_completed=is_completed,
-            ))
+            session.add(
+                UserWatchHistory(
+                    user_id=user_id,
+                    anime_id=anime_id,
+                    last_episode=episode,
+                    is_completed=is_completed,
+                )
+            )
 
         await session.commit()
 
@@ -277,6 +252,7 @@ async def add_to_watch_history(
         if anime:
             try:
                 from utils.recommendation import update_taste_profile
+
                 await update_taste_profile(session, user_id, anime)
             except Exception:
                 pass
@@ -293,6 +269,7 @@ async def record_view(
     """Ko'rishni yozadi va views counter oshiradi."""
     try:
         from database.models import ViewRecord
+
         session.add(ViewRecord(anime_id=anime_id, user_id=user_id))
         anime = await session.get(Anime, anime_id)
         if anime:
@@ -306,53 +283,50 @@ async def record_view(
 #  ADMIN: ANIME TO'LIQ MA'LUMOT
 # ═══════════════════════════════════════════════════════════
 
-async def get_anime_full_info(
-    session: AsyncSession, anime_id: int
-) -> dict | None:
+
+async def get_anime_full_info(session: AsyncSession, anime_id: int) -> dict | None:
     anime = await session.get(Anime, anime_id)
     if not anime:
         return None
 
-    ep_count = (await session.execute(
-        select(func.count(Series.id)).where(Series.anime_id == anime_id)
-    )).scalar() or 0
+    ep_count = (await session.execute(select(func.count(Series.id)).where(Series.anime_id == anime_id))).scalar() or 0
 
-    sub_count = (await session.execute(
-        select(func.count(AnimeSubscription.user_id))
-        .where(AnimeSubscription.anime_id == anime_id)
-    )).scalar() or 0
+    sub_count = (
+        await session.execute(
+            select(func.count(AnimeSubscription.user_id)).where(AnimeSubscription.anime_id == anime_id)
+        )
+    ).scalar() or 0
 
     try:
-        pro_sub_count = (await session.execute(
-            select(func.count(AnimeSubscription.user_id))
-            .join(User, AnimeSubscription.user_id == User.telegram_id)
-            .where(
-                AnimeSubscription.anime_id == anime_id,
-                User.is_pro == True
+        pro_sub_count = (
+            await session.execute(
+                select(func.count(AnimeSubscription.user_id))
+                .join(User, AnimeSubscription.user_id == User.telegram_id)
+                .where(AnimeSubscription.anime_id == anime_id, User.is_pro == True)
             )
-        )).scalar() or 0
+        ).scalar() or 0
     except Exception:
         pro_sub_count = 0
 
     return {
-        "id":                anime.id,
-        "title":             anime.title,
-        "type":              getattr(anime, "content_type", None) or "anime",
-        "year":              anime.year,
-        "genres":            anime.genres or [],
-        "tags":              getattr(anime, "tags",  None) or [],
-        "mood":              getattr(anime, "mood",  None) or [],
-        "rating":            anime.rating or 0.0,
-        "rating_count":      anime.rating_count or 0,
-        "episodes_count":    ep_count,
-        "status":            getattr(anime, "status", None) or "ongoing",
-        "is_pro_locked":     getattr(anime, "is_pro_locked", False),
-        "is_hidden_gem":     getattr(anime, "is_hidden_gem", False),
-        "views":             anime.views or 0,
-        "subscribers":       sub_count,
-        "pro_subscribers":   pro_sub_count,
-        "added_by_id":       getattr(anime, "added_by_id",       None),
+        "id": anime.id,
+        "title": anime.title,
+        "type": getattr(anime, "content_type", None) or "anime",
+        "year": anime.year,
+        "genres": anime.genres or [],
+        "tags": getattr(anime, "tags", None) or [],
+        "mood": getattr(anime, "mood", None) or [],
+        "rating": anime.rating or 0.0,
+        "rating_count": anime.rating_count or 0,
+        "episodes_count": ep_count,
+        "status": getattr(anime, "status", None) or "ongoing",
+        "is_pro_locked": getattr(anime, "is_pro_locked", False),
+        "is_hidden_gem": getattr(anime, "is_hidden_gem", False),
+        "views": anime.views or 0,
+        "subscribers": sub_count,
+        "pro_subscribers": pro_sub_count,
+        "added_by_id": getattr(anime, "added_by_id", None),
         "added_by_username": getattr(anime, "added_by_username", None),
-        "added_at":          getattr(anime, "added_at",          None),
-        "description":       anime.description,
+        "added_at": getattr(anime, "added_at", None),
+        "description": anime.description,
     }

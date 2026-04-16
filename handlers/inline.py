@@ -14,22 +14,22 @@ Filtr:
   - Pro user: hammasi ko'rinadi
 """
 
+import os
+from datetime import datetime
+
 from aiogram import Router, types
 from aiogram.types import (
     InlineQueryResultArticle,
     InputTextMessageContent,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
 )
 from sqlalchemy import select
-from database.models import Anime, User
+
 from database.engine import AsyncSessionLocal
-from datetime import datetime
-import os
+from database.models import Anime, User
 
 inline_router = Router()
 
-BOT_USERNAME  = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
 DEFAULT_THUMB = "https://i.imgur.com/JyOSMOR.png"
 
 
@@ -39,7 +39,7 @@ async def _is_pro(user_id: int) -> bool:
         if not user or not user.is_pro:
             return False
         if user.pro_until and user.pro_until < datetime.utcnow():
-            user.is_pro    = False
+            user.is_pro = False
             user.pro_until = None
             await session.commit()
             return False
@@ -54,18 +54,13 @@ def _make_result(anime: Anime) -> InlineQueryResultArticle:
     va anime kartasini ko'rsatadi.
     """
     genres_text = ", ".join((anime.genres or [])[:3]) or "Nomalum"
-    ep_text     = str(getattr(anime, "episodes_count", None) or anime.total_episodes or "?")
-    thumb       = anime.inline_thumbnail_url or DEFAULT_THUMB
-    lock_icon   = "🔒 " if getattr(anime, "is_pro_locked", False) else ""
+    ep_text = str(getattr(anime, "episodes_count", None) or anime.total_episodes or "?")
+    thumb = anime.inline_thumbnail_url or DEFAULT_THUMB
+    lock_icon = "🔒 " if getattr(anime, "is_pro_locked", False) else ""
 
     share_url = f"https://t.me/{BOT_USERNAME}?start=anime_{anime.id}"
 
-    desc = (
-        f"{lock_icon}⭐ {anime.rating:.1f}  "
-        f"📅 {anime.year or '—'}  "
-        f"🎭 {genres_text[:25]}  "
-        f"📺 {ep_text} qism"
-    )
+    desc = f"{lock_icon}⭐ {anime.rating:.1f}  📅 {anime.year or '—'}  🎭 {genres_text[:25]}  📺 {ep_text} qism"
 
     return InlineQueryResultArticle(
         id=str(anime.id),
@@ -83,35 +78,32 @@ def _make_result(anime: Anime) -> InlineQueryResultArticle:
 @inline_router.inline_query()
 async def query_anime(query: types.InlineQuery):
     search_text = query.query.strip()
-    user_id     = query.from_user.id
-    is_pro      = await _is_pro(user_id)
+    user_id = query.from_user.id
+    is_pro = await _is_pro(user_id)
 
     async with AsyncSessionLocal() as session:
         if not search_text:
             # Bo'sh qidiruv → Top 18
-            top_views = (await session.execute(
-                select(Anime).order_by(Anime.views.desc()).limit(9)
-            )).scalars().all()
+            top_views = (await session.execute(select(Anime).order_by(Anime.views.desc()).limit(9))).scalars().all()
 
-            top_rated = (await session.execute(
-                select(Anime)
-                .where(Anime.rating_count >= 1)
-                .order_by(Anime.rating.desc())
-                .limit(9)
-            )).scalars().all()
+            top_rated = (
+                (
+                    await session.execute(
+                        select(Anime).where(Anime.rating_count >= 1).order_by(Anime.rating.desc()).limit(9)
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
-            seen   = set()
+            seen = set()
             animes = []
             for a in list(top_views) + list(top_rated):
                 if a.id not in seen:
                     seen.add(a.id)
                     animes.append(a)
         else:
-            result = await session.execute(
-                select(Anime)
-                .where(Anime.title.ilike(f"%{search_text}%"))
-                .limit(30)
-            )
+            result = await session.execute(select(Anime).where(Anime.title.ilike(f"%{search_text}%")).limit(30))
             animes = result.scalars().all()
 
     results = []

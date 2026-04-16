@@ -7,8 +7,9 @@ models.py ga QO'SHISH kerak bo'lgan yangi model va migration SQL.
 
 # ── models.py ga qo'shing ─────────────────────────────────────
 
-from sqlalchemy import Column, Integer, BigInteger, String, DateTime, ForeignKey, Boolean
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer
 from sqlalchemy.sql import func
+
 # from database.engine import Base  # ← mavjud import
 
 
@@ -17,11 +18,12 @@ class AnimeSubscription:
     User animega obuna.
     Yangi qism qo'shilganda obuna bo'lgan userlarga xabar ketadi.
     """
+
     __tablename__ = "anime_subscriptions"
 
-    id         = Column(Integer, primary_key=True, autoincrement=True)
-    anime_id   = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"))
-    user_id    = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    anime_id = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"))
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"))
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -50,13 +52,14 @@ ALTER TABLE animes
 # ── Ishga tushirish (migration.py ga qo'shing yoki alohida) ──
 
 import asyncio
-import asyncpg
 import os
+
+import asyncpg
 
 
 async def run_migration():
     db_url = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/kaworai")
-    conn   = await asyncpg.connect(dsn=db_url)
+    conn = await asyncpg.connect(dsn=db_url)
     try:
         stmts = [s.strip() for s in MIGRATION_SQL.split(";") if s.strip() and not s.strip().startswith("--")]
         for stmt in stmts:

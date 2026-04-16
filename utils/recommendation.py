@@ -9,54 +9,58 @@ Tuzatilgan muammolar:
 """
 
 from __future__ import annotations
-from collections import Counter
-from typing import Optional
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from database.models import (
-    Anime, UserWatchHistory, UserTasteProfile,
-    RelatedContent, ViewRecord, Series
-)
 
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from database.models import Anime, RelatedContent, Series, UserTasteProfile, UserWatchHistory, ViewRecord
 
 # ═══════════════════════════════════════════════════════════
 #  MOOD XARITASI
 # ═══════════════════════════════════════════════════════════
 
 MOOD_MAP: dict[str, dict] = {
-    "sad":         {"tags": ["emotional","tragedy","loss","grief","tearjerker"],
-                    "genres": ["drama","slice of life","romance"]},
-    "romantic":    {"tags": ["romance","love","wholesome","heartwarming"],
-                    "genres": ["romance","slice of life","shoujo"]},
-    "dark":        {"tags": ["dark","psychological","horror","survival","dystopia"],
-                    "genres": ["psychological","horror","thriller","seinen"]},
-    "motivational":{"tags": ["redemption","growth","sports","underdog","determination"],
-                    "genres": ["sports","action","shounen"]},
-    "action":      {"tags": ["battle","fight","war","revenge","power"],
-                    "genres": ["action","adventure","shounen"]},
-    "funny":       {"tags": ["comedy","parody","wholesome","cute"],
-                    "genres": ["comedy","slice of life"]},
-    "mystery":     {"tags": ["mystery","detective","plot twist","conspiracy"],
-                    "genres": ["mystery","thriller","psychological"]},
-    "chill":       {"tags": ["wholesome","iyashikei","relaxing","cute"],
-                    "genres": ["slice of life","comedy"]},
-    "fantasy":     {"tags": ["magic","isekai","fantasy world","adventure"],
-                    "genres": ["fantasy","adventure","isekai"]},
-    "scary":       {"tags": ["horror","gore","supernatural","monsters"],
-                    "genres": ["horror","psychological"]},
+    "sad": {
+        "tags": ["emotional", "tragedy", "loss", "grief", "tearjerker"],
+        "genres": ["drama", "slice of life", "romance"],
+    },
+    "romantic": {
+        "tags": ["romance", "love", "wholesome", "heartwarming"],
+        "genres": ["romance", "slice of life", "shoujo"],
+    },
+    "dark": {
+        "tags": ["dark", "psychological", "horror", "survival", "dystopia"],
+        "genres": ["psychological", "horror", "thriller", "seinen"],
+    },
+    "motivational": {
+        "tags": ["redemption", "growth", "sports", "underdog", "determination"],
+        "genres": ["sports", "action", "shounen"],
+    },
+    "action": {"tags": ["battle", "fight", "war", "revenge", "power"], "genres": ["action", "adventure", "shounen"]},
+    "funny": {"tags": ["comedy", "parody", "wholesome", "cute"], "genres": ["comedy", "slice of life"]},
+    "mystery": {
+        "tags": ["mystery", "detective", "plot twist", "conspiracy"],
+        "genres": ["mystery", "thriller", "psychological"],
+    },
+    "chill": {"tags": ["wholesome", "iyashikei", "relaxing", "cute"], "genres": ["slice of life", "comedy"]},
+    "fantasy": {
+        "tags": ["magic", "isekai", "fantasy world", "adventure"],
+        "genres": ["fantasy", "adventure", "isekai"],
+    },
+    "scary": {"tags": ["horror", "gore", "supernatural", "monsters"], "genres": ["horror", "psychological"]},
 }
 
 TEXT_TO_MOOD: dict[str, list[str]] = {
-    "sad":         ["sad","xafa","g'amgin","yig'lay","depressed","cry"],
-    "romantic":    ["romantic","sevgi","love","muhabbat","romance"],
-    "dark":        ["dark","qorong'u","psychological","og'ir","heavy"],
-    "motivational":["motivational","ilhomlantiruvchi","sport","motivate"],
-    "action":      ["action","jangari","fight","battle","war"],
-    "funny":       ["funny","kulgi","kulgili","comedy","lol","humor"],
-    "mystery":     ["mystery","sirli","detective","jumboq","puzzle"],
-    "chill":       ["chill","yengil","relax","easy","tinch"],
-    "fantasy":     ["fantasy","sehr","magic","isekai","boshqa dunyo"],
-    "scary":       ["scary","qo'rqinchli","horror","dahshat"],
+    "sad": ["sad", "xafa", "g'amgin", "yig'lay", "depressed", "cry"],
+    "romantic": ["romantic", "sevgi", "love", "muhabbat", "romance"],
+    "dark": ["dark", "qorong'u", "psychological", "og'ir", "heavy"],
+    "motivational": ["motivational", "ilhomlantiruvchi", "sport", "motivate"],
+    "action": ["action", "jangari", "fight", "battle", "war"],
+    "funny": ["funny", "kulgi", "kulgili", "comedy", "lol", "humor"],
+    "mystery": ["mystery", "sirli", "detective", "jumboq", "puzzle"],
+    "chill": ["chill", "yengil", "relax", "easy", "tinch"],
+    "fantasy": ["fantasy", "sehr", "magic", "isekai", "boshqa dunyo"],
+    "scary": ["scary", "qo'rqinchli", "horror", "dahshat"],
 }
 
 
@@ -82,18 +86,19 @@ def mood_to_filters(moods: list[str]) -> dict:
 #  SCORING ENGINE
 # ═══════════════════════════════════════════════════════════
 
+
 def compute_score(
     anime: Anime,
-    user_genres:   dict[str, int],
-    user_tags:     dict[str, int],
-    user_moods:    dict[str, int],
+    user_genres: dict[str, int],
+    user_tags: dict[str, int],
+    user_moods: dict[str, int],
     target_genres: list[str] | None = None,
-    target_tags:   list[str] | None = None,
-    target_moods:  list[str] | None = None,
+    target_tags: list[str] | None = None,
+    target_moods: list[str] | None = None,
 ) -> float:
     anime_genres = [g.lower() for g in (anime.genres or [])]
-    anime_tags   = [t.lower() for t in (anime.tags   or [])]
-    anime_moods  = [m.lower() for m in (anime.mood   or [])]
+    anime_tags = [t.lower() for t in (anime.tags or [])]
+    anime_moods = [m.lower() for m in (anime.mood or [])]
 
     # Genre match (0–3.5)
     total_g = max(sum(user_genres.values()), 1)
@@ -123,8 +128,7 @@ def compute_score(
     p_score = min((anime.popularity_score or 0) / 100.0, 1.0) * 0.5
 
     # Year bonus (0–0.3)
-    y_score = 0.3 if (anime.year and anime.year >= 2020) else \
-              0.15 if (anime.year and anime.year >= 2015) else 0.0
+    y_score = 0.3 if (anime.year and anime.year >= 2020) else 0.15 if (anime.year and anime.year >= 2015) else 0.0
 
     return round(g_score + t_score + m_score + r_score + p_score + y_score, 4)
 
@@ -133,12 +137,9 @@ def compute_score(
 #  TASTE PROFILE
 # ═══════════════════════════════════════════════════════════
 
-async def get_or_create_taste_profile(
-    session: AsyncSession, user_id: int
-) -> UserTasteProfile:
-    result = await session.execute(
-        select(UserTasteProfile).where(UserTasteProfile.user_id == user_id)
-    )
+
+async def get_or_create_taste_profile(session: AsyncSession, user_id: int) -> UserTasteProfile:
+    result = await session.execute(select(UserTasteProfile).where(UserTasteProfile.user_id == user_id))
     profile = result.scalar_one_or_none()
     if not profile:
         profile = UserTasteProfile(user_id=user_id, fav_genres={}, fav_tags={}, fav_moods={})
@@ -148,9 +149,7 @@ async def get_or_create_taste_profile(
     return profile
 
 
-async def update_taste_profile(
-    session: AsyncSession, user_id: int, anime: Anime
-) -> None:
+async def update_taste_profile(session: AsyncSession, user_id: int, anime: Anime) -> None:
     """
     User kontent ko'rganda taste profilini yangilaydi.
     BARCHA ko'rilgan history hisobga olinadi (limit yo'q).
@@ -158,25 +157,22 @@ async def update_taste_profile(
     profile = await get_or_create_taste_profile(session, user_id)
 
     g_counter = dict(profile.fav_genres or {})
-    for g in (anime.genres or []):
+    for g in anime.genres or []:
         k = g.lower()
         g_counter[k] = g_counter.get(k, 0) + 1
 
     t_counter = dict(profile.fav_tags or {})
-    for t in (anime.tags or []):
+    for t in anime.tags or []:
         k = t.lower()
         t_counter[k] = t_counter.get(k, 0) + 1
 
     m_counter = dict(profile.fav_moods or {})
-    for m in (anime.mood or []):
+    for m in anime.mood or []:
         k = m.lower()
         m_counter[k] = m_counter.get(k, 0) + 1
 
     # Sevimli content type — BARCHA history dan
-    history = await session.execute(
-        select(UserWatchHistory.anime_id)
-        .where(UserWatchHistory.user_id == user_id)
-    )
+    history = await session.execute(select(UserWatchHistory.anime_id).where(UserWatchHistory.user_id == user_id))
     type_counter: dict[str, int] = {}
     for (aid,) in history.fetchall():
         a = await session.get(Anime, aid)
@@ -186,9 +182,9 @@ async def update_taste_profile(
     fav_type = max(type_counter, key=type_counter.get) if type_counter else "anime"
 
     profile.fav_genres = g_counter
-    profile.fav_tags   = t_counter
-    profile.fav_moods  = m_counter
-    profile.fav_type   = fav_type
+    profile.fav_tags = t_counter
+    profile.fav_moods = m_counter
+    profile.fav_type = fav_type
     await session.commit()
 
 
@@ -197,23 +193,29 @@ def build_identity_label(profile: UserTasteProfile) -> str:
         return "🎌 Anime muxlisi"
 
     genres = dict(profile.fav_genres or {})
-    tags   = dict(profile.fav_tags   or {})
+    tags = dict(profile.fav_tags or {})
 
     top_genre = max(genres, key=genres.get) if genres else None
-    top_tag   = max(tags,   key=tags.get)   if tags   else None
-    fav_type  = profile.fav_type or "anime"
+    top_tag = max(tags, key=tags.get) if tags else None
+    fav_type = profile.fav_type or "anime"
 
     type_labels = {"anime": "anime", "movie": "kino", "serial": "serial", "dorama": "dorama"}
-    tag_labels  = {
-        "dark": "🌑 Qorong'u", "psychological": "🧠 Psixologik",
-        "romance": "💕 Romantik", "action": "⚔️ Jangari",
-        "comedy": "😂 Kulgili", "supernatural": "👻 G'ayritabiiy",
-        "sports": "🏆 Sport", "horror": "😱 Qo'rqinchli",
-        "wholesome": "🌸 Iliq", "survival": "🔥 Omon qolish",
-        "emotional": "💔 Hissiy", "mystery": "🔍 Sirli",
+    tag_labels = {
+        "dark": "🌑 Qorong'u",
+        "psychological": "🧠 Psixologik",
+        "romance": "💕 Romantik",
+        "action": "⚔️ Jangari",
+        "comedy": "😂 Kulgili",
+        "supernatural": "👻 G'ayritabiiy",
+        "sports": "🏆 Sport",
+        "horror": "😱 Qo'rqinchli",
+        "wholesome": "🌸 Iliq",
+        "survival": "🔥 Omon qolish",
+        "emotional": "💔 Hissiy",
+        "mystery": "🔍 Sirli",
     }
 
-    t_label  = tag_labels.get(top_tag, top_tag) if top_tag else None
+    t_label = tag_labels.get(top_tag, top_tag) if top_tag else None
     type_str = type_labels.get(fav_type, fav_type)
 
     if t_label and top_genre:
@@ -227,29 +229,23 @@ def build_identity_label(profile: UserTasteProfile) -> str:
 #  ASOSIY RECOMMENDATION — TO'LIQ TUZATILGAN
 # ═══════════════════════════════════════════════════════════
 
+
 async def _get_all_watched_ids(session: AsyncSession, user_id: int) -> set[int]:
     """
     Ko'rilgan BARCHA anime ID larini qaytaradi.
     Limit yo'q — shunda ko'rilganlar hech qachon qayta tavsiya qilinmaydi.
     """
-    result = await session.execute(
-        select(UserWatchHistory.anime_id)
-        .where(UserWatchHistory.user_id == user_id)
-    )
+    result = await session.execute(select(UserWatchHistory.anime_id).where(UserWatchHistory.user_id == user_id))
     return set(row[0] for row in result.fetchall())
 
 
 async def _get_episode_count(session: AsyncSession, anime_id: int) -> int:
     """Animening haqiqiy DB dagi qismlar soni."""
-    result = await session.execute(
-        select(func.count(Series.id)).where(Series.anime_id == anime_id)
-    )
+    result = await session.execute(select(func.count(Series.id)).where(Series.anime_id == anime_id))
     return result.scalar() or 0
 
 
-def _apply_diversity(
-    scored: list[tuple], limit: int, max_per_genre: int = 2
-) -> list[tuple]:
+def _apply_diversity(scored: list[tuple], limit: int, max_per_genre: int = 2) -> list[tuple]:
     """
     Bir janrdan ko'pi bilan max_per_genre ta tavsiya.
     Diversity ta'minlaydi.
@@ -290,8 +286,8 @@ async def get_recommendations(
     """
     profile = await get_or_create_taste_profile(session, user_id)
     user_genres = dict(profile.fav_genres or {})
-    user_tags   = dict(profile.fav_tags   or {})
-    user_moods  = dict(profile.fav_moods  or {})
+    user_tags = dict(profile.fav_tags or {})
+    user_moods = dict(profile.fav_moods or {})
 
     # Mood filtrlari
     t_genres, t_tags, t_moods = [], [], []
@@ -319,12 +315,9 @@ async def get_recommendations(
     # Scoring — ko'rilganlarni skip
     scored = []
     for anime in all_content:
-        if anime.id in watched_ids:      # ✅ Ko'rilgan → skip
+        if anime.id in watched_ids:  # ✅ Ko'rilgan → skip
             continue
-        score = compute_score(
-            anime, user_genres, user_tags, user_moods,
-            t_genres, t_tags, t_moods
-        )
+        score = compute_score(anime, user_genres, user_tags, user_moods, t_genres, t_tags, t_moods)
         scored.append((anime, score))
 
     # Sort
@@ -339,6 +332,7 @@ async def get_recommendations(
 # ═══════════════════════════════════════════════════════════
 #  SMART CONTINUE — TO'LIQ TUZATILGAN
 # ═══════════════════════════════════════════════════════════
+
 
 async def get_smart_continue(
     session: AsyncSession,
@@ -357,12 +351,12 @@ async def get_smart_continue(
         select(UserWatchHistory, Anime)
         .join(Anime, UserWatchHistory.anime_id == Anime.id)
         .where(
-            UserWatchHistory.user_id      == user_id,
+            UserWatchHistory.user_id == user_id,
             UserWatchHistory.is_completed == False,
             UserWatchHistory.last_episode >= 1,
         )
         .order_by(UserWatchHistory.watched_at.desc())
-        .limit(20)   # Ko'proq olib, filtrlaymiz
+        .limit(20)  # Ko'proq olib, filtrlaymiz
     )
 
     items = []
@@ -371,10 +365,10 @@ async def get_smart_continue(
         real_ep_count = await _get_episode_count(session, anime.id)
 
         if real_ep_count == 0:
-            continue   # Qismlar hali qo'shilmagan
+            continue  # Qismlar hali qo'shilmagan
 
         if real_ep_count == 1:
-            continue   # 1 qismlik — ko'rib bo'lingan
+            continue  # 1 qismlik — ko'rib bo'lingan
 
         # ✅ Ko'rilgan qism >= haqiqiy qismlar soni → tugagan, ko'rsatma
         if hw.last_episode >= real_ep_count:
@@ -385,18 +379,15 @@ async def get_smart_continue(
 
         # Keyingi qism haqiqatan mavjudmi?
         next_ep_exists = await session.execute(
-            select(Series).where(
-                Series.anime_id == anime.id,
-                Series.episode  == resume_from
-            )
+            select(Series).where(Series.anime_id == anime.id, Series.episode == resume_from)
         )
         if not next_ep_exists.scalar_one_or_none():
-            continue   # Keyingi qism hali yuklanmagan
+            continue  # Keyingi qism hali yuklanmagan
 
         d = _anime_to_dict(anime)
         d["last_episode"] = hw.last_episode
-        d["resume_from"]  = resume_from
-        d["remaining"]    = real_ep_count - hw.last_episode
+        d["resume_from"] = resume_from
+        d["remaining"] = real_ep_count - hw.last_episode
         items.append(d)
 
         if len(items) >= 5:
@@ -409,6 +400,7 @@ async def get_smart_continue(
 #  TRENDING / TOP / RISING / HIDDEN GEMS
 # ═══════════════════════════════════════════════════════════
 
+
 async def get_trending(
     session: AsyncSession,
     content_type: str | None = None,
@@ -417,6 +409,7 @@ async def get_trending(
 ) -> list[dict]:
     """So'nggi 7 kunda eng ko'p ko'rilganlar."""
     from datetime import datetime, timedelta
+
     week_ago = datetime.utcnow() - timedelta(days=7)
 
     subq = (
@@ -446,11 +439,7 @@ async def get_top_rated(
     is_pro: bool = False,
 ) -> list[dict]:
     """Kamida 3 ovoz, eng yuqori reyting."""
-    query = (
-        select(Anime)
-        .where(Anime.rating_count >= 3)
-        .order_by(Anime.rating.desc())
-    )
+    query = select(Anime).where(Anime.rating_count >= 3).order_by(Anime.rating.desc())
     if content_type:
         query = query.where(Anime.content_type == content_type)
     if not is_pro:
@@ -468,6 +457,7 @@ async def get_rising(
 ) -> list[dict]:
     """So'nggi 3 kunda tez o'sayotganlar."""
     from datetime import datetime, timedelta
+
     three_days = datetime.utcnow() - timedelta(days=3)
 
     subq = (
@@ -537,19 +527,14 @@ async def get_related_content(
     # 2. Co-watch
     if len(results) < limit:
         watchers = await session.execute(
-            select(UserWatchHistory.user_id)
-            .where(UserWatchHistory.anime_id == anime_id)
-            .limit(50)
+            select(UserWatchHistory.user_id).where(UserWatchHistory.anime_id == anime_id).limit(50)
         )
         watcher_ids = [r[0] for r in watchers.fetchall()]
 
         if watcher_ids:
             also_watched = await session.execute(
                 select(UserWatchHistory.anime_id, func.count().label("cnt"))
-                .where(
-                    UserWatchHistory.user_id.in_(watcher_ids),
-                    UserWatchHistory.anime_id.notin_(seen_ids)
-                )
+                .where(UserWatchHistory.user_id.in_(watcher_ids), UserWatchHistory.anime_id.notin_(seen_ids))
                 .group_by(UserWatchHistory.anime_id)
                 .order_by(func.count().desc())
                 .limit(limit * 2)
@@ -574,10 +559,7 @@ async def get_next_recommendation(
     rel = await session.execute(
         select(RelatedContent, Anime)
         .join(Anime, RelatedContent.related_id == Anime.id)
-        .where(
-            RelatedContent.anime_id == current_anime_id,
-            RelatedContent.relation_type == "sequel"
-        )
+        .where(RelatedContent.anime_id == current_anime_id, RelatedContent.relation_type == "sequel")
         .limit(1)
     )
     row = rel.fetchone()
@@ -608,7 +590,7 @@ async def get_pro_locked_teaser(
     items = []
     for anime in result.scalars().all():
         d = _anime_to_dict(anime)
-        d["locked"]      = True
+        d["locked"] = True
         d["description"] = "🔒 Bu kontent Kaworai Pro foydalanuvchilariga ochiq..."
         items.append(d)
     return items
@@ -617,6 +599,7 @@ async def get_pro_locked_teaser(
 # ═══════════════════════════════════════════════════════════
 #  WATCH HISTORY & VIEW RECORD (recommendation.py versiyasi)
 # ═══════════════════════════════════════════════════════════
+
 
 async def record_view(
     session: AsyncSession,
@@ -651,7 +634,7 @@ async def add_to_watch_history(
     try:
         existing = await session.execute(
             select(UserWatchHistory).where(
-                UserWatchHistory.user_id  == user_id,
+                UserWatchHistory.user_id == user_id,
                 UserWatchHistory.anime_id == anime_id,
             )
         )
@@ -665,12 +648,14 @@ async def add_to_watch_history(
                 hw.is_completed = True
             hw.watched_at = func.now()
         else:
-            session.add(UserWatchHistory(
-                user_id=user_id,
-                anime_id=anime_id,
-                last_episode=episode,
-                is_completed=is_completed,
-            ))
+            session.add(
+                UserWatchHistory(
+                    user_id=user_id,
+                    anime_id=anime_id,
+                    last_episode=episode,
+                    is_completed=is_completed,
+                )
+            )
 
         await session.commit()
 
@@ -689,25 +674,25 @@ async def recalculate_popularity(
 ) -> float:
     """Popularity score = views_7d × 0.4 + rating × 0.4 + admin_pop × 0.2"""
     from datetime import datetime, timedelta
+
     week_ago = datetime.utcnow() - timedelta(days=7)
 
-    cnt = (await session.execute(
-        select(func.count(ViewRecord.id))
-        .where(ViewRecord.anime_id == anime_id, ViewRecord.viewed_at >= week_ago)
-    )).scalar() or 0
+    cnt = (
+        await session.execute(
+            select(func.count(ViewRecord.id)).where(ViewRecord.anime_id == anime_id, ViewRecord.viewed_at >= week_ago)
+        )
+    ).scalar() or 0
 
     anime = await session.get(Anime, anime_id)
     if not anime:
         return 0.0
 
     score = (
-        min(cnt / 500.0, 1.0) * 0.4 +
-        (anime.rating / 10.0) * 0.4 +
-        min((anime.popularity or 0) / 10.0, 1.0) * 0.2
+        min(cnt / 500.0, 1.0) * 0.4 + (anime.rating / 10.0) * 0.4 + min((anime.popularity or 0) / 10.0, 1.0) * 0.2
     ) * 100
 
     anime.popularity_score = round(score, 2)
-    anime.is_hidden_gem    = (anime.rating >= 8.0 and cnt <= 100)
+    anime.is_hidden_gem = anime.rating >= 8.0 and cnt <= 100
     await session.commit()
     return anime.popularity_score
 
@@ -716,30 +701,31 @@ async def recalculate_popularity(
 #  YORDAMCHI
 # ═══════════════════════════════════════════════════════════
 
+
 def _anime_to_dict(
     anime: Anime,
     score: float = 0.0,
     extra: dict | None = None,
 ) -> dict:
     d = {
-        "id":                   anime.id,
-        "title":                anime.title,
-        "type":                 anime.content_type or "anime",
-        "year":                 anime.year,
-        "genres":               anime.genres or [],
-        "tags":                 anime.tags   or [],
-        "mood":                 anime.mood   or [],
-        "rating":               anime.rating,
-        "episodes":             anime.episodes_count,
-        "status":               anime.status,
-        "description":          anime.description,
-        "poster_file_id":       anime.poster_file_id,
+        "id": anime.id,
+        "title": anime.title,
+        "type": anime.content_type or "anime",
+        "year": anime.year,
+        "genres": anime.genres or [],
+        "tags": anime.tags or [],
+        "mood": anime.mood or [],
+        "rating": anime.rating,
+        "episodes": anime.episodes_count,
+        "status": anime.status,
+        "description": anime.description,
+        "poster_file_id": anime.poster_file_id,
         "inline_thumbnail_url": anime.inline_thumbnail_url,
-        "trailer_file_id":      anime.trailer_file_id,
-        "popularity_score":     anime.popularity_score,
-        "is_hidden_gem":        anime.is_hidden_gem,
-        "is_pro_locked":        anime.is_pro_locked,
-        "score":                score,
+        "trailer_file_id": anime.trailer_file_id,
+        "popularity_score": anime.popularity_score,
+        "is_hidden_gem": anime.is_hidden_gem,
+        "is_pro_locked": anime.is_pro_locked,
+        "score": score,
     }
     if extra:
         d.update(extra)
