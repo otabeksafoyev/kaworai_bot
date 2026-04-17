@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timedelta
-from handlers.users import mark_admin_active, mark_admin_inactive
+
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -22,6 +22,7 @@ from database.engine import AsyncSessionLocal
 from database.models import Admin, Anime, RelatedContent, Series, SubscriptionChannel, User
 from database.queries import add_channel, get_all_channels, get_news_channels, remove_channel, toggle_channel
 from handlers.genres import GENRES, normalize_genre
+from handlers.users import mark_admin_active, mark_admin_inactive
 from states.admin_states import AddAnime, AddChannel, AdminProState, BroadcastState, EditAnime
 from utils.genre_picker import genre_picker_kb, genre_picker_text
 from utils.security import esc, parse_admin_ids
@@ -238,6 +239,7 @@ TYPE_KB = InlineKeyboardMarkup(
 #  ADMIN KIRISH
 # ═══════════════════════════════════════════════════════════
 
+
 @admin_router.message(Command("admin"))
 async def admin_entry(msg: Message, state: FSMContext):
     logger.info("admin_entry hit user_id=%s ADMINS=%s", msg.from_user.id, ADMINS)
@@ -255,40 +257,19 @@ async def admin_entry(msg: Message, state: FSMContext):
         logger.exception("admin_entry: state.clear() failed user=%s", msg.from_user.id)
 
     async with AsyncSessionLocal() as session:
-        admin = (await session.execute(
-            select(Admin).where(Admin.telegram_id == msg.from_user.id)
-        )).scalar_one_or_none()
+        admin = (await session.execute(select(Admin).where(Admin.telegram_id == msg.from_user.id))).scalar_one_or_none()
 
         if not admin and str(msg.from_user.id) in ADMINS:
-            admin = Admin(
-                telegram_id=msg.from_user.id,
-                role="owner",
-                nickname=msg.from_user.full_name
-            )
+            admin = Admin(telegram_id=msg.from_user.id, role="owner", nickname=msg.from_user.full_name)
             session.add(admin)
             await session.commit()
 
     role_str = admin.role.upper() if admin else "OWNER"
 
-    await msg.answer(
-        f"🛠 <b>Kaworai Admin Panel</b>\nRol: {role_str}",
-        reply_markup=admin_main_kb,
-        parse_mode="HTML"
-    )
+    await msg.answer(f"🛠 <b>Kaworai Admin Panel</b>\nRol: {role_str}", reply_markup=admin_main_kb, parse_mode="HTML")
 
     # 🔥 SHU YERGA QO‘SHASAN
     mark_admin_active(msg.from_user.id)
-
-
-
-
-
-
-
-
-
-
-
 
 
 @admin_router.message(F.text == "🚫 Bekor qilish")
@@ -2918,6 +2899,7 @@ async def save_ch_id(msg: Message, state: FSMContext):
         parse_mode="HTML",
     )
 
+
 @admin_router.message(F.text == "🔙 Chiqish")
 async def exit_admin(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -2925,10 +2907,7 @@ async def exit_admin(msg: Message, state: FSMContext):
 
     await state.clear()
 
-    await msg.answer(
-        "Admin paneldan chiqildi.",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    await msg.answer("Admin paneldan chiqildi.", reply_markup=ReplyKeyboardRemove())
 
     # 🔥 SHU YERGA QO‘SHASAN
     mark_admin_inactive(msg.from_user.id)
