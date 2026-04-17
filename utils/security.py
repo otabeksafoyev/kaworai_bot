@@ -32,9 +32,16 @@ def parse_admin_ids(raw: str) -> list[str]:
 
     - Bo'sh bo'laklarni (`""`) olib tashlaydi.
     - Probellarni trim qiladi.
+    - Qiymat atrofidagi tirnoq (`"..."` yoki `'...'`) belgilarini olib tashlaydi —
+      Railway va ba'zi platformalar `.env` formatida tirnoqlarni saqlab qolishi mumkin.
 
     Bu muhim — chunki bo'sh satr `""` ni ro'yxatda qoldirish `"" in admins`
     chekini buzadi va ba'zi hollarda avtorizatsiya tizimini mantiqan
     noto'g'ri holatga keltirishi mumkin.
     """
-    return [part.strip() for part in (raw or "").split(",") if part.strip()]
+    cleaned: list[str] = []
+    for part in (raw or "").split(","):
+        p = part.strip().strip('"').strip("'").strip()
+        if p:
+            cleaned.append(p)
+    return cleaned
