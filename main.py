@@ -1,35 +1,30 @@
+"""
+Railway va ba'zi deploy toollari odatda `main.py` ni entrypoint sifatida
+oladi (nixpacks default: `python main.py`). Loyiha haqiqiy entrypoint'i
+esa `bot.py` — u MemoryStorage FSM fallback, pro_payment, admin_pro,
+pro_user, inline va genre routerlari, global error_router, hamda admin
+tugma outer middleware'ni o'z ichiga oladi.
+
+Eski `main.py` to'g'ridan-to'g'ri `RedisStorage.from_url(...)` ishlatardi
+va faqat 4 ta router'ni include qilardi. Natijada Railway'da Redis
+javobsiz qolgan paytda admin tugmalari "jim" bo'lib, pro to'lov va admin
+pro menyular umuman ishga tushmasdi — chunki Railway aynan shu eski
+`main.py` ni ishlatib kelgan. Loglarda `INFO:root:Bot ishga tushdi`
+qatori shu `main.py` dan chiqardi (yangi `bot.py` esa
+`--- BOT INSTANCE pid=... ISHGA TUSHDI ---` yozadi).
+
+Bu fayl endi faqat `bot.py:main` ni chaqiradi — shunday qilib qaysi
+entrypoint tanlansa ham (main.py yoki bot.py) bitta zamonaviy kod yo'li
+ishlaydi.
+"""
+
 import asyncio
 import logging
 
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.fsm.storage.redis import RedisStorage
-
-from config import config
-from database.engine import init_db
-from handlers import admin_router, callback_router, genre_router, user_router
-from middlewares import SubscriptionMiddleware, ThrottlingMiddleware
-
-logging.basicConfig(level=logging.INFO)
-
-bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-
-dp = Dispatcher(storage=RedisStorage.from_url(config.REDIS_URL))
-
-dp.message.middleware(ThrottlingMiddleware())
-dp.message.middleware(SubscriptionMiddleware())
-dp.callback_query.middleware(SubscriptionMiddleware())
-
-# genre_router — callback_router DAN OLDIN bo'lishi shart!
-dp.include_routers(user_router, genre_router, admin_router, callback_router)
-
-
-async def main():
-    await init_db()
-    logging.info("Bot ishga tushdi")
-    await dp.start_polling(bot, drop_pending_updates=True)
-
+from bot import main
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Bot foydalanuvchi tomonidan to'xtatildi.")
