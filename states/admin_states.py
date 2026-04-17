@@ -55,9 +55,24 @@ class BroadcastState(StatesGroup):
     waiting_anime_id = State()
     waiting_anime_media_type = State()
     waiting_anime_post_caption = State()
+    # Anime post uchun qo'shimcha button (Ko'rish dan oldin)
+    waiting_anime_post_extra_btn_choice = State()
+    waiting_anime_post_extra_btn_text = State()
+    waiting_anime_post_extra_btn_url = State()
     waiting_anime_post_confirm = State()
     waiting_genre_name = State()
     waiting_genre_channel = State()
+    # Kanalga maxsus xabar (rasm/video + button bilan)
+    waiting_ch_content = State()
+    waiting_ch_btn_choice = State()
+    waiting_ch_btn_text = State()
+    waiting_ch_btn_url = State()
+    waiting_ch_channel_pick = State()
+
+
+# 🔹 Baza zaxira (export/import)
+class BackupState(StatesGroup):
+    waiting_restore_file = State()
 
 
 # 🔹 PRO tizim

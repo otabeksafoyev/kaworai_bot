@@ -23,7 +23,7 @@ from database.models import Admin, Anime, RelatedContent, Series, SubscriptionCh
 from database.queries import add_channel, get_all_channels, get_news_channels, remove_channel, toggle_channel
 from handlers.genres import GENRES, normalize_genre
 from handlers.users import mark_admin_active, mark_admin_inactive
-from states.admin_states import AddAnime, AddChannel, AdminProState, BroadcastState, EditAnime
+from states.admin_states import AddAnime, AddChannel, AdminProState, BackupState, BroadcastState, EditAnime
 from utils.genre_picker import genre_picker_kb, genre_picker_text
 from utils.security import esc, parse_admin_ids
 
@@ -55,6 +55,7 @@ ADMIN_REPLY_BUTTONS: set[str] = {
     "✉️ Xabar yuborish",
     "👑 Pro boshqaruv",
     "🏆 Top 18",
+    "🗄 Baza zaxira",
     "🔙 Chiqish",
     "🚫 Bekor qilish",
 }
@@ -150,8 +151,18 @@ def _watch_url(anime_id) -> str:
     return f"https://t.me/{BOT_USERNAME}?start=anime_{anime_id}"
 
 
-def _watch_kb(anime_id) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🧧 Ko'rish", url=_watch_url(anime_id))]])
+def _watch_kb(anime_id, extra_button: dict | None = None) -> InlineKeyboardMarkup:
+    """
+    Kanalga yuboriladigan anime post uchun button qator. `extra_button`
+    kelganda (dict: {"text": str, "url": str}) u "Ko'rish" oldida alohida
+    qatorga qo'shiladi. Bu admin anime post yuborishda ixtiyoriy link
+    qo'shmoqchi bo'lsa (masalan "Izoh" yoki "Trailer YouTube").
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+    if extra_button and extra_button.get("text") and extra_button.get("url"):
+        rows.append([InlineKeyboardButton(text=extra_button["text"], url=extra_button["url"])])
+    rows.append([InlineKeyboardButton(text="🧧 Ko'rish", url=_watch_url(anime_id))])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _yn(val: bool) -> str:
@@ -159,41 +170,95 @@ def _yn(val: bool) -> str:
 
 
 def _build_post_caption(anime: Anime) -> str:
+    """
+    Anime uchun to'liq post caption quradi. Admin so'ragan bo'yicha
+    animening barcha ma'lumotlari (tur, nom, yil, janr, tag, mood, yulduz,
+    ovozlar, qism soni, davomiylik, holat, mashhurlik, Pro lock, yashirin
+    gem, tavsif) chiqadi — cheklashlar olib tashlandi, faqat tavsif
+    Telegram caption limitiga sig'ishi uchun 600 belgigacha qisqartiriladi.
+    """
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
+    type_label = {"anime": "Anime", "movie": "Kino", "serial": "Serial", "dorama": "Dorama"}
     emoji = type_emoji.get(anime.content_type or "anime", "🎬")
-    genres_str = ", ".join((anime.genres or [])[:3]) or "—"
-    tags_str = ", ".join((anime.tags or [])[:3])
-    mood_str = ", ".join((anime.mood or [])[:2])
+    type_str = type_label.get(anime.content_type or "anime", "—")
+
+    genres_str = ", ".join(anime.genres or []) or "—"
+    tags_str = ", ".join(anime.tags or [])
+    mood_str = ", ".join(anime.mood or [])
     status_map = {"completed": "✅ Tugagan", "ongoing": "📡 Davom etmoqda", "announced": "📢 Kutilmoqda"}
     status_str = status_map.get(anime.status or "", "")
 
-    lines = [f"{emoji} <b>{anime.title}</b>" + (f" ({anime.year})" if anime.year else "")]
-    lines.append(f"🎭 {genres_str}")
+    lines: list[str] = []
+    title_line = f"{emoji} <b>{anime.title}</b>"
+    if anime.year:
+        title_line += f" ({anime.year})"
+    lines.append(title_line)
+    lines.append(f"🎬 Tur: {type_str}")
+    lines.append(f"🆔 <code>{anime.id}</code>")
+    lines.append(f"🎭 Janr: {genres_str}")
     if tags_str:
-        lines.append(f"🏷 {tags_str}")
+        lines.append(f"🏷 Tag: {tags_str}")
     if mood_str:
-        lines.append(f"😌 {mood_str}")
+        lines.append(f"😌 Kayfiyat: {mood_str}")
 
-    meta = f"⭐ {anime.rating:.1f}"
+    meta_parts: list[str] = []
+    if anime.rating is not None:
+        rc = anime.rating_count or 0
+        meta_parts.append(f"⭐ {float(anime.rating):.1f}" + (f" ({rc})" if rc else ""))
     if anime.episodes_count:
-        meta += f"  🎞 {anime.episodes_count} qism"
+        meta_parts.append(f"🎞 {anime.episodes_count} qism")
+    elif anime.total_episodes:
+        meta_parts.append(f"🎞 {anime.total_episodes} qism")
     if anime.duration:
-        meta += f"  ⏱ {anime.duration} daq"
+        meta_parts.append(f"⏱ {anime.duration} daq")
     if status_str:
-        meta += f"  {status_str}"
-    lines.append(meta)
+        meta_parts.append(status_str)
+    if meta_parts:
+        lines.append("  ".join(meta_parts))
+
+    extra_parts: list[str] = []
+    if anime.views:
+        extra_parts.append(f"👁 {anime.views}")
+    if anime.popularity:
+        try:
+            extra_parts.append(f"🔥 {float(anime.popularity):.1f}")
+        except Exception:
+            pass
+    if extra_parts:
+        lines.append("  ".join(extra_parts))
+
+    flags: list[str] = []
     if anime.is_pro_locked:
-        lines.append("🔒 <b>Faqat Pro uchun</b>")
-    desc = (anime.description or "")[:250]
+        flags.append("🔒 Pro")
+    if anime.is_hidden_gem:
+        flags.append("💎 Hidden gem")
+    if flags:
+        lines.append("  ".join(flags))
+
+    desc = (anime.description or "").strip()
     if desc:
+        if len(desc) > 600:
+            desc = desc[:600].rstrip() + "…"
         lines.append(f"\n📖 {desc}")
     return "\n".join(lines)
 
 
-async def _send_anime_post(bot: Bot, ch, anime: Anime, msg: Message = None) -> bool:
-    """Kanalga anime post yuboradi — poster + treyler."""
-    caption = _build_post_caption(anime)
-    watch_kb = _watch_kb(anime.id)
+async def _send_anime_post(
+    bot: Bot,
+    ch,
+    anime: Anime,
+    msg: Message = None,
+    extra_button: dict | None = None,
+    custom_caption: str | None = None,
+) -> bool:
+    """
+    Kanalga anime post yuboradi — poster + treyler.
+    `extra_button`: ixtiyoriy {"text": ..., "url": ...} — "Ko'rish" oldidan
+    qo'shimcha button chiqadi. `custom_caption`: bo'lmasa
+    `_build_post_caption` avto tuziladi.
+    """
+    caption = custom_caption if custom_caption is not None else _build_post_caption(anime)
+    watch_kb = _watch_kb(anime.id, extra_button=extra_button)
     try:
         if anime.poster_file_id:
             await bot.send_photo(
@@ -227,7 +292,7 @@ admin_main_kb = ReplyKeyboardMarkup(
         [KeyboardButton(text="🎌 Anime boshqaruv"), KeyboardButton(text="📢 Kanal sozlamalari")],
         [KeyboardButton(text="📊 Statistika"), KeyboardButton(text="✉️ Xabar yuborish")],
         [KeyboardButton(text="👑 Pro boshqaruv"), KeyboardButton(text="🏆 Top 18")],
-        [KeyboardButton(text="🔙 Chiqish")],
+        [KeyboardButton(text="🗄 Baza zaxira"), KeyboardButton(text="🔙 Chiqish")],
     ],
     resize_keyboard=True,
 )
@@ -2176,6 +2241,7 @@ async def broadcast_start(msg: Message, state: FSMContext):
         inline_keyboard=[
             [InlineKeyboardButton(text="🎬 Anime post (kanalga)", callback_data="bc_anime_post")],
             [InlineKeyboardButton(text="🎭 Janr bo'yicha post", callback_data="bc_genre_post")],
+            [InlineKeyboardButton(text="📣 Kanalga buttonli post", callback_data="bc_channel_custom")],
             [InlineKeyboardButton(text="👥 Foydalanuvchilarga xabar", callback_data="bc_users")],
             [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel")],
         ]
@@ -2263,7 +2329,7 @@ async def bc_caption_auto(call: types.CallbackQuery, state: FSMContext):
         anime = await session.get(Anime, data["bc_anime_id"])
     if anime:
         await state.update_data(bc_caption=_build_post_caption(anime))
-    await _bc_ask_channel(call, state)
+    await _bc_ask_extra_btn(call.message, state)
     await call.answer()
 
 
@@ -2281,6 +2347,86 @@ async def bc_caption_received(msg: Message, state: FSMContext):
         await state.clear()
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
     await state.update_data(bc_caption=msg.text.strip())
+    await _bc_ask_extra_btn(msg, state)
+
+
+async def _bc_ask_extra_btn(msg: Message, state: FSMContext):
+    """
+    Anime post kanalga yuborilishidan oldin admin'dan "Ko'rish" tugmasidan
+    oldin qo'shimcha button qo'shish kerakmi deb so'raydi (masalan "Izoh",
+    "Trailer", "Sayt"). Admin istamasa "Yo'q" bosadi va to'g'ridan-to'g'ri
+    kanal tanlash menyusiga o'tadi.
+    """
+    await state.set_state(BroadcastState.waiting_anime_post_extra_btn_choice)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Button qo'shish", callback_data="bcxbtn_yes")],
+            [InlineKeyboardButton(text="🚫 Yo'q, shundayligicha", callback_data="bcxbtn_no")],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel")],
+        ]
+    )
+    await msg.answer(
+        "🔗 <b>Ko'rish tugmasidan oldin qo'shimcha link-button qo'ymoqchimisiz?</b>\n\n"
+        "<i>Masalan: 'Izoh', 'Trailer', 'Sayt'.</i>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@admin_router.callback_query(F.data == "bcxbtn_no", BroadcastState.waiting_anime_post_extra_btn_choice)
+async def bc_extra_btn_skip(call: types.CallbackQuery, state: FSMContext):
+    await state.update_data(bc_extra_btn=None)
+    await _bc_ask_channel(call, state)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "bcxbtn_yes", BroadcastState.waiting_anime_post_extra_btn_choice)
+async def bc_extra_btn_yes(call: types.CallbackQuery, state: FSMContext):
+    await state.set_state(BroadcastState.waiting_anime_post_extra_btn_text)
+    await call.message.answer(
+        "✏️ Button matnini kiriting (masalan: <i>Izoh</i>):", parse_mode="HTML", reply_markup=cancel_kb
+    )
+    await call.answer()
+
+
+@admin_router.message(BroadcastState.waiting_anime_post_extra_btn_text)
+async def bc_extra_btn_text(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    text = (msg.text or "").strip()
+    if not text or len(text) > 64:
+        return await msg.answer("❌ Matn 1-64 belgi bo'lishi kerak.")
+    await state.update_data(bc_extra_btn_text=text)
+    await state.set_state(BroadcastState.waiting_anime_post_extra_btn_url)
+    await msg.answer(
+        "🔗 Button uchun URL (https://...) kiriting:",
+        reply_markup=cancel_kb,
+    )
+
+
+@admin_router.message(BroadcastState.waiting_anime_post_extra_btn_url)
+async def bc_extra_btn_url(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    url = (msg.text or "").strip()
+    if not url.startswith(("http://", "https://", "tg://")):
+        return await msg.answer("❌ URL http://, https:// yoki tg:// bilan boshlanishi kerak.")
+    data = await state.get_data()
+    await state.update_data(bc_extra_btn={"text": data.get("bc_extra_btn_text", ""), "url": url})
+    await _bc_ask_channel_msg(msg, state)
+
+
+async def _bc_ask_channel(call: types.CallbackQuery, state: FSMContext):
+    await _bc_ask_channel_msg(call.message, state)
+
+
+async def _bc_ask_channel_msg(msg: Message, state: FSMContext):
     await state.set_state(BroadcastState.waiting_anime_post_confirm)
     async with AsyncSessionLocal() as session:
         channels = await get_news_channels(session)
@@ -2296,22 +2442,6 @@ async def bc_caption_received(msg: Message, state: FSMContext):
     await msg.answer("📢 Qaysi kanalga?", reply_markup=kb.as_markup())
 
 
-async def _bc_ask_channel(call: types.CallbackQuery, state: FSMContext):
-    await state.set_state(BroadcastState.waiting_anime_post_confirm)
-    async with AsyncSessionLocal() as session:
-        channels = await get_news_channels(session)
-    if not channels:
-        await call.message.answer("⚠️ News kanallar yo'q!")
-        await state.clear()
-        return
-    kb = InlineKeyboardBuilder()
-    for ch in channels:
-        kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"bcch_{ch.id}"))
-    kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data="bcch_all"))
-    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel"))
-    await call.message.answer("📢 Qaysi kanalga?", reply_markup=kb.as_markup())
-
-
 @admin_router.callback_query(F.data.startswith("bcch_"), BroadcastState.waiting_anime_post_confirm)
 async def bc_send_to_channel(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id):
@@ -2321,6 +2451,7 @@ async def bc_send_to_channel(call: types.CallbackQuery, state: FSMContext):
     anime_id = data.get("bc_anime_id")
     caption = data.get("bc_caption", "")
     media_type = data.get("bc_media_type", "text")
+    extra_btn = data.get("bc_extra_btn")
     ch_target = call.data.replace("bcch_", "")
 
     async with AsyncSessionLocal() as session:
@@ -2331,7 +2462,7 @@ async def bc_send_to_channel(call: types.CallbackQuery, state: FSMContext):
         await call.answer("❌ Topilmadi!", show_alert=True)
         return
     targets = channels if ch_target == "all" else [c for c in channels if str(c.id) == ch_target]
-    watch_kb = _watch_kb(anime.id)
+    watch_kb = _watch_kb(anime.id, extra_button=extra_btn)
     sent = 0
 
     for ch in targets:
@@ -2456,6 +2587,482 @@ async def broadcast_to_users(msg: Message, state: FSMContext):
     await msg.answer(
         f"✅ Yuborildi!\n👤 OK: {success}\n❌ Xato: {failed}", reply_markup=admin_main_kb, parse_mode="HTML"
     )
+
+
+# ═══════════════════════════════════════════════════════════
+#  KANALGA BUTTONLI MAXSUS POST (ixtiyoriy rasm/video + button)
+# ═══════════════════════════════════════════════════════════
+
+
+def _build_custom_btn_kb(btn: dict | None) -> InlineKeyboardMarkup | None:
+    """Custom broadcast uchun 1 ta inline button qatori. None qaytarsa — button yo'q."""
+    if not btn or not btn.get("text") or not btn.get("url"):
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=btn["text"], url=btn["url"])]])
+
+
+@admin_router.callback_query(F.data == "bc_channel_custom")
+async def bc_channel_custom_start(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(BroadcastState.waiting_ch_content)
+    await call.message.answer(
+        "📣 <b>Kanalga maxsus post</b>\n\n"
+        "Postni yuboring:\n"
+        "• Oddiy matn,\n"
+        "• Yoki rasm / video (caption bilan).\n\n"
+        "Keyingi qadamda ixtiyoriy inline-button qo'shasiz.",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@admin_router.message(BroadcastState.waiting_ch_content)
+async def bc_ch_content_received(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+
+    payload: dict = {"caption": (msg.caption or msg.text or "").strip()}
+    if msg.photo:
+        payload["kind"] = "photo"
+        payload["file_id"] = msg.photo[-1].file_id
+    elif msg.video:
+        payload["kind"] = "video"
+        payload["file_id"] = msg.video.file_id
+    elif msg.text:
+        payload["kind"] = "text"
+    else:
+        return await msg.answer("❌ Faqat matn, rasm yoki video yuboring.")
+
+    await state.update_data(ch_payload=payload)
+    await state.set_state(BroadcastState.waiting_ch_btn_choice)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Button qo'shish", callback_data="bcchbtn_yes")],
+            [InlineKeyboardButton(text="🚫 Yo'q", callback_data="bcchbtn_no")],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel")],
+        ]
+    )
+    await msg.answer("🔗 <b>Inline-button qo'ymoqchimisiz?</b>", reply_markup=kb, parse_mode="HTML")
+
+
+@admin_router.callback_query(F.data == "bcchbtn_no", BroadcastState.waiting_ch_btn_choice)
+async def bc_ch_btn_no(call: types.CallbackQuery, state: FSMContext):
+    await state.update_data(ch_btn=None)
+    await _bc_ch_preview(call.message, state)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "bcchbtn_yes", BroadcastState.waiting_ch_btn_choice)
+async def bc_ch_btn_yes(call: types.CallbackQuery, state: FSMContext):
+    await state.set_state(BroadcastState.waiting_ch_btn_text)
+    await call.message.answer("✏️ Button matnini kiriting:", reply_markup=cancel_kb)
+    await call.answer()
+
+
+@admin_router.message(BroadcastState.waiting_ch_btn_text)
+async def bc_ch_btn_text(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    text = (msg.text or "").strip()
+    if not text or len(text) > 64:
+        return await msg.answer("❌ Matn 1-64 belgi bo'lishi kerak.")
+    await state.update_data(ch_btn_text=text)
+    await state.set_state(BroadcastState.waiting_ch_btn_url)
+    await msg.answer("🔗 Button URL (https://...):", reply_markup=cancel_kb)
+
+
+@admin_router.message(BroadcastState.waiting_ch_btn_url)
+async def bc_ch_btn_url(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    url = (msg.text or "").strip()
+    if not url.startswith(("http://", "https://", "tg://")):
+        return await msg.answer("❌ URL http://, https:// yoki tg:// bilan boshlanishi kerak.")
+    data = await state.get_data()
+    await state.update_data(ch_btn={"text": data.get("ch_btn_text", ""), "url": url})
+    await _bc_ch_preview(msg, state)
+
+
+async def _bc_ch_preview(msg: Message, state: FSMContext):
+    """Adminga yuboriladigan postning preview va "qaysi kanalga?" tanlovi."""
+    data = await state.get_data()
+    payload = data.get("ch_payload") or {}
+    btn = data.get("ch_btn")
+    reply_kb = _build_custom_btn_kb(btn)
+    caption = payload.get("caption", "")
+
+    await msg.answer("👁 <b>Preview:</b>", parse_mode="HTML")
+    try:
+        if payload.get("kind") == "photo":
+            await msg.bot.send_photo(
+                msg.chat.id, payload["file_id"], caption=caption or None, reply_markup=reply_kb, parse_mode="HTML"
+            )
+        elif payload.get("kind") == "video":
+            await msg.bot.send_video(
+                msg.chat.id, payload["file_id"], caption=caption or None, reply_markup=reply_kb, parse_mode="HTML"
+            )
+        else:
+            await msg.bot.send_message(msg.chat.id, caption or "—", reply_markup=reply_kb, parse_mode="HTML")
+    except Exception as e:
+        logger.exception("bc_ch preview failed")
+        await msg.answer(f"⚠️ Preview xato: {e}")
+
+    await state.set_state(BroadcastState.waiting_ch_channel_pick)
+    async with AsyncSessionLocal() as session:
+        channels = await get_news_channels(session)
+    if not channels:
+        await msg.answer("⚠️ News kanallar yo'q! Avval Kanal sozlamalari orqali qo'shing.")
+        await state.clear()
+        return
+    kb = InlineKeyboardBuilder()
+    for ch in channels:
+        kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"bcchsend_{ch.id}"))
+    kb.row(InlineKeyboardButton(text="📢 Barcha news", callback_data="bcchsend_all"))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel"))
+    await msg.answer("📢 Qaysi kanalga yuborilsin?", reply_markup=kb.as_markup())
+
+
+@admin_router.callback_query(F.data.startswith("bcchsend_"), BroadcastState.waiting_ch_channel_pick)
+async def bc_ch_send(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    data = await state.get_data()
+    await state.clear()
+    payload = data.get("ch_payload") or {}
+    btn = data.get("ch_btn")
+    reply_kb = _build_custom_btn_kb(btn)
+    caption = payload.get("caption", "")
+    ch_target = call.data.replace("bcchsend_", "")
+
+    async with AsyncSessionLocal() as session:
+        channels = await get_news_channels(session)
+    targets = channels if ch_target == "all" else [c for c in channels if str(c.id) == ch_target]
+    sent = failed = 0
+    for ch in targets:
+        if not ch.channel_id:
+            continue
+        try:
+            if payload.get("kind") == "photo":
+                await call.bot.send_photo(
+                    ch.channel_id, payload["file_id"], caption=caption or None, reply_markup=reply_kb, parse_mode="HTML"
+                )
+            elif payload.get("kind") == "video":
+                await call.bot.send_video(
+                    ch.channel_id, payload["file_id"], caption=caption or None, reply_markup=reply_kb, parse_mode="HTML"
+                )
+            else:
+                await call.bot.send_message(ch.channel_id, caption or "—", reply_markup=reply_kb, parse_mode="HTML")
+            sent += 1
+            await asyncio.sleep(0.1)
+        except Exception as e:
+            failed += 1
+            logger.exception("bc_ch_send: channel=%s error=%s", ch.channel_name, e)
+            try:
+                await call.message.answer(f"⚠️ {ch.channel_name}: {e}")
+            except Exception:
+                pass
+    try:
+        await call.message.edit_text(f"✅ {sent} kanalga yuborildi. ❌ Xato: {failed}")
+    except Exception:
+        await call.message.answer(f"✅ {sent} kanalga yuborildi. ❌ Xato: {failed}")
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+# ═══════════════════════════════════════════════════════════
+#  BAZA ZAXIRA: EXPORT / IMPORT (ZIP)
+# ═══════════════════════════════════════════════════════════
+
+
+BACKUP_VERSION = 1
+
+
+def _anime_to_dict(a: Anime) -> dict:
+    """Anime qatorini JSON-uchun dict ga o'giradi. Faqat saqlanadigan field'lar."""
+    return {
+        "id": a.id,
+        "title": a.title,
+        "description": a.description,
+        "poster_file_id": a.poster_file_id,
+        "trailer_file_id": a.trailer_file_id,
+        "inline_thumbnail_url": a.inline_thumbnail_url,
+        "genres": list(a.genres) if a.genres else [],
+        "year": a.year,
+        "rating": a.rating,
+        "rating_count": a.rating_count,
+        "total_episodes": a.total_episodes,
+        "views": a.views,
+        "content_type": a.content_type,
+        "tags": list(a.tags) if a.tags else [],
+        "mood": list(a.mood) if a.mood else [],
+        "episodes_count": a.episodes_count,
+        "duration": a.duration,
+        "status": a.status,
+        "popularity": a.popularity,
+        "popularity_score": a.popularity_score,
+        "is_hidden_gem": a.is_hidden_gem,
+        "is_pro_locked": a.is_pro_locked,
+    }
+
+
+def _channel_to_dict(c: SubscriptionChannel) -> dict:
+    return {
+        "id": c.id,
+        "channel_id": c.channel_id,
+        "username": c.username,
+        "channel_url": c.channel_url,
+        "channel_name": c.channel_name,
+        "is_active": c.is_active,
+        "require_check": c.require_check,
+        "is_news": c.is_news,
+    }
+
+
+@admin_router.message(F.text == "🗄 Baza zaxira")
+async def backup_menu(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    await state.clear()
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬇️ Zaxira olish (ZIP)", callback_data="bk_export")],
+            [InlineKeyboardButton(text="⬆️ Zaxiradan tiklash", callback_data="bk_restore")],
+            [InlineKeyboardButton(text="❌ Yopish", callback_data="bk_close")],
+        ]
+    )
+    await msg.answer(
+        "🗄 <b>Baza zaxira</b>\n\n"
+        "⬇️ <b>Zaxira olish</b> — barcha anime va kanal ma'lumotlari ZIP faylga yig'iladi.\n"
+        "⬆️ <b>Tiklash</b> — avval eksport qilingan ZIP ni yuboring, ma'lumotlar qayta qo'shiladi (ID bo'yicha yangilanadi).\n\n"
+        "<i>Qism (episode) fayllari maxfiy kanalda saqlanadi, ZIP ga kirmaydi.</i>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@admin_router.callback_query(F.data == "bk_close")
+async def bk_close(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await call.message.edit_text("❌ Yopildi.")
+    except Exception:
+        pass
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "bk_export")
+async def bk_export(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await call.answer("⏳ Tayyorlanyapti...")
+    try:
+        async with AsyncSessionLocal() as session:
+            animes_res = await session.execute(select(Anime))
+            animes = animes_res.scalars().all()
+            channels_res = await session.execute(select(SubscriptionChannel))
+            channels = channels_res.scalars().all()
+
+        import datetime as _dt
+        import io as _io
+        import json as _json
+        import zipfile as _zipfile
+
+        metadata = {
+            "version": BACKUP_VERSION,
+            "exported_at": _dt.datetime.utcnow().isoformat() + "Z",
+            "counts": {"animes": len(animes), "channels": len(channels)},
+        }
+        buf = _io.BytesIO()
+        with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(
+                "animes.json",
+                _json.dumps([_anime_to_dict(a) for a in animes], ensure_ascii=False, indent=2),
+            )
+            zf.writestr(
+                "channels.json",
+                _json.dumps([_channel_to_dict(c) for c in channels], ensure_ascii=False, indent=2),
+            )
+            zf.writestr("metadata.json", _json.dumps(metadata, ensure_ascii=False, indent=2))
+        buf.seek(0)
+
+        from aiogram.types import BufferedInputFile
+
+        fname = f"kaworai_backup_{_dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
+        await call.bot.send_document(
+            chat_id=call.from_user.id,
+            document=BufferedInputFile(buf.getvalue(), filename=fname),
+            caption=(
+                f"🗄 <b>Zaxira tayyor</b>\n"
+                f"🎬 Anime: {len(animes)}\n"
+                f"📢 Kanal: {len(channels)}\n\n"
+                "<i>Bu faylni saqlang — tiklash uchun shu ZIP ni yuboring.</i>"
+            ),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.exception("bk_export failed")
+        await call.message.answer(f"❌ Eksport xato: {e}")
+
+
+@admin_router.callback_query(F.data == "bk_restore")
+async def bk_restore_start(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(BackupState.waiting_restore_file)
+    await call.message.answer(
+        "⬆️ <b>Zaxiradan tiklash</b>\n\n"
+        "Avval eksport qilingan <code>.zip</code> faylni yuboring.\n"
+        "Anime va kanallar <b>ID bo'yicha yangilanadi</b> — mavjudlari yangilanadi, yangilari qo'shiladi.",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@admin_router.message(BackupState.waiting_restore_file)
+async def bk_restore_file(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    if not msg.document:
+        return await msg.answer("❌ ZIP hujjat yuboring.")
+    fname = (msg.document.file_name or "").lower()
+    if not fname.endswith(".zip"):
+        return await msg.answer("❌ Fayl .zip bo'lishi kerak.")
+    await state.clear()
+
+    import io as _io
+    import json as _json
+    import zipfile as _zipfile
+
+    try:
+        file = await msg.bot.get_file(msg.document.file_id)
+        buf = _io.BytesIO()
+        await msg.bot.download_file(file.file_path, destination=buf)
+        buf.seek(0)
+        with _zipfile.ZipFile(buf, "r") as zf:
+            names = set(zf.namelist())
+            animes_data = _json.loads(zf.read("animes.json").decode("utf-8")) if "animes.json" in names else []
+            channels_data = _json.loads(zf.read("channels.json").decode("utf-8")) if "channels.json" in names else []
+    except Exception as e:
+        logger.exception("bk_restore: failed to parse ZIP")
+        return await msg.answer(f"❌ ZIP o'qib bo'lmadi: {e}", reply_markup=admin_main_kb)
+
+    added_a = updated_a = added_c = updated_c = skipped = 0
+    errors: list[str] = []
+
+    async with AsyncSessionLocal() as session:
+        # Animes: upsert by id
+        for row in animes_data:
+            try:
+                aid = row.get("id")
+                if aid is None or not row.get("title"):
+                    skipped += 1
+                    continue
+                existing = await session.get(Anime, aid)
+                fields = {
+                    "title": row.get("title"),
+                    "description": row.get("description"),
+                    "poster_file_id": row.get("poster_file_id"),
+                    "trailer_file_id": row.get("trailer_file_id"),
+                    "inline_thumbnail_url": row.get("inline_thumbnail_url"),
+                    "genres": row.get("genres") or [],
+                    "year": row.get("year"),
+                    "rating": row.get("rating") or 0.0,
+                    "rating_count": row.get("rating_count") or 0,
+                    "total_episodes": row.get("total_episodes") or 0,
+                    "views": row.get("views") or 0,
+                    "content_type": row.get("content_type") or "anime",
+                    "tags": row.get("tags") or [],
+                    "mood": row.get("mood") or [],
+                    "episodes_count": row.get("episodes_count"),
+                    "duration": row.get("duration"),
+                    "status": row.get("status") or "ongoing",
+                    "popularity": row.get("popularity") or 0.0,
+                    "popularity_score": row.get("popularity_score") or 0.0,
+                    "is_hidden_gem": bool(row.get("is_hidden_gem")),
+                    "is_pro_locked": bool(row.get("is_pro_locked")),
+                }
+                if existing:
+                    for k, v in fields.items():
+                        setattr(existing, k, v)
+                    updated_a += 1
+                else:
+                    session.add(Anime(id=aid, **fields))
+                    added_a += 1
+            except Exception as e:
+                errors.append(f"anime#{row.get('id')}: {e}")
+                skipped += 1
+
+        # Channels: upsert by channel_id (agar bor bo'lsa) yoki id bo'yicha
+        for row in channels_data:
+            try:
+                existing = None
+                ch_id = row.get("channel_id")
+                if ch_id:
+                    r = await session.execute(
+                        select(SubscriptionChannel).where(SubscriptionChannel.channel_id == ch_id)
+                    )
+                    existing = r.scalar_one_or_none()
+                fields = {
+                    "channel_id": row.get("channel_id"),
+                    "username": row.get("username"),
+                    "channel_url": row.get("channel_url") or "",
+                    "channel_name": row.get("channel_name") or "—",
+                    "is_active": bool(row.get("is_active", True)),
+                    "require_check": bool(row.get("require_check", False)),
+                    "is_news": bool(row.get("is_news", False)),
+                }
+                if existing:
+                    for k, v in fields.items():
+                        setattr(existing, k, v)
+                    updated_c += 1
+                else:
+                    session.add(SubscriptionChannel(**fields))
+                    added_c += 1
+            except Exception as e:
+                errors.append(f"channel#{row.get('id')}: {e}")
+                skipped += 1
+
+        try:
+            await session.commit()
+        except Exception as e:
+            logger.exception("bk_restore: commit failed")
+            return await msg.answer(f"❌ Saqlashda xato: {e}", reply_markup=admin_main_kb)
+
+    # Kanal cache'ini yangilash
+    try:
+        from middlewares.subscription import invalidate_active_channels_cache
+
+        invalidate_active_channels_cache()
+    except Exception:
+        pass
+
+    report = [
+        "✅ <b>Tiklash yakunlandi</b>",
+        f"🎬 Anime: +{added_a} yangi, {updated_a} yangilangan",
+        f"📢 Kanal: +{added_c} yangi, {updated_c} yangilangan",
+    ]
+    if skipped:
+        report.append(f"⚠️ Skip: {skipped}")
+    if errors:
+        report.append("<i>Birinchi xatolar:</i>")
+        for e in errors[:5]:
+            report.append(f"  • {esc(str(e))[:150]}")
+    await msg.answer("\n".join(report), reply_markup=admin_main_kb, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
