@@ -67,7 +67,19 @@ async def main():
     dp.callback_query.middleware(SubscriptionMiddleware())
 
     bot_info = await bot.get_me()
-    print(f"--- BOT ISHGA TUSHDI ---\nUSER: @{bot_info.username}\nID: {bot_info.id}\n------------------------")
+    # Instance unique ID — agar Railway'da bir nechta bot instance ishlab
+    # ketsa (yangi deploy eski konteynerni o'chirmagan), polling konflikt
+    # bo'lib tugmalar "silently" yo'qoladi. Log'da har ishga tushgan
+    # instance alohida PID + random ID bilan ko'rinadi — foydalanuvchi
+    # Railway log'da shu qatorlar sonini ko'rib duplicate'ni aniqlaydi.
+    import random as _rnd
+
+    _instance_id = f"pid={os.getpid()}-rnd={_rnd.randint(1000, 9999)}"
+    logging.info("--- BOT INSTANCE %s ISHGA TUSHDI ---", _instance_id)
+    logging.info("USER: @%s  ID: %s", bot_info.username, bot_info.id)
+    print(
+        f"--- BOT ISHGA TUSHDI ---\nUSER: @{bot_info.username}\nID: {bot_info.id}\nINSTANCE: {_instance_id}\n------------------------"
+    )
 
     await bot.delete_webhook(drop_pending_updates=True)
 
