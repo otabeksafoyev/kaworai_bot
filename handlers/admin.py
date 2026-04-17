@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timedelta
-from handlers.users import mark_admin_active, mark_admin_inactive
+
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -22,6 +22,7 @@ from database.engine import AsyncSessionLocal
 from database.models import Admin, Anime, RelatedContent, Series, SubscriptionChannel, User
 from database.queries import add_channel, get_all_channels, get_news_channels, remove_channel, toggle_channel
 from handlers.genres import GENRES, normalize_genre
+from handlers.users import mark_admin_active, mark_admin_inactive
 from states.admin_states import AddAnime, AddChannel, AdminProState, BroadcastState, EditAnime
 from utils.genre_picker import genre_picker_kb, genre_picker_text
 from utils.security import esc, parse_admin_ids
@@ -37,6 +38,54 @@ ADMINS = parse_admin_ids(os.getenv("ADMIN_ID", ""))
 SECRET_CHANNEL_ID = config.SECRET_CHANNEL_ID
 NEWS_CHANNEL_ID = config.NEWS_CHANNEL_ID
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
+
+# Admin pastki reply-keyboard tugmalari.
+# Admin panelda har qanday FSM state (masalan `AdminProState.waiting_user_id`
+# yoki `AddAnime.waiting_title`) ichida turib, adminlar shu tugmalardan
+# birini bossa — state avtomatik tozalanadi va tugmaning o'z handler'i
+# ishlaydi. Aks holda state handler tugma matnini "javob" deb qabul qiladi
+# (masalan `pm_id_received` uni raqam emas deb rad etardi) va admin
+# buyruqlari "ishlamayapti" deb ko'rinardi.
+ADMIN_REPLY_BUTTONS: set[str] = {
+    "➕ Anime qo'shish",
+    "🎞 Qism qo'shish",
+    "🎌 Anime boshqaruv",
+    "📢 Kanal sozlamalari",
+    "📊 Statistika",
+    "✉️ Xabar yuborish",
+    "👑 Pro boshqaruv",
+    "🏆 Top 18",
+    "🔙 Chiqish",
+    "🚫 Bekor qilish",
+}
+
+
+@admin_router.message.outer_middleware()
+async def _admin_button_state_reset(handler, event, data):
+    """
+    Admin reply-keyboard tugmalari har qanday FSM state ichida ham ishlasin
+    uchun: agar admin tugmalardan birini bossa — state tozalanadi, shundan
+    so'ng odatiy handler routing davom etadi va aynan tugmaning handler'i
+    mos keladi. Oddiy foydalanuvchilar uchun ham xavfsiz — ular bu matnlarni
+    yuborishlari juda kam uchraydi va tugma handler'lari o'zida
+    `is_admin` tekshiruvini bajaradi.
+    """
+    if isinstance(event, Message) and event.text in ADMIN_REPLY_BUTTONS:
+        state: FSMContext | None = data.get("state")
+        if state is not None:
+            try:
+                current = await state.get_state()
+            except Exception:
+                current = None
+            if current is not None:
+                await state.clear()
+                logger.info(
+                    "admin button '%s' cleared state=%s user=%s",
+                    event.text,
+                    current,
+                    event.from_user.id if event.from_user else None,
+                )
+    return await handler(event, data)
 
 
 def _is_owner(user_id: int) -> bool:
@@ -190,47 +239,37 @@ TYPE_KB = InlineKeyboardMarkup(
 #  ADMIN KIRISH
 # ═══════════════════════════════════════════════════════════
 
+
 @admin_router.message(Command("admin"))
 async def admin_entry(msg: Message, state: FSMContext):
     logger.info("admin_entry hit user_id=%s ADMINS=%s", msg.from_user.id, ADMINS)
     if not await is_admin(msg.from_user.id):
         return await msg.answer("❌ Siz admin emassiz!")
 
+    # /admin buyrug'i har doim toza holatda ochilsin. Agar admin biror
+    # tugallanmagan FSM flow'da qolib ketgan bo'lsa (masalan `AddAnime.waiting_title`
+    # yoki `AdminRejectState.waiting_reason`), undagi qoldiqni tozalaymiz —
+    # aks holda keyingi tugma bosishlari eski state handlerlari tomonidan
+    # "eb ketiladi".
+    try:
+        await state.clear()
+    except Exception:
+        logger.exception("admin_entry: state.clear() failed user=%s", msg.from_user.id)
+
     async with AsyncSessionLocal() as session:
-        admin = (await session.execute(
-            select(Admin).where(Admin.telegram_id == msg.from_user.id)
-        )).scalar_one_or_none()
+        admin = (await session.execute(select(Admin).where(Admin.telegram_id == msg.from_user.id))).scalar_one_or_none()
 
         if not admin and str(msg.from_user.id) in ADMINS:
-            admin = Admin(
-                telegram_id=msg.from_user.id,
-                role="owner",
-                nickname=msg.from_user.full_name
-            )
+            admin = Admin(telegram_id=msg.from_user.id, role="owner", nickname=msg.from_user.full_name)
             session.add(admin)
             await session.commit()
 
     role_str = admin.role.upper() if admin else "OWNER"
 
-    await msg.answer(
-        f"🛠 <b>Kaworai Admin Panel</b>\nRol: {role_str}",
-        reply_markup=admin_main_kb,
-        parse_mode="HTML"
-    )
+    await msg.answer(f"🛠 <b>Kaworai Admin Panel</b>\nRol: {role_str}", reply_markup=admin_main_kb, parse_mode="HTML")
 
     # 🔥 SHU YERGA QO‘SHASAN
     mark_admin_active(msg.from_user.id)
-
-
-
-
-
-
-
-
-
-
-
 
 
 @admin_router.message(F.text == "🚫 Bekor qilish")
@@ -2860,6 +2899,7 @@ async def save_ch_id(msg: Message, state: FSMContext):
         parse_mode="HTML",
     )
 
+
 @admin_router.message(F.text == "🔙 Chiqish")
 async def exit_admin(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -2867,10 +2907,7 @@ async def exit_admin(msg: Message, state: FSMContext):
 
     await state.clear()
 
-    await msg.answer(
-        "Admin paneldan chiqildi.",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    await msg.answer("Admin paneldan chiqildi.", reply_markup=ReplyKeyboardRemove())
 
     # 🔥 SHU YERGA QO‘SHASAN
     mark_admin_inactive(msg.from_user.id)
