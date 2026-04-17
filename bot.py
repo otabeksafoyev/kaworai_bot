@@ -1,0 +1,86 @@
+import asyncio
+import logging
+import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from database.engine import init_db
+from handlers.admin import admin_router
+from handlers.admin_pro import pro_admin_router
+from handlers.callbacks import callback_router
+from handlers.errors import error_router
+from handlers.genres import genre_router
+from handlers.inline import inline_router
+from handlers.pro_payment import pro_payment_router
+from handlers.users import user_router
+from handlers.users_pro import pro_user_router
+from loader import bot, dp
+from middlewares.subscription import SubscriptionMiddleware
+from middlewares.throttling import ThrottlingMiddleware
+
+
+async def on_startup():
+    logging.info("Ma'lumotlar bazasi jadvallari tekshirilmoqda...")
+    try:
+        await init_db()
+        logging.info("Baza jadvallari tayyor.")
+    except Exception as e:
+        logging.error(f"Bazani yaratishda jiddiy xato: {e}")
+        sys.exit(1)
+
+
+async def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler("bot.log", encoding="utf-8"),
+        ],
+    )
+
+    await on_startup()
+
+    # Global xato handleri — BIRINCHI ulanishi kerak, shunda
+    # boshqa routerlardagi tutilmagan istisnolar shu yerga tushadi.
+    dp.include_router(error_router)
+
+    # Routerlar (pro_payment ENG BIRINCHI — kawaii_pass ni ushlaydi)
+    dp.include_router(pro_payment_router)
+    dp.include_router(admin_router)
+    dp.include_router(pro_admin_router)
+    dp.include_router(pro_user_router)
+    dp.include_router(user_router)
+    dp.include_router(callback_router)
+    dp.include_router(inline_router)
+    dp.include_router(genre_router)
+
+    # Throttling middleware — foydalanuvchi spam / brute-force qilishining
+    # oldini oladi. Handler qabul qilinganidan oldin ishga tushadi, shuning
+    # uchun uni subscription middleware'dan oldin qo'shamiz.
+    dp.message.middleware(ThrottlingMiddleware())
+    dp.callback_query.middleware(ThrottlingMiddleware())
+
+    # Obuna tekshiruv middleware
+    dp.message.middleware(SubscriptionMiddleware())
+    dp.callback_query.middleware(SubscriptionMiddleware())
+
+    bot_info = await bot.get_me()
+    print(f"--- BOT ISHGA TUSHDI ---\nUSER: @{bot_info.username}\nID: {bot_info.id}\n------------------------")
+
+    await bot.delete_webhook(drop_pending_updates=True)
+
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logging.error(f"Polling davomida xatolik: {e}")
+    finally:
+        await bot.session.close()
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Bot foydalanuvchi tomonidan to'xtatildi.")
