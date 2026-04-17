@@ -70,21 +70,50 @@ async def _admin_button_state_reset(handler, event, data):
     yuborishlari juda kam uchraydi va tugma handler'lari o'zida
     `is_admin` tekshiruvini bajaradi.
     """
+    # Har bir admin router'ga kelgan xabarni log'ga yozamiz — Railway'da
+    # "tugma bosdim — bot jim" muammosini aniq ajratish uchun: agar bu log
+    # chiqmayotgan bo'lsa — xabar boshqa routerda qolib ketayapti yoki
+    # polling bo'lmayapti. Chiqayotgan bo'lsa — FSM filter muammosi.
+    if isinstance(event, Message):
+        try:
+            logger.info(
+                "admin_router msg uid=%s text=%r",
+                event.from_user.id if event.from_user else None,
+                (event.text or event.caption or "<non-text>")[:80],
+            )
+        except Exception:
+            pass
+
     if isinstance(event, Message) and event.text in ADMIN_REPLY_BUTTONS:
         state: FSMContext | None = data.get("state")
         if state is not None:
+            current = None
             try:
                 current = await state.get_state()
             except Exception:
-                current = None
-            if current is not None:
-                await state.clear()
-                logger.info(
-                    "admin button '%s' cleared state=%s user=%s",
-                    event.text,
-                    current,
+                logger.exception(
+                    "admin middleware: state.get_state() failed user=%s text=%s",
                     event.from_user.id if event.from_user else None,
+                    event.text,
                 )
+            if current is not None:
+                try:
+                    await state.clear()
+                    logger.info(
+                        "admin button '%s' cleared state=%s user=%s",
+                        event.text,
+                        current,
+                        event.from_user.id if event.from_user else None,
+                    )
+                except Exception:
+                    # State clear bo'lmasa ham — handler routing'ni bloklamaymiz.
+                    # Aks holda FSM storage yiqilganda ("Redis down") admin
+                    # hech qanday tugmadan foydalana olmay qoladi.
+                    logger.exception(
+                        "admin middleware: state.clear() failed user=%s text=%s",
+                        event.from_user.id if event.from_user else None,
+                        event.text,
+                    )
     return await handler(event, data)
 
 
