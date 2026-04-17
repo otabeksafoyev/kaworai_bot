@@ -38,6 +38,54 @@ SECRET_CHANNEL_ID = config.SECRET_CHANNEL_ID
 NEWS_CHANNEL_ID = config.NEWS_CHANNEL_ID
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
 
+# Admin pastki reply-keyboard tugmalari.
+# Admin panelda har qanday FSM state (masalan `AdminProState.waiting_user_id`
+# yoki `AddAnime.waiting_title`) ichida turib, adminlar shu tugmalardan
+# birini bossa — state avtomatik tozalanadi va tugmaning o'z handler'i
+# ishlaydi. Aks holda state handler tugma matnini "javob" deb qabul qiladi
+# (masalan `pm_id_received` uni raqam emas deb rad etardi) va admin
+# buyruqlari "ishlamayapti" deb ko'rinardi.
+ADMIN_REPLY_BUTTONS: set[str] = {
+    "➕ Anime qo'shish",
+    "🎞 Qism qo'shish",
+    "🎌 Anime boshqaruv",
+    "📢 Kanal sozlamalari",
+    "📊 Statistika",
+    "✉️ Xabar yuborish",
+    "👑 Pro boshqaruv",
+    "🏆 Top 18",
+    "🔙 Chiqish",
+    "🚫 Bekor qilish",
+}
+
+
+@admin_router.message.outer_middleware()
+async def _admin_button_state_reset(handler, event, data):
+    """
+    Admin reply-keyboard tugmalari har qanday FSM state ichida ham ishlasin
+    uchun: agar admin tugmalardan birini bossa — state tozalanadi, shundan
+    so'ng odatiy handler routing davom etadi va aynan tugmaning handler'i
+    mos keladi. Oddiy foydalanuvchilar uchun ham xavfsiz — ular bu matnlarni
+    yuborishlari juda kam uchraydi va tugma handler'lari o'zida
+    `is_admin` tekshiruvini bajaradi.
+    """
+    if isinstance(event, Message) and event.text in ADMIN_REPLY_BUTTONS:
+        state: FSMContext | None = data.get("state")
+        if state is not None:
+            try:
+                current = await state.get_state()
+            except Exception:
+                current = None
+            if current is not None:
+                await state.clear()
+                logger.info(
+                    "admin button '%s' cleared state=%s user=%s",
+                    event.text,
+                    current,
+                    event.from_user.id if event.from_user else None,
+                )
+    return await handler(event, data)
+
 
 def _is_owner(user_id: int) -> bool:
     return str(user_id) in ADMINS
@@ -195,6 +243,16 @@ async def admin_entry(msg: Message, state: FSMContext):
     logger.info("admin_entry hit user_id=%s ADMINS=%s", msg.from_user.id, ADMINS)
     if not await is_admin(msg.from_user.id):
         return await msg.answer("❌ Siz admin emassiz!")
+
+    # /admin buyrug'i har doim toza holatda ochilsin. Agar admin biror
+    # tugallanmagan FSM flow'da qolib ketgan bo'lsa (masalan `AddAnime.waiting_title`
+    # yoki `AdminRejectState.waiting_reason`), undagi qoldiqni tozalaymiz —
+    # aks holda keyingi tugma bosishlari eski state handlerlari tomonidan
+    # "eb ketiladi".
+    try:
+        await state.clear()
+    except Exception:
+        logger.exception("admin_entry: state.clear() failed user=%s", msg.from_user.id)
 
     async with AsyncSessionLocal() as session:
         admin = (await session.execute(

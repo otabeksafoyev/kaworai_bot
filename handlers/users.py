@@ -29,6 +29,7 @@ from database.queries import (
     get_user_rating,
 )
 from middlewares.subscription import check_subscription, get_sub_keyboard
+from utils.security import parse_admin_ids
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,11 @@ GRID_COLS = 4
 #  ADMIN TEKSHIRISH
 # ═══════════════════════════════════════════════════════════
 
-_ADMINS = set(os.getenv("ADMIN_ID", "").split(","))
+# `parse_admin_ids` tirnoq, bo'sh stringlar va ortiqcha probellarni tozalaydi —
+# Railway'da `ADMIN_ID="8173188671"` kabi qo'shtirnoqli qiymat ham to'g'ri
+# tanib olinadi. Aks holda `'"8173188671"' in _ADMINS` False bo'lib, admin
+# xabarlarini user_router noto'g'ri o'chirib yuborardi.
+_ADMINS = set(parse_admin_ids(os.getenv("ADMIN_ID", "")))
 
 
 async def _is_admin(user_id: int) -> bool:
