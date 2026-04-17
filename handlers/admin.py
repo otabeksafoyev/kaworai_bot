@@ -192,6 +192,7 @@ TYPE_KB = InlineKeyboardMarkup(
 
 @admin_router.message(Command("admin"))
 async def admin_entry(msg: Message, state: FSMContext):
+    logger.info("admin_entry hit user_id=%s ADMINS=%s", msg.from_user.id, ADMINS)
     if not await is_admin(msg.from_user.id):
         return await msg.answer("❌ Siz admin emassiz!")
 
@@ -913,7 +914,9 @@ async def pro_msg_send(msg: Message, state: FSMContext):
 
 @admin_router.message(F.text == "➕ Anime qo'shish")
 async def add_anime_start(msg: Message, state: FSMContext):
+    logger.info("add_anime_start hit user_id=%s", msg.from_user.id)
     if not await is_admin(msg.from_user.id):
+        logger.warning("add_anime_start: user %s is not admin (ADMINS=%s)", msg.from_user.id, ADMINS)
         return
     await state.set_state(AddAnime.waiting_id)
     await msg.answer(
