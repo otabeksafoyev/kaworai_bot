@@ -70,9 +70,14 @@ class BroadcastState(StatesGroup):
     waiting_ch_channel_pick = State()
 
 
-# 🔹 Baza zaxira (export/import)
+# 🔹 Baza zaxira (export/import) — filterli versiya
 class BackupState(StatesGroup):
     waiting_restore_file = State()
+    # Eksport filterlari
+    waiting_export_ids = State()
+    # Tiklash filterlari (ZIP yuklangandan keyin)
+    waiting_restore_filter = State()
+    waiting_restore_ids = State()
 
 
 # 🔹 PRO tizim
@@ -82,8 +87,14 @@ class AdminProState(StatesGroup):
     waiting_msg_text = State()
 
 
-# 🔹 Episode qo‘shish (MUHIM — alohida class!)
+# 🔹 Episode qo‘shish — bot orqali birma-bir yoki bulk (auto-detect)
 class AddEpisodeState(StatesGroup):
     waiting_anime_id = State()
     waiting_from_ep = State()
     waiting_to_ep = State()
+    # Bot orqali qo'shishning ikki rejimi uchun
+    waiting_mode = State()  # inline: one-by-one yoki bulk
+    waiting_single_video = State()  # birma-bir: har bir qism uchun video
+    waiting_bulk_videos = State()  # bulk: videolarni yig'ish
+    waiting_bulk_manual_ep = State()  # caption'dan qism raqami topilmasa qo'lda so'rash
+    waiting_bulk_confirm = State()  # tasdiqlash ekrani

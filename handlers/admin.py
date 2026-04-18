@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re as _re_ep
 from datetime import datetime, timedelta
 
 from aiogram import Bot, F, Router, types
@@ -23,7 +24,15 @@ from database.models import Admin, Anime, RelatedContent, Series, SubscriptionCh
 from database.queries import add_channel, get_all_channels, get_news_channels, remove_channel, toggle_channel
 from handlers.genres import GENRES, normalize_genre
 from handlers.users import mark_admin_active, mark_admin_inactive
-from states.admin_states import AddAnime, AddChannel, AdminProState, BackupState, BroadcastState, EditAnime
+from states.admin_states import (
+    AddAnime,
+    AddChannel,
+    AddEpisodeState,
+    AdminProState,
+    BackupState,
+    BroadcastState,
+    EditAnime,
+)
 from utils.genre_picker import genre_picker_kb, genre_picker_text
 from utils.security import esc, parse_admin_ids
 
@@ -37,6 +46,7 @@ admin_router = Router()
 ADMINS = parse_admin_ids(os.getenv("ADMIN_ID", ""))
 SECRET_CHANNEL_ID = config.SECRET_CHANNEL_ID
 NEWS_CHANNEL_ID = config.NEWS_CHANNEL_ID
+PREVIEW_CHANNEL_ID = getattr(config, "PREVIEW_CHANNEL_ID", 0) or 0
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
 
 # Admin pastki reply-keyboard tugmalari.
@@ -2861,58 +2871,166 @@ async def bk_close(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+_CONTENT_TYPES = [
+    ("anime", "🎌 Anime"),
+    ("movie", "🎥 Kino"),
+    ("serial", "📺 Serial"),
+    ("dorama", "🌸 Dorama"),
+]
+
+
 @admin_router.callback_query(F.data == "bk_export")
 async def bk_export(call: types.CallbackQuery, state: FSMContext):
+    """Eksport rejimini tanlash: hammasi / tur bo'yicha / ID bo'yicha."""
+    if not await is_admin(call.from_user.id):
+        return
+    rows = [
+        [InlineKeyboardButton(text="📦 Hammasi", callback_data="bkexp_all")],
+    ]
+    for slug, label in _CONTENT_TYPES:
+        rows.append([InlineKeyboardButton(text=f"🏷 {label}", callback_data=f"bkexp_type_{slug}")])
+    rows.append([InlineKeyboardButton(text="🔢 ID bo'yicha", callback_data="bkexp_ids")])
+    rows.append([InlineKeyboardButton(text="❌ Yopish", callback_data="bk_close")])
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
+    try:
+        await call.message.edit_text(
+            "⬇️ <b>Eksport rejimini tanlang</b>\n\n"
+            "• <b>Hammasi</b> — barcha animelar va kanallar\n"
+            "• <b>Tur bo'yicha</b> — faqat tanlangan turdagi animelar (+ barcha kanallar)\n"
+            "• <b>ID bo'yicha</b> — vergul bilan ajratilgan anime ID'lari",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            "⬇️ <b>Eksport rejimini tanlang</b>",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+async def _bk_do_export(call: types.CallbackQuery, animes, channels, label: str):
+    """ZIP yig'ib adminga yuboradi. `label` — caption'ga qo'shiladigan tavsif."""
+    import datetime as _dt
+    import io as _io
+    import json as _json
+    import zipfile as _zipfile
+
+    from aiogram.types import BufferedInputFile
+
+    metadata = {
+        "version": BACKUP_VERSION,
+        "exported_at": _dt.datetime.utcnow().isoformat() + "Z",
+        "filter": label,
+        "counts": {"animes": len(animes), "channels": len(channels)},
+    }
+    buf = _io.BytesIO()
+    with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "animes.json",
+            _json.dumps([_anime_to_dict(a) for a in animes], ensure_ascii=False, indent=2),
+        )
+        zf.writestr(
+            "channels.json",
+            _json.dumps([_channel_to_dict(c) for c in channels], ensure_ascii=False, indent=2),
+        )
+        zf.writestr("metadata.json", _json.dumps(metadata, ensure_ascii=False, indent=2))
+    buf.seek(0)
+    fname = f"kaworai_backup_{_dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
+    await call.bot.send_document(
+        chat_id=call.from_user.id,
+        document=BufferedInputFile(buf.getvalue(), filename=fname),
+        caption=(
+            f"🗄 <b>Zaxira tayyor</b> — {esc(label)}\n"
+            f"🎬 Anime: {len(animes)}\n"
+            f"📢 Kanal: {len(channels)}\n\n"
+            "<i>Bu faylni saqlang — tiklash uchun shu ZIP ni yuboring.</i>"
+        ),
+        parse_mode="HTML",
+    )
+
+
+@admin_router.callback_query(F.data == "bkexp_all")
+async def bkexp_all(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id):
         return
     await call.answer("⏳ Tayyorlanyapti...")
     try:
         async with AsyncSessionLocal() as session:
-            animes_res = await session.execute(select(Anime))
-            animes = animes_res.scalars().all()
-            channels_res = await session.execute(select(SubscriptionChannel))
-            channels = channels_res.scalars().all()
-
-        import datetime as _dt
-        import io as _io
-        import json as _json
-        import zipfile as _zipfile
-
-        metadata = {
-            "version": BACKUP_VERSION,
-            "exported_at": _dt.datetime.utcnow().isoformat() + "Z",
-            "counts": {"animes": len(animes), "channels": len(channels)},
-        }
-        buf = _io.BytesIO()
-        with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(
-                "animes.json",
-                _json.dumps([_anime_to_dict(a) for a in animes], ensure_ascii=False, indent=2),
-            )
-            zf.writestr(
-                "channels.json",
-                _json.dumps([_channel_to_dict(c) for c in channels], ensure_ascii=False, indent=2),
-            )
-            zf.writestr("metadata.json", _json.dumps(metadata, ensure_ascii=False, indent=2))
-        buf.seek(0)
-
-        from aiogram.types import BufferedInputFile
-
-        fname = f"kaworai_backup_{_dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
-        await call.bot.send_document(
-            chat_id=call.from_user.id,
-            document=BufferedInputFile(buf.getvalue(), filename=fname),
-            caption=(
-                f"🗄 <b>Zaxira tayyor</b>\n"
-                f"🎬 Anime: {len(animes)}\n"
-                f"📢 Kanal: {len(channels)}\n\n"
-                "<i>Bu faylni saqlang — tiklash uchun shu ZIP ni yuboring.</i>"
-            ),
-            parse_mode="HTML",
-        )
+            animes = (await session.execute(select(Anime))).scalars().all()
+            channels = (await session.execute(select(SubscriptionChannel))).scalars().all()
+        await _bk_do_export(call, animes, channels, "hammasi")
     except Exception as e:
-        logger.exception("bk_export failed")
+        logger.exception("bkexp_all failed")
         await call.message.answer(f"❌ Eksport xato: {e}")
+
+
+@admin_router.callback_query(F.data.startswith("bkexp_type_"))
+async def bkexp_by_type(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    slug = call.data.replace("bkexp_type_", "", 1)
+    label_map = dict(_CONTENT_TYPES)
+    if slug not in label_map:
+        return await call.answer("Noto'g'ri tur", show_alert=True)
+    await call.answer("⏳ Tayyorlanyapti...")
+    try:
+        async with AsyncSessionLocal() as session:
+            animes = (await session.execute(select(Anime).where(Anime.content_type == slug))).scalars().all()
+            channels = (await session.execute(select(SubscriptionChannel))).scalars().all()
+        await _bk_do_export(call, animes, channels, f"tur={slug}")
+    except Exception as e:
+        logger.exception("bkexp_type failed")
+        await call.message.answer(f"❌ Eksport xato: {e}")
+
+
+@admin_router.callback_query(F.data == "bkexp_ids")
+async def bkexp_ids_start(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(BackupState.waiting_export_ids)
+    await call.message.answer(
+        "🔢 <b>Anime ID'larini kiriting</b>\n\n"
+        "Vergul bilan ajrating, masalan: <code>10, 42, 388</code>\n"
+        "Bo'sh qatorli ham bo'ladi. Kanallar <b>hammasi</b> eksport qilinadi.",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@admin_router.message(BackupState.waiting_export_ids)
+async def bkexp_ids_got(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    ids: list[int] = []
+    for part in (msg.text or "").replace(";", ",").split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.append(int(part))
+    if not ids:
+        return await msg.answer("❌ Hech qanday ID topilmadi. Raqamlarni vergul bilan kiriting.")
+    await state.clear()
+    try:
+        async with AsyncSessionLocal() as session:
+            animes = (await session.execute(select(Anime).where(Anime.id.in_(ids)))).scalars().all()
+            channels = (await session.execute(select(SubscriptionChannel))).scalars().all()
+
+        # Export handler uchun `call`-ga o'xshash soxta obyekt kerak — qisqa yechim:
+        class _Shim:
+            def __init__(self, bot, uid):
+                self.bot = bot
+                self.from_user = type("U", (), {"id": uid})()
+
+        await _bk_do_export(_Shim(msg.bot, msg.from_user.id), animes, channels, f"IDs={ids}")
+        await msg.answer("✅ Yuborildi.", reply_markup=admin_main_kb)
+    except Exception as e:
+        logger.exception("bkexp_ids failed")
+        await msg.answer(f"❌ Eksport xato: {e}", reply_markup=admin_main_kb)
 
 
 @admin_router.callback_query(F.data == "bk_restore")
@@ -2942,7 +3060,6 @@ async def bk_restore_file(msg: Message, state: FSMContext):
     fname = (msg.document.file_name or "").lower()
     if not fname.endswith(".zip"):
         return await msg.answer("❌ Fayl .zip bo'lishi kerak.")
-    await state.clear()
 
     import io as _io
     import json as _json
@@ -2959,13 +3076,81 @@ async def bk_restore_file(msg: Message, state: FSMContext):
             channels_data = _json.loads(zf.read("channels.json").decode("utf-8")) if "channels.json" in names else []
     except Exception as e:
         logger.exception("bk_restore: failed to parse ZIP")
+        await state.clear()
         return await msg.answer(f"❌ ZIP o'qib bo'lmadi: {e}", reply_markup=admin_main_kb)
 
+    # ZIP parse bo'ldi — filter tanlashni so'raymiz. Ma'lumotni state'da saqlaymiz.
+    # Diqqat: juda katta ZIP'da state storage (Redis/Memory) qiynalishi mumkin,
+    # lekin bu admin flow va ~minglab anime uchun ham yetarli.
+    await state.update_data(
+        rst_animes=animes_data,
+        rst_channels=channels_data,
+    )
+    await state.set_state(BackupState.waiting_restore_filter)
+
+    # Turi bo'yicha sanash — admin qanchasini ko'rib tanlashi uchun.
+    counts: dict[str, int] = {}
+    for row in animes_data:
+        ct = (row or {}).get("content_type") or "anime"
+        counts[ct] = counts.get(ct, 0) + 1
+
+    rows = [[InlineKeyboardButton(text=f"📦 Hammasi ({len(animes_data)})", callback_data="bkrst_all")]]
+    for slug, label in _CONTENT_TYPES:
+        c = counts.get(slug, 0)
+        if c:
+            rows.append([InlineKeyboardButton(text=f"🏷 {label} ({c})", callback_data=f"bkrst_type_{slug}")])
+    rows.append([InlineKeyboardButton(text="🔢 ID bo'yicha", callback_data="bkrst_ids")])
+    rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data="bkrst_cancel")])
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
+
+    await msg.answer(
+        f"📂 ZIP qabul qilindi: <b>{len(animes_data)}</b> anime, <b>{len(channels_data)}</b> kanal.\n\n"
+        "<b>Qaysilarini tiklaymiz?</b>\n"
+        "• <b>Hammasi</b> — barcha anime + barcha kanal\n"
+        "• <b>Tur bo'yicha</b> — faqat tanlangan turdagi animelar (+ barcha kanal)\n"
+        "• <b>ID bo'yicha</b> — vergul bilan ajratilgan anime ID'lar (+ barcha kanal)",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+def _bk_anime_row_to_fields(row: dict) -> dict:
+    return {
+        "title": row.get("title"),
+        "description": row.get("description"),
+        "poster_file_id": row.get("poster_file_id"),
+        "trailer_file_id": row.get("trailer_file_id"),
+        "inline_thumbnail_url": row.get("inline_thumbnail_url"),
+        "genres": row.get("genres") or [],
+        "year": row.get("year"),
+        "rating": row.get("rating") or 0.0,
+        "rating_count": row.get("rating_count") or 0,
+        "total_episodes": row.get("total_episodes") or 0,
+        "views": row.get("views") or 0,
+        "content_type": row.get("content_type") or "anime",
+        "tags": row.get("tags") or [],
+        "mood": row.get("mood") or [],
+        "episodes_count": row.get("episodes_count"),
+        "duration": row.get("duration"),
+        "status": row.get("status") or "ongoing",
+        "popularity": row.get("popularity") or 0.0,
+        "popularity_score": row.get("popularity_score") or 0.0,
+        "is_hidden_gem": bool(row.get("is_hidden_gem")),
+        "is_pro_locked": bool(row.get("is_pro_locked")),
+    }
+
+
+async def _bk_do_restore(
+    msg: Message,
+    animes_data: list[dict],
+    channels_data: list[dict],
+    label: str,
+):
+    """Filter qo'llanilgan ma'lumotni bazaga upsert qilib, natijani yuboradi."""
     added_a = updated_a = added_c = updated_c = skipped = 0
     errors: list[str] = []
 
     async with AsyncSessionLocal() as session:
-        # Animes: upsert by id
         for row in animes_data:
             try:
                 aid = row.get("id")
@@ -2973,29 +3158,7 @@ async def bk_restore_file(msg: Message, state: FSMContext):
                     skipped += 1
                     continue
                 existing = await session.get(Anime, aid)
-                fields = {
-                    "title": row.get("title"),
-                    "description": row.get("description"),
-                    "poster_file_id": row.get("poster_file_id"),
-                    "trailer_file_id": row.get("trailer_file_id"),
-                    "inline_thumbnail_url": row.get("inline_thumbnail_url"),
-                    "genres": row.get("genres") or [],
-                    "year": row.get("year"),
-                    "rating": row.get("rating") or 0.0,
-                    "rating_count": row.get("rating_count") or 0,
-                    "total_episodes": row.get("total_episodes") or 0,
-                    "views": row.get("views") or 0,
-                    "content_type": row.get("content_type") or "anime",
-                    "tags": row.get("tags") or [],
-                    "mood": row.get("mood") or [],
-                    "episodes_count": row.get("episodes_count"),
-                    "duration": row.get("duration"),
-                    "status": row.get("status") or "ongoing",
-                    "popularity": row.get("popularity") or 0.0,
-                    "popularity_score": row.get("popularity_score") or 0.0,
-                    "is_hidden_gem": bool(row.get("is_hidden_gem")),
-                    "is_pro_locked": bool(row.get("is_pro_locked")),
-                }
+                fields = _bk_anime_row_to_fields(row)
                 if existing:
                     for k, v in fields.items():
                         setattr(existing, k, v)
@@ -3007,7 +3170,6 @@ async def bk_restore_file(msg: Message, state: FSMContext):
                 errors.append(f"anime#{row.get('id')}: {e}")
                 skipped += 1
 
-        # Channels: upsert by channel_id (agar bor bo'lsa) yoki id bo'yicha
         for row in channels_data:
             try:
                 existing = None
@@ -3043,7 +3205,6 @@ async def bk_restore_file(msg: Message, state: FSMContext):
             logger.exception("bk_restore: commit failed")
             return await msg.answer(f"❌ Saqlashda xato: {e}", reply_markup=admin_main_kb)
 
-    # Kanal cache'ini yangilash
     try:
         from middlewares.subscription import invalidate_active_channels_cache
 
@@ -3052,7 +3213,7 @@ async def bk_restore_file(msg: Message, state: FSMContext):
         pass
 
     report = [
-        "✅ <b>Tiklash yakunlandi</b>",
+        f"✅ <b>Tiklash yakunlandi</b> — {esc(label)}",
         f"🎬 Anime: +{added_a} yangi, {updated_a} yangilangan",
         f"📢 Kanal: +{added_c} yangi, {updated_c} yangilangan",
     ]
@@ -3065,21 +3226,540 @@ async def bk_restore_file(msg: Message, state: FSMContext):
     await msg.answer("\n".join(report), reply_markup=admin_main_kb, parse_mode="HTML")
 
 
+@admin_router.callback_query(F.data == "bkrst_cancel")
+async def bkrst_cancel(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await call.message.edit_text("❌ Bekor qilindi.")
+    except Exception:
+        pass
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "bkrst_all", BackupState.waiting_restore_filter)
+async def bkrst_all(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    data = await state.get_data()
+    animes_data: list[dict] = list(data.get("rst_animes") or [])
+    channels_data: list[dict] = list(data.get("rst_channels") or [])
+    await state.clear()
+    await call.answer("⏳ Tiklanyapti...")
+    await _bk_do_restore(call.message, animes_data, channels_data, "hammasi")
+
+
+@admin_router.callback_query(F.data.startswith("bkrst_type_"), BackupState.waiting_restore_filter)
+async def bkrst_by_type(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    slug = call.data.replace("bkrst_type_", "", 1)
+    if slug not in dict(_CONTENT_TYPES):
+        return await call.answer("Noto'g'ri tur", show_alert=True)
+    data = await state.get_data()
+    animes_data: list[dict] = [r for r in (data.get("rst_animes") or []) if (r or {}).get("content_type") == slug]
+    channels_data: list[dict] = list(data.get("rst_channels") or [])
+    await state.clear()
+    await call.answer("⏳ Tiklanyapti...")
+    await _bk_do_restore(call.message, animes_data, channels_data, f"tur={slug}")
+
+
+@admin_router.callback_query(F.data == "bkrst_ids", BackupState.waiting_restore_filter)
+async def bkrst_ids_start(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(BackupState.waiting_restore_ids)
+    await call.message.answer(
+        "🔢 <b>Tiklanadigan anime ID'larini kiriting</b>\n\n"
+        "Vergul bilan ajrating, masalan: <code>10, 42, 388</code>\n"
+        "Kanallar <b>hammasi</b> tiklanadi.",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@admin_router.message(BackupState.waiting_restore_ids)
+async def bkrst_ids_got(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    ids: set[int] = set()
+    for part in (msg.text or "").replace(";", ",").split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.add(int(part))
+    if not ids:
+        return await msg.answer("❌ Hech qanday ID topilmadi. Raqamlarni vergul bilan kiriting.")
+    data = await state.get_data()
+    animes_data: list[dict] = [r for r in (data.get("rst_animes") or []) if (r or {}).get("id") in ids]
+    channels_data: list[dict] = list(data.get("rst_channels") or [])
+    await state.clear()
+    await _bk_do_restore(msg, animes_data, channels_data, f"IDs={sorted(ids)}")
+
+
 # ═══════════════════════════════════════════════════════════
 #  QISM QO'SHISH
 # ═══════════════════════════════════════════════════════════
 
 
 @admin_router.message(F.text == "🎞 Qism qo'shish")
-async def add_episode_start(msg: Message):
+async def add_episode_start(msg: Message, state: FSMContext):
+    """
+    Qism qo'shishning 3 yo'li:
+      1) 📡 Maxfiy kanal orqali — hozirgi flow, admin kanalga video + caption
+         (ID/Qism) yuboradi, bot uni bazaga qo'shadi.
+      2) 🤖 Bot orqali (birma-bir) — admin anime ID + qism oraliq kiritadi,
+         bot har bir qism uchun videoni alohida so'raydi va maxfiy kanalga
+         to'g'ri caption bilan yuboradi.
+      3) 📦 Bot orqali (bulk, auto-detect) — admin bir qancha videolarni
+         caption bilan yuboradi, bot caption'dan qism raqamini regex bilan
+         topadi. Noaniq joylarda admin'dan qism raqamini so'raydi. Keyin
+         preview qilib admin tasdiqlashini so'raydi, oxirida maxfiy kanalga
+         yuboradi.
+    """
     if not await is_admin(msg.from_user.id):
         return
+    await state.clear()
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📡 Maxfiy kanal orqali", callback_data="ep_via_channel")],
+            [InlineKeyboardButton(text="🤖 Bot orqali (birma-bir)", callback_data="ep_via_bot_single")],
+            [InlineKeyboardButton(text="📦 Bot orqali (bulk, auto)", callback_data="ep_via_bot_bulk")],
+            [InlineKeyboardButton(text="❌ Yopish", callback_data="ep_close")],
+        ]
+    )
     await msg.answer(
+        "🎞 <b>Qism qo'shish</b>\n\nQaysi usulda qo'shmoqchisiz?",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@admin_router.callback_query(F.data == "ep_close")
+async def ep_close(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await call.message.edit_text("❌ Yopildi.")
+    except Exception:
+        pass
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "ep_via_channel")
+async def ep_via_channel(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.clear()
+    await call.message.answer(
         f"✅ <b>Maxfiy kanal orqali qism yuklash!</b>\n\n"
         f"Kanal ID: <code>{SECRET_CHANNEL_ID}</code>\n\n"
         "Caption format:\n<b>ID: 388\nQism: 13</b>",
         parse_mode="HTML",
     )
+    await call.answer()
+
+
+# ─── Bot orqali qism qo'shish (umumiy boshlanish) ─────────────────────────
+
+
+async def _ep_ask_anime_id(msg_or_call, state: FSMContext, *, is_call: bool = False):
+    """Bot orqali qism qo'shishning birinchi qadami — anime ID so'rash."""
+    await state.set_state(AddEpisodeState.waiting_anime_id)
+    text = "🎬 <b>Anime ID ni kiriting:</b>\n\n<i>Masalan: <code>388</code></i>"
+    if is_call:
+        await msg_or_call.message.answer(text, parse_mode="HTML", reply_markup=cancel_kb)
+        await msg_or_call.answer()
+    else:
+        await msg_or_call.answer(text, parse_mode="HTML", reply_markup=cancel_kb)
+
+
+@admin_router.callback_query(F.data == "ep_via_bot_single")
+async def ep_via_bot_single(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.update_data(ep_mode="single")
+    await _ep_ask_anime_id(call, state, is_call=True)
+
+
+@admin_router.callback_query(F.data == "ep_via_bot_bulk")
+async def ep_via_bot_bulk(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.update_data(ep_mode="bulk")
+    await _ep_ask_anime_id(call, state, is_call=True)
+
+
+@admin_router.message(AddEpisodeState.waiting_anime_id)
+async def ep_got_anime_id(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    if not msg.text or not msg.text.strip().isdigit():
+        return await msg.answer("❌ Raqam kiriting!")
+    anime_id = int(msg.text.strip())
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+    if not anime:
+        return await msg.answer(f"❌ Anime ID <code>{anime_id}</code> topilmadi!", parse_mode="HTML")
+    await state.update_data(ep_anime_id=anime_id, ep_anime_title=anime.title)
+    await state.set_state(AddEpisodeState.waiting_from_ep)
+    data = await state.get_data()
+    mode = data.get("ep_mode", "single")
+    if mode == "bulk":
+        # Bulk rejimda boshlang'ich qism ixtiyoriy — caption'dan olinadi. Shu
+        # bois shunchaki kutiladigan oraliqni aytamiz.
+        await msg.answer(
+            f"✅ <b>{esc(anime.title)}</b> (ID {anime_id})\n\n"
+            "Endi <b>qaysi qismdan boshlab</b> qo'shmoqchisiz? Raqam kiriting:",
+            parse_mode="HTML",
+            reply_markup=cancel_kb,
+        )
+    else:
+        await msg.answer(
+            f"✅ <b>{esc(anime.title)}</b> (ID {anime_id})\n\n"
+            "Qaysi qismdan boshlaymiz? Raqam kiriting (masalan <code>1</code>):",
+            parse_mode="HTML",
+            reply_markup=cancel_kb,
+        )
+
+
+@admin_router.message(AddEpisodeState.waiting_from_ep)
+async def ep_got_from(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    if not msg.text or not msg.text.strip().isdigit():
+        return await msg.answer("❌ Raqam kiriting!")
+    await state.update_data(ep_from=int(msg.text.strip()))
+    await state.set_state(AddEpisodeState.waiting_to_ep)
+    await msg.answer(
+        "Qaysi qismgacha? Raqam kiriting:",
+        reply_markup=cancel_kb,
+    )
+
+
+@admin_router.message(AddEpisodeState.waiting_to_ep)
+async def ep_got_to(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    if not msg.text or not msg.text.strip().isdigit():
+        return await msg.answer("❌ Raqam kiriting!")
+    to_ep = int(msg.text.strip())
+    data = await state.get_data()
+    from_ep = int(data.get("ep_from") or 1)
+    if to_ep < from_ep:
+        return await msg.answer(f"❌ Tugash qismi ({to_ep}) boshlanishdan ({from_ep}) kichik!")
+    await state.update_data(ep_to=to_ep, ep_current=from_ep)
+    mode = data.get("ep_mode", "single")
+    if mode == "single":
+        await state.set_state(AddEpisodeState.waiting_single_video)
+        await msg.answer(
+            f"🎬 <b>{esc(data.get('ep_anime_title') or '')}</b>\n"
+            f"Qism <b>{from_ep}</b> uchun videoni yuboring (forward yoki to'g'ridan-to'g'ri):",
+            parse_mode="HTML",
+            reply_markup=cancel_kb,
+        )
+    else:
+        # Bulk — videolarni qabul qilishni boshlaymiz.
+        await state.update_data(ep_bulk_items=[])
+        await state.set_state(AddEpisodeState.waiting_bulk_videos)
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Tayyor — ko'rib chiqish", callback_data="ep_bulk_done")],
+                [InlineKeyboardButton(text="❌ Bekor", callback_data="ep_bulk_cancel")],
+            ]
+        )
+        await msg.answer(
+            f"📦 <b>Bulk rejim</b> — {esc(data.get('ep_anime_title') or '')} "
+            f"({from_ep}—{to_ep})\n\n"
+            "Endi kerakli videolarni <b>caption bilan</b> bu chatga yuboring "
+            "(forward qilsangiz ham bo'ladi).\n"
+            "Bot caption'dan qism raqamini avtomatik topishga urinadi "
+            "(masalan <code>1-qism</code>, <code>Qism: 3</code>, <code>Episode 5</code>).\n\n"
+            "Hammasini yuborib bo'lgach «✅ Tayyor» tugmasini bosing.",
+            parse_mode="HTML",
+            reply_markup=kb,
+        )
+
+
+# ─── Bot orqali: birma-bir video qabul ────────────────────────────────────
+
+
+async def _post_episode_to_secret(bot: Bot, anime_id: int, episode: int, file_id: str, is_document: bool):
+    """
+    Videoni maxfiy kanalga `ID: X\nQism: Y` caption bilan yuboradi. Bu
+    yuborish `add_episode_from_channel` handlerini ishga tushiradi va u
+    bazaga qo'shadi — shu orqali qism qo'shishning yagona yo'lidan foydalanamiz.
+    """
+    caption = f"ID: {anime_id}\nQism: {episode}"
+    if is_document:
+        return await bot.send_document(chat_id=SECRET_CHANNEL_ID, document=file_id, caption=caption)
+    return await bot.send_video(chat_id=SECRET_CHANNEL_ID, video=file_id, caption=caption)
+
+
+@admin_router.message(AddEpisodeState.waiting_single_video)
+async def ep_single_got_video(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    if not (msg.video or msg.document):
+        return await msg.answer("❌ Video (yoki video-document) yuboring.")
+    data = await state.get_data()
+    anime_id = int(data["ep_anime_id"])
+    current = int(data.get("ep_current") or data.get("ep_from") or 1)
+    to_ep = int(data["ep_to"])
+    file_id = msg.video.file_id if msg.video else msg.document.file_id
+    try:
+        await _post_episode_to_secret(
+            msg.bot, anime_id, current, file_id, is_document=bool(msg.document and not msg.video)
+        )
+    except Exception as e:
+        logger.exception("ep_single: secret kanalga yuborib bo'lmadi")
+        return await msg.answer(f"❌ Maxfiy kanalga yuborib bo'lmadi: {e}")
+    await msg.answer(f"✅ {current}-qism qo'shildi!")
+    next_ep = current + 1
+    if next_ep > to_ep:
+        await state.clear()
+        return await msg.answer(
+            f"🏁 <b>Tayyor!</b> {data.get('ep_from')}—{to_ep} qismlar qo'shildi.",
+            parse_mode="HTML",
+            reply_markup=admin_main_kb,
+        )
+    await state.update_data(ep_current=next_ep)
+    await msg.answer(f"🎬 Endi <b>{next_ep}-qism</b> videosini yuboring:", parse_mode="HTML")
+
+
+# ─── Bot orqali: bulk (auto-detect) ───────────────────────────────────────
+
+# Caption'dan qism raqamini topadigan paternlar (tartibiga mos ravishda
+# birinchi moslik olinadi). Asosiy uchragan variantlar Uzbek/Ru/En uchun.
+_EPISODE_PATTERNS = [
+    _re_ep.compile(r"(\d+)\s*[-\s]\s*qism", _re_ep.IGNORECASE),
+    _re_ep.compile(r"qism[:\s#]+(\d+)", _re_ep.IGNORECASE),
+    _re_ep.compile(r"(\d+)\s*[-\s]\s*seriya", _re_ep.IGNORECASE),
+    _re_ep.compile(r"seriya[:\s#]+(\d+)", _re_ep.IGNORECASE),
+    _re_ep.compile(r"(\d+)\s*[-\s]\s*part", _re_ep.IGNORECASE),
+    _re_ep.compile(r"part[:\s#]+(\d+)", _re_ep.IGNORECASE),
+    _re_ep.compile(r"ep(?:isode)?[:\s#]*(\d+)", _re_ep.IGNORECASE),
+    _re_ep.compile(r"серия[:\s#]+(\d+)", _re_ep.IGNORECASE),
+    _re_ep.compile(r"(\d+)\s*[-\s]\s*серия", _re_ep.IGNORECASE),
+]
+
+
+def _detect_episode_from_caption(caption: str) -> int | None:
+    if not caption:
+        return None
+    for pat in _EPISODE_PATTERNS:
+        m = pat.search(caption)
+        if m:
+            try:
+                return int(m.group(1))
+            except Exception:
+                continue
+    return None
+
+
+@admin_router.message(AddEpisodeState.waiting_bulk_videos)
+async def ep_bulk_collect(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    if not (msg.video or msg.document):
+        return  # faqat video/document qabul, qolganini e'tibor bermaslik
+    file_id = msg.video.file_id if msg.video else msg.document.file_id
+    is_doc = bool(msg.document and not msg.video)
+    caption = msg.caption or msg.text or ""
+    detected = _detect_episode_from_caption(caption)
+    data = await state.get_data()
+    items: list[dict] = list(data.get("ep_bulk_items") or [])
+    items.append(
+        {
+            "file_id": file_id,
+            "is_doc": is_doc,
+            "caption": caption,
+            "episode": detected,
+        }
+    )
+    await state.update_data(ep_bulk_items=items)
+    total = len(items)
+    ok = sum(1 for it in items if it.get("episode") is not None)
+    await msg.answer(
+        f"➕ Qabul qilindi. Jami: <b>{total}</b> ta. Aniqlangan qismlar: <b>{ok}</b>.\n"
+        + (f"(bu video: <b>{detected}-qism</b>)" if detected else "⚠️ Bu videoda qism raqami topilmadi."),
+        parse_mode="HTML",
+    )
+
+
+@admin_router.callback_query(F.data == "ep_bulk_cancel")
+async def ep_bulk_cancel(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await call.message.edit_text("❌ Bekor qilindi.")
+    except Exception:
+        pass
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "ep_bulk_done")
+async def ep_bulk_done(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    data = await state.get_data()
+    items: list[dict] = list(data.get("ep_bulk_items") or [])
+    if not items:
+        return await call.answer("Videolar yuborilmagan!", show_alert=True)
+    # Noaniq (episode=None) bor-yo'qligini tekshiramiz
+    missing = [i for i, it in enumerate(items) if it.get("episode") is None]
+    if missing:
+        await state.update_data(ep_bulk_fix_queue=missing, ep_bulk_fix_idx=0)
+        await state.set_state(AddEpisodeState.waiting_bulk_manual_ep)
+        it = items[missing[0]]
+        preview = (it.get("caption") or "<i>caption yo'q</i>")[:300]
+        return await call.message.answer(
+            f"⚠️ <b>1/{len(missing)}</b> — bu videoda qism raqami topilmadi.\n\n"
+            f"<i>Caption:</i>\n<code>{esc(preview)}</code>\n\n"
+            "Iltimos, qism raqamini kiriting (masalan <code>3</code>):",
+            parse_mode="HTML",
+            reply_markup=cancel_kb,
+        )
+    await _ep_bulk_show_preview(call.message, state)
+    await call.answer()
+
+
+@admin_router.message(AddEpisodeState.waiting_bulk_manual_ep)
+async def ep_bulk_manual_fix(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    if not msg.text or not msg.text.strip().isdigit():
+        return await msg.answer("❌ Faqat raqam kiriting.")
+    ep_num = int(msg.text.strip())
+    data = await state.get_data()
+    items: list[dict] = list(data.get("ep_bulk_items") or [])
+    queue: list[int] = list(data.get("ep_bulk_fix_queue") or [])
+    idx = int(data.get("ep_bulk_fix_idx") or 0)
+    if idx >= len(queue):
+        await _ep_bulk_show_preview(msg, state)
+        return
+    items[queue[idx]]["episode"] = ep_num
+    idx += 1
+    await state.update_data(ep_bulk_items=items, ep_bulk_fix_idx=idx)
+    if idx >= len(queue):
+        return await _ep_bulk_show_preview(msg, state)
+    nxt = items[queue[idx]]
+    preview = (nxt.get("caption") or "<i>caption yo'q</i>")[:300]
+    await msg.answer(
+        f"⚠️ <b>{idx + 1}/{len(queue)}</b> — qism raqami topilmadi.\n\n"
+        f"<i>Caption:</i>\n<code>{esc(preview)}</code>\n\n"
+        "Qism raqamini kiriting:",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+
+
+async def _ep_bulk_show_preview(msg: Message, state: FSMContext):
+    """
+    Preview qadami — yig'ilgan (video, ep) juftlari ro'yxatini admin'ga
+    ko'rsatamiz. Iloji bo'lsa PREVIEW_CHANNEL_ID ga videolarni stage qilamiz.
+    Admin tasdiqlasa — SECRET_CHANNEL_ID ga yuborib bazaga qo'shamiz.
+    """
+    data = await state.get_data()
+    items: list[dict] = list(data.get("ep_bulk_items") or [])
+    anime_id = int(data["ep_anime_id"])
+    title = data.get("ep_anime_title") or ""
+    # Qism bo'yicha tartiblash va dublikat ogohlantirish
+    items_sorted = sorted(items, key=lambda it: it.get("episode") or 10**9)
+    await state.update_data(ep_bulk_items=items_sorted)
+    lines = [f"🎬 <b>{esc(title)}</b> (ID {anime_id})", "", f"Jami: <b>{len(items_sorted)}</b> ta"]
+    seen: set[int] = set()
+    dups: list[int] = []
+    for it in items_sorted:
+        ep = it.get("episode")
+        if ep in seen and ep is not None:
+            dups.append(ep)
+        if ep is not None:
+            seen.add(ep)
+    eps = [str(it.get("episode")) for it in items_sorted]
+    lines.append("Qismlar: " + ", ".join(eps))
+    if dups:
+        lines.append(f"⚠️ Dublikat qismlar: {sorted(set(dups))}")
+    # Preview kanalga (yoki bot DM'ga) videolarni stage qilish
+    preview_target = PREVIEW_CHANNEL_ID or msg.chat.id
+    posted = 0
+    for it in items_sorted:
+        try:
+            cap = f"📦 Preview — ID {anime_id} • Qism {it.get('episode')}"
+            if it.get("is_doc"):
+                await msg.bot.send_document(chat_id=preview_target, document=it["file_id"], caption=cap)
+            else:
+                await msg.bot.send_video(chat_id=preview_target, video=it["file_id"], caption=cap)
+            posted += 1
+        except Exception:
+            logger.exception("ep_bulk preview yuborib bo'lmadi")
+    where = "preview kanalga" if PREVIEW_CHANNEL_ID else "shu chatga"
+    lines.append(f"📤 {posted}/{len(items_sorted)} ta video {where} yuborildi — ko'rib chiqing.")
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Tasdiqlash — maxfiy kanalga yuborish", callback_data="ep_bulk_commit")],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="ep_bulk_cancel")],
+        ]
+    )
+    await state.set_state(AddEpisodeState.waiting_bulk_confirm)
+    await msg.answer("\n".join(lines), parse_mode="HTML", reply_markup=kb)
+
+
+@admin_router.callback_query(F.data == "ep_bulk_commit")
+async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    data = await state.get_data()
+    items: list[dict] = list(data.get("ep_bulk_items") or [])
+    anime_id = int(data["ep_anime_id"])
+    await call.answer("⏳ Yuborilyapti...")
+    ok = failed = 0
+    errs: list[str] = []
+    for it in items:
+        ep = it.get("episode")
+        if ep is None:
+            failed += 1
+            errs.append("episode=None")
+            continue
+        try:
+            await _post_episode_to_secret(
+                call.bot, anime_id, int(ep), it["file_id"], is_document=bool(it.get("is_doc"))
+            )
+            ok += 1
+        except Exception as e:
+            logger.exception("ep_bulk_commit: yuborish xato")
+            failed += 1
+            errs.append(str(e)[:120])
+    await state.clear()
+    txt = [
+        "🏁 <b>Bulk tayyor</b>",
+        f"✅ Yuborildi: {ok}",
+    ]
+    if failed:
+        txt.append(f"❌ Xato: {failed}")
+        for e in errs[:3]:
+            txt.append(f"  • {esc(e)}")
+    await call.message.answer("\n".join(txt), parse_mode="HTML", reply_markup=admin_main_kb)
 
 
 @admin_router.channel_post(F.chat.id == SECRET_CHANNEL_ID)

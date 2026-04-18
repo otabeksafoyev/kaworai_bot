@@ -27,6 +27,9 @@ DATABASE_URL = env.str("DATABASE_URL")
 REDIS_URL = env.str("REDIS_URL")
 NEWS_CHANNEL_ID = env.int("NEWS_CHANNEL_ID")
 SECRET_CHANNEL_ID = env.int("SECRET_CHANNEL_ID")
+# Bot orqali qism qo'shishda preview/stage kanal (admin ko'rib tasdiqlash uchun).
+# Agar 0 bo'lsa — preview bot DM'ida yuboriladi.
+PREVIEW_CHANNEL_ID = env.int("PREVIEW_CHANNEL_ID", 0)
 
 # Pro to'lov tizimi — maxfiy PII/moliya ma'lumotlari
 # Bularning hammasi .env orqali taqdim etilishi kerak.
