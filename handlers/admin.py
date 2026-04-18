@@ -3842,17 +3842,23 @@ async def _save_episode_to_db(anime_id: int, episode: int, file_id: str) -> tupl
     """
     Bazaga qism yozadi. (ok, message, saved_episode) qaytaradi.
     Agar anime topilmasa — (False, "...", 0).
-    Agar shu qism raqami allaqachon bo'lsa — max+1 ga siljitadi (mavjud flow
-    bilan mos). `saved_episode` — bazaga yozilgan haqiqiy raqam.
+    Qism raqami AYNAN kiritilganiday saqlanadi — max+1 ga siljitilmaydi.
+    Shu qism (anime_id, episode) allaqachon mavjud bo'lsa — file_id yangilanadi
+    (upsert). Bu admin 15-24 qismlarni qo'shganidan keyin 1-14 ni qo'shsa ham
+    haqiqiy 1-14 saqlanishini ta'minlaydi.
     """
+    ep = int(episode)
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
             return False, f"Anime ID {anime_id} topilmadi", 0
-        r = await session.execute(select(func.max(Series.episode)).where(Series.anime_id == anime_id))
-        last_ep = r.scalar() or 0
-        ep = episode if episode > last_ep else last_ep + 1
-        session.add(Series(anime_id=anime_id, episode=ep, file_id=file_id))
+        existing = (
+            await session.execute(select(Series).where(Series.anime_id == anime_id, Series.episode == ep))
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.file_id = file_id
+        else:
+            session.add(Series(anime_id=anime_id, episode=ep, file_id=file_id))
         await session.commit()
         return True, anime.title or str(anime_id), ep
 
@@ -3899,16 +3905,32 @@ async def ep_single_got_video(msg: Message, state: FSMContext):
 
 # Caption'dan qism raqamini topadigan paternlar (tartibiga mos ravishda
 # birinchi moslik olinadi). Asosiy uchragan variantlar Uzbek/Ru/En uchun.
+# Separator belgilari: ikki nuqta, bo'shliq, #, №, nuqta, tire/em-dash. Ular
+# ko'pincha raqam oldidan keladi (masalan "Qism: 5", "Qism #5", "Qism.5",
+# "Qism — 5", "Qism-5", "Qism 5"). `[-–—]?` — ixtiyoriy dash/em-dash.
+_EP_SEP = r"[:\s#№\.\-–—]*"
 _EPISODE_PATTERNS = [
-    _re_ep.compile(r"(\d+)\s*[-\s]\s*qism", _re_ep.IGNORECASE),
-    _re_ep.compile(r"qism[:\s#]+(\d+)", _re_ep.IGNORECASE),
-    _re_ep.compile(r"(\d+)\s*[-\s]\s*seriya", _re_ep.IGNORECASE),
-    _re_ep.compile(r"seriya[:\s#]+(\d+)", _re_ep.IGNORECASE),
-    _re_ep.compile(r"(\d+)\s*[-\s]\s*part", _re_ep.IGNORECASE),
-    _re_ep.compile(r"part[:\s#]+(\d+)", _re_ep.IGNORECASE),
-    _re_ep.compile(r"ep(?:isode)?[:\s#]*(\d+)", _re_ep.IGNORECASE),
-    _re_ep.compile(r"серия[:\s#]+(\d+)", _re_ep.IGNORECASE),
-    _re_ep.compile(r"(\d+)\s*[-\s]\s*серия", _re_ep.IGNORECASE),
+    # Uzbek — "N-qism", "N qism", "1 qism", "5-qism", "12.qism" va h.k.
+    _re_ep.compile(r"(\d+)\s*[-–—\.]?\s*qism\b", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bqism" + _EP_SEP + r"(\d+)", _re_ep.IGNORECASE),
+    # Uzbek — "seriya"
+    _re_ep.compile(r"(\d+)\s*[-–—\.]?\s*seriya\b", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bseriya" + _EP_SEP + r"(\d+)", _re_ep.IGNORECASE),
+    # Uzbek — "epizod" / "epizot"
+    _re_ep.compile(r"(\d+)\s*[-–—\.]?\s*epizo[dt]\b", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bepizo[dt]" + _EP_SEP + r"(\d+)", _re_ep.IGNORECASE),
+    # English — "part", "episode", "ep", "E05", "S01E05"
+    _re_ep.compile(r"(\d+)\s*[-–—\.]?\s*part\b", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bpart" + _EP_SEP + r"(\d+)", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bep(?:isode)?" + _EP_SEP + r"(\d+)", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bs\d{1,2}\s*e\s*(\d{1,3})\b", _re_ep.IGNORECASE),  # S01E05
+    # Russian — "серия", "эпизод", "серія"
+    _re_ep.compile(r"(\d+)\s*[-–—\.]?\s*сери[яи]\b", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bсери[яи]" + _EP_SEP + r"(\d+)", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bэпизод" + _EP_SEP + r"(\d+)", _re_ep.IGNORECASE),
+    # Hashtag / number sign: "#5", "№ 5"
+    _re_ep.compile(r"#(\d+)", _re_ep.IGNORECASE),
+    _re_ep.compile(r"№\s*(\d+)", _re_ep.IGNORECASE),
 ]
 
 
