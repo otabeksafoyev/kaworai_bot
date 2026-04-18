@@ -1,9 +1,10 @@
 """
-Kunlik ZIP zaxira scheduler'i.
+Davriy ZIP zaxira scheduler'i.
 
-Har 24 soatda animelar + kanallar jadvallarini JSON shaklida olib,
-ZIP qilib `BACKUP_CHANNEL_ID` kanaliga yuboradi. Agar `BACKUP_CHANNEL_ID`
-0 bo'lsa — scheduler ishga tushmaydi (o'chiq).
+Har N soatda (standart — 48 soat, ya'ni 2 kunda bir marta) animelar +
+kanallar jadvallarini JSON shaklida olib, ZIP qilib `BACKUP_CHANNEL_ID`
+kanaliga yuboradi. Agar `BACKUP_CHANNEL_ID` 0 bo'lsa — scheduler ishga
+tushmaydi (o'chiq). Interval `BACKUP_INTERVAL_HOURS` env bilan o'zgaradi.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import datetime as _dt
 import io
 import json
 import logging
+import os
 import zipfile
 
 from aiogram import Bot
@@ -25,8 +27,21 @@ from database.models import Anime, SubscriptionChannel
 
 logger = logging.getLogger(__name__)
 
-# Ikki yuborish orasidagi masofa (soniya). Standart — 24 soat.
-DAILY_BACKUP_INTERVAL = 24 * 60 * 60
+
+def _resolve_interval_seconds() -> int:
+    """BACKUP_INTERVAL_HOURS env'dan masofani oladi (standart 48 soat)."""
+    raw = (os.getenv("BACKUP_INTERVAL_HOURS", "") or "").strip()
+    try:
+        hours = float(raw) if raw else 48.0
+    except ValueError:
+        hours = 48.0
+    # Eng kamida 1 soat — juda kichik qiymatlar spam bo'lib ketmasin.
+    hours = max(hours, 1.0)
+    return int(hours * 60 * 60)
+
+
+# Ikki yuborish orasidagi masofa (soniya). Standart — 48 soat (2 kun).
+DAILY_BACKUP_INTERVAL = _resolve_interval_seconds()
 
 BACKUP_VERSION = 1
 

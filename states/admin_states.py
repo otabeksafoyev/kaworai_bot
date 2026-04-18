@@ -30,6 +30,10 @@ class AddChannel(StatesGroup):
     waiting_url = State()
     waiting_type = State()
     waiting_channel_id = State()
+    # Majburiy kanal uchun: "hamma viloyat" yoki "bitta viloyat" tanlash,
+    # keyin agar bitta bo'lsa — region tanlash.
+    waiting_region_scope = State()
+    waiting_region_pick = State()
 
 
 # 🔹 Anime tahrirlash
@@ -68,6 +72,8 @@ class BroadcastState(StatesGroup):
     waiting_ch_btn_text = State()
     waiting_ch_btn_url = State()
     waiting_ch_channel_pick = State()
+    # Foydalanuvchilarga xabar yuborishda region filteri
+    waiting_users_region = State()
 
 
 # 🔹 Baza zaxira (export/import) — filterli versiya

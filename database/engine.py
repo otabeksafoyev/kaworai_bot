@@ -97,6 +97,10 @@ MIGRATIONS = [
     "ALTER TABLE admins ADD COLUMN IF NOT EXISTS added_at TIMESTAMP DEFAULT NOW()",
     # Admins — per-admin ruxsatlar (PR #19, JSON list: ["add_anime", ...])
     "ALTER TABLE admins ADD COLUMN IF NOT EXISTS permissions JSON",
+    # Users — viloyat (region) kodini saqlash (PR #24, O'zbekiston 14 viloyat)
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS region VARCHAR(40)",
+    # Channels — majburiy kanallar uchun region cheklovi (PR #24)
+    "ALTER TABLE channels ADD COLUMN IF NOT EXISTS region VARCHAR(40)",
     # AnimeSubscription jadvali
     """
     CREATE TABLE IF NOT EXISTS anime_subscriptions (

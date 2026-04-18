@@ -25,6 +25,9 @@ class User(Base):
     joined_at = Column(DateTime, server_default=func.now())
     is_pro = Column(Boolean, default=False)
     pro_until = Column(DateTime, nullable=True)
+    # Foydalanuvchi tanlagan viloyat kodi (masalan `tashkent_city`).
+    # NULL = hali tanlanmagan. Birinchi /start'da so'raladi.
+    region = Column(String(40), nullable=True)
 
     watch_history = relationship("UserWatchHistory", back_populates="user", cascade="all, delete-orphan")
     taste_profile = relationship("UserTasteProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -109,6 +112,10 @@ class SubscriptionChannel(Base):
     is_active = Column(Boolean, default=True)
     require_check = Column(Boolean, default=False)
     is_news = Column(Boolean, default=False)
+    # Majburiy kanallar uchun region cheklovi (region kod yoki NULL).
+    # NULL = hamma uchun; aks holda faqat shu viloyat foydalanuvchilarga
+    # tekshiruv qo'llaniladi. News va optional kanallarga ta'sir qilmaydi.
+    region = Column(String(40), nullable=True)
 
 
 class AnimeSubscription(Base):

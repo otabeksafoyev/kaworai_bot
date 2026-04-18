@@ -28,6 +28,7 @@ from database.queries import (
     is_subscribed_anime,
 )
 from middlewares.subscription import check_subscription, get_sub_keyboard
+from utils.regions import is_valid_region, region_label, region_picker_kb
 from utils.security import parse_admin_ids
 
 logger = logging.getLogger(__name__)
@@ -399,43 +400,54 @@ async def send_main_menu(target, delete_prev: bool = False):
 # ═══════════════════════════════════════════════════════════
 
 
-@user_router.message(CommandStart())
-async def cmd_start(message: types.Message, command: CommandObject):
-    user_id = message.from_user.id
+def _parse_start_anime_id(args: str) -> int | None:
+    args = args or ""
+    if args.startswith("anime_"):
+        try:
+            return int(args.replace("anime_", ""))
+        except ValueError:
+            return None
+    if args.startswith("kod_"):
+        try:
+            return int(args.replace("kod_", ""))
+        except ValueError:
+            return None
+    if args.isdigit():
+        return int(args)
+    return None
 
+
+async def _prompt_region(message: types.Message) -> None:
+    """Foydalanuvchiga viloyatni tanlatish uchun 14 viloyatli picker."""
+    await message.answer(
+        "👋 <b>Salom!</b>\n\nBotdan foydalanish uchun avval viloyatingizni tanlang:",
+        reply_markup=region_picker_kb(callback_prefix="userregion_"),
+        parse_mode="HTML",
+    )
+
+
+async def _continue_after_start(
+    message: types.Message,
+    *,
+    user_id: int,
+    anime_id: int | None,
+    edit: bool = False,
+) -> None:
+    """Region tanlangan yoki oldindan bor bo'lganda — oddiy /start oqimi."""
     async with AsyncSessionLocal() as session:
-        await get_or_create_user(
-            session=session,
-            telegram_id=user_id,
-            full_name=message.from_user.full_name,
-            username=message.from_user.username,
-        )
         channels = await get_active_channels(session)
-
     not_subbed = await check_subscription(message.bot, user_id, channels)
     if not_subbed:
         kb = get_sub_keyboard(not_subbed)
-        return await message.answer(
-            "⚠️ <b>Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:</b>\n\n"
-            + "\n".join(f"• {ch.channel_name}" for ch in not_subbed),
-            reply_markup=kb,
-            parse_mode="HTML",
+        text = "⚠️ <b>Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:</b>\n\n" + "\n".join(
+            f"• {ch.channel_name}" for ch in not_subbed
         )
-
-    args = command.args or ""
-    anime_id = None
-    if args.startswith("anime_"):
-        try:
-            anime_id = int(args.replace("anime_", ""))
-        except ValueError:
-            pass
-    elif args.startswith("kod_"):
-        try:
-            anime_id = int(args.replace("kod_", ""))
-        except ValueError:
-            pass
-    elif args.isdigit():
-        anime_id = int(args)
+        if edit:
+            try:
+                return await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                pass
+        return await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
     if anime_id:
         try:
@@ -446,6 +458,64 @@ async def cmd_start(message: types.Message, command: CommandObject):
         return
 
     await send_main_menu(message)
+
+
+@user_router.message(CommandStart())
+async def cmd_start(message: types.Message, command: CommandObject):
+    user_id = message.from_user.id
+
+    async with AsyncSessionLocal() as session:
+        user, _ = await get_or_create_user(
+            session=session,
+            telegram_id=user_id,
+            full_name=message.from_user.full_name,
+            username=message.from_user.username,
+        )
+
+    anime_id = _parse_start_anime_id(command.args or "")
+
+    # Agar region hali tanlanmagan bo'lsa — avval uni so'raymiz.
+    # Anime deep-link'ni `pending_anime_id` orqali region tanlangach ochamiz.
+    if not user or not is_valid_region(getattr(user, "region", None)):
+        if anime_id:
+            # Deep-link animeni vaqtincha user'ning o'ziga xabar sifatida eslatib
+            # qo'yamiz — region tanlanganda ochiladi. Saqlash uchun oddiy
+            # in-memory cache yo'q (restartga bardoshsiz), shuning uchun
+            # callback_data ichida emas, lekin keyin foydalanuvchi `/start
+            # anime_ID` ni qayta bossa ham ishlaydi.
+            pass
+        return await _prompt_region(message)
+
+    await _continue_after_start(message, user_id=user_id, anime_id=anime_id)
+
+
+@user_router.callback_query(F.data.startswith("userregion_"))
+async def user_region_pick(call: types.CallbackQuery):
+    """User /start'da yoki kartada 'viloyatni tanlash' tugmasidan region tanladi."""
+    code = call.data.replace("userregion_", "", 1)
+    if not is_valid_region(code):
+        return await call.answer("❌ Noto'g'ri region!", show_alert=True)
+    user_id = call.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if user is None:
+            user = await get_or_create_user(
+                session=session,
+                telegram_id=user_id,
+                full_name=call.from_user.full_name,
+                username=call.from_user.username,
+            )
+        user.region = code
+        await session.commit()
+    try:
+        await call.message.edit_text(
+            f"✅ Viloyatingiz saqlandi: <b>{region_label(code)}</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+    await call.answer("✅ Saqlandi", show_alert=False)
+    await _continue_after_start(call.message, user_id=user_id, anime_id=None)
 
 
 # ═══════════════════════════════════════════════════════════
