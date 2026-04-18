@@ -4414,7 +4414,7 @@ async def show_top18(msg: Message):
 # ═══════════════════════════════════════════════════════════
 
 
-@admin_router.message(F.text == "📢 Kanal sozlamalari")
+@admin_router.message(F.text.in_({"📢 Kanallar", "📢 Kanal sozlamalari"}))
 async def channel_manager(msg: Message):
     if not await is_admin(msg.from_user.id):
         return
