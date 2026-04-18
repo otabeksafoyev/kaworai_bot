@@ -2623,10 +2623,102 @@ async def broadcast_start(msg: Message, state: FSMContext):
             [InlineKeyboardButton(text="🎭 Janr bo'yicha post", callback_data="bc_genre_post")],
             [InlineKeyboardButton(text="📣 Kanalga buttonli post", callback_data="bc_channel_custom")],
             [InlineKeyboardButton(text="👥 Foydalanuvchilarga xabar", callback_data="bc_users")],
+            [InlineKeyboardButton(text="📍 Viloyat so'rash (regionsiz userlar)", callback_data="bc_ask_region")],
             [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel")],
         ]
     )
     await msg.answer("📢 <b>Xabar yuborish</b>", reply_markup=kb, parse_mode="HTML")
+
+
+# ═══════════════════════════════════════════════════════════
+#  Viloyatsiz foydalanuvchilardan viloyatini so'rash
+# ═══════════════════════════════════════════════════════════
+
+
+@admin_router.callback_query(F.data == "bc_ask_region")
+async def bc_ask_region_confirm(call: types.CallbackQuery, state: FSMContext):
+    """
+    Region tanlamagan (User.region IS NULL) foydalanuvchilar soni va
+    tasdiqlash tugmasi. Admin tasdiqlasa — hammaga inline region picker
+    bilan xabar yuboriladi.
+    """
+    if not await is_admin(call.from_user.id):
+        return
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(func.count(User.telegram_id)).where(User.region.is_(None)))
+        pending = int(res.scalar() or 0)
+    if pending == 0:
+        try:
+            await call.message.edit_text("ℹ️ Hamma foydalanuvchilar allaqachon viloyatini tanlagan.")
+        except Exception:
+            pass
+        await call.message.answer("Panel:", reply_markup=admin_main_kb)
+        return await call.answer()
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"✅ {pending} ta userga yuborish", callback_data="bc_ask_region_go")],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel")],
+        ]
+    )
+    try:
+        await call.message.edit_text(
+            f"📍 <b>Viloyat so'rash</b>\n\n"
+            f"Hozirgacha viloyatini tanlamagan: <b>{pending}</b> ta foydalanuvchi.\n\n"
+            f"Ularning barchasiga viloyat tanlash xabari yuboriladi. Davom etamizmi?",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            f"📍 Viloyatsiz: <b>{pending}</b> ta. Yuborish?",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "bc_ask_region_go")
+async def bc_ask_region_go(call: types.CallbackQuery, state: FSMContext):
+    """Regionsiz userlarga inline region picker xabari yuboradi."""
+    if not await is_admin(call.from_user.id):
+        return
+    await call.answer()
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(User.telegram_id).where(User.region.is_(None)))
+        user_ids = res.scalars().all()
+    if not user_ids:
+        try:
+            await call.message.edit_text("ℹ️ Regionsiz foydalanuvchi topilmadi.")
+        except Exception:
+            pass
+        return await call.message.answer("Panel:", reply_markup=admin_main_kb)
+
+    try:
+        await call.message.edit_text(f"⏳ {len(user_ids)} ta userga yuborilmoqda...")
+    except Exception:
+        pass
+
+    kb = region_picker_kb(callback_prefix="userregion_")
+    text = (
+        "👋 <b>Salom!</b>\n\n"
+        "Bot endi viloyatga qarab ishlaydi. Iltimos, viloyatingizni tanlang — "
+        "shunda sizga mos kanallar va xabarlar to'g'ri yetkaziladi."
+    )
+    success = failed = 0
+    for uid in user_ids:
+        try:
+            await call.bot.send_message(uid, text, reply_markup=kb, parse_mode="HTML")
+            success += 1
+        except Exception:
+            failed += 1
+        await asyncio.sleep(0.05)
+
+    await call.message.answer(
+        f"✅ Yuborildi!\n👤 OK: {success}\n❌ Xato: {failed}\n\n"
+        f"<i>Foydalanuvchilar tugmani bosganda viloyatlari saqlanadi.</i>",
+        reply_markup=admin_main_kb,
+        parse_mode="HTML",
+    )
 
 
 @admin_router.callback_query(F.data == "bc_cancel")
