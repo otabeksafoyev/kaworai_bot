@@ -34,6 +34,7 @@ from states.admin_states import (
     EditAnime,
 )
 from utils.genre_picker import genre_picker_kb, genre_picker_text
+from utils.regions import is_valid_region, region_label, region_picker_kb
 from utils.security import esc, parse_admin_ids
 
 logger = logging.getLogger(__name__)
@@ -2937,9 +2938,54 @@ async def bc_genre_send(call: types.CallbackQuery, state: FSMContext):
 
 @admin_router.callback_query(F.data == "bc_users")
 async def bc_users_start(call: types.CallbackQuery, state: FSMContext):
+    """Avval region filteri so'raymiz, keyin xabar matnini."""
     if not await is_admin(call.from_user.id):
         return
+    await state.set_state(BroadcastState.waiting_users_region)
+    kb = region_picker_kb(
+        callback_prefix="bcuregion_",
+        with_all=True,
+        all_label="🌍 Barcha foydalanuvchilarga",
+        all_code="all",
+        with_cancel=True,
+        cancel_cb="bcuregion_cancel",
+    )
+    await call.message.answer(
+        "👥 <b>Qaysi viloyatdagi foydalanuvchilarga yuboriladi?</b>\n\n"
+        "<i>Region tanlamagan foydalanuvchilar faqat 'Barcha' tanlanganda xabar oladi.</i>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "bcuregion_cancel", BroadcastState.waiting_users_region)
+async def bc_users_region_cancel(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await call.message.edit_text("❌ Bekor.")
+    except Exception:
+        pass
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data.startswith("bcuregion_"), BroadcastState.waiting_users_region)
+async def bc_users_region_pick(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    code = call.data.replace("bcuregion_", "", 1)
+    if code == "cancel":
+        return  # cancel handler above qo'llaydi (alohida ro'yxatdan o'tgan)
+    if code != "all" and not is_valid_region(code):
+        return await call.answer("❌ Noto'g'ri region!", show_alert=True)
+    await state.update_data(bc_users_region=code)
     await state.set_state(BroadcastState.waiting_content)
+    label = "🌍 Barcha" if code == "all" else f"📍 {region_label(code)}"
+    try:
+        await call.message.edit_text(f"Filter: <b>{esc(label)}</b>\n\n📨 Xabarni yuboring:", parse_mode="HTML")
+    except Exception:
+        pass
     await call.message.answer("📨 Xabarni yuboring:", reply_markup=cancel_kb)
     await call.answer()
 
@@ -2951,10 +2997,25 @@ async def broadcast_to_users(msg: Message, state: FSMContext):
     if msg.text == "🚫 Bekor qilish":
         await state.clear()
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    data = await state.get_data()
+    region = data.get("bc_users_region", "all")
     await state.clear()
+
+    stmt = select(User.telegram_id)
+    if region != "all":
+        stmt = stmt.where(User.region == region)
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User.telegram_id))
+        result = await session.execute(stmt)
         user_ids = result.scalars().all()
+
+    if not user_ids:
+        label = "🌍 Barcha" if region == "all" else f"📍 {region_label(region)}"
+        return await msg.answer(
+            f"ℹ️ {esc(label)} filterida hech qanday foydalanuvchi topilmadi.",
+            reply_markup=admin_main_kb,
+            parse_mode="HTML",
+        )
+
     success = failed = 0
     for uid in user_ids:
         try:
@@ -2963,8 +3024,11 @@ async def broadcast_to_users(msg: Message, state: FSMContext):
             await asyncio.sleep(0.05)
         except Exception:
             failed += 1
+    label = "🌍 Barcha" if region == "all" else f"📍 {region_label(region)}"
     await msg.answer(
-        f"✅ Yuborildi!\n👤 OK: {success}\n❌ Xato: {failed}", reply_markup=admin_main_kb, parse_mode="HTML"
+        f"✅ Yuborildi! (filter: <b>{esc(label)}</b>)\n👤 OK: {success}\n❌ Xato: {failed}",
+        reply_markup=admin_main_kb,
+        parse_mode="HTML",
     )
 
 
@@ -4591,16 +4655,60 @@ async def save_ch_id(msg: Message, state: FSMContext):
         return await msg.answer("❌ Format: <code>-1001234567890</code>", parse_mode="HTML")
     data = await state.get_data()
     is_news = data.get("is_news_channel", False)
-    await state.clear()
+    # News kanalda region cheklovi yo'q — darrov qo'shamiz.
+    if is_news:
+        await state.clear()
+        return await _finalize_add_channel(
+            msg=msg,
+            channel_name=data["channel_name"],
+            channel_url=data["channel_url"],
+            channel_id=channel_id,
+            is_news=True,
+            region=None,
+        )
+    # Majburiy kanal: region scope so'raymiz.
+    await state.update_data(channel_id=channel_id)
+    await state.set_state(AddChannel.waiting_region_scope)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🌍 Barcha viloyatlar", callback_data="chreg_all")],
+            [InlineKeyboardButton(text="📍 Faqat bitta viloyat", callback_data="chreg_specific")],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="chreg_cancel")],
+        ]
+    )
+    await msg.answer(
+        "🌍 <b>Kanal region cheklovi:</b>\n\n"
+        "• <b>Barcha viloyatlar</b> — hamma foydalanuvchilarga majburiy.\n"
+        "• <b>Bitta viloyat</b> — faqat tanlangan viloyatdagi userlarga majburiy.",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+async def _finalize_add_channel(
+    *,
+    msg: Message,
+    channel_name: str,
+    channel_url: str,
+    channel_id: int,
+    is_news: bool,
+    region: str | None,
+) -> None:
+    """Kanalni DB'ga qo'shib, admin uchun xulosa xabarini yuboradi."""
     async with AsyncSessionLocal() as session:
         ch, status = await add_channel(
             session=session,
-            channel_name=data["channel_name"],
-            channel_url=data["channel_url"],
+            channel_name=channel_name,
+            channel_url=channel_url,
             require_check=not is_news,
             is_news=is_news,
             channel_id=channel_id,
         )
+        # Region majburiy kanallarga DB orqali yozamiz (add_channel signaturasini
+        # o'zgartirmay — oldingi imzo saqlanadi).
+        if ch and not is_news:
+            ch.region = region
+            await session.commit()
 
     # Subscription middleware cache'ini tozalash — yangi kanal darrov paydo bo'lsin.
     try:
@@ -4608,9 +4716,12 @@ async def save_ch_id(msg: Message, state: FSMContext):
 
         invalidate_active_channels_cache()
     except Exception:
-        logger.exception("save_ch_id: failed to invalidate active channels cache")
+        logger.exception("_finalize_add_channel: failed to invalidate active channels cache")
 
     ch_type_label = "📰 News" if is_news else "🔒 Majburiy"
+    region_line = ""
+    if not is_news:
+        region_line = f"\n🌍 Region: <b>{esc(region_label(region) if region else 'Hammasi')}</b>"
     name_esc = esc(ch.channel_name)
     if status == "duplicate_mandatory":
         return await msg.answer(
@@ -4631,16 +4742,83 @@ async def save_ch_id(msg: Message, state: FSMContext):
         return await msg.answer(
             f"✅ <b>{name_esc}</b> ikkala kategoriyada ham faol:\n"
             f"   • {ch_type_label}  (yangi qo'shildi)\n"
-            f"   • {other}  (avval bor edi)\n"
+            f"   • {other}  (avval bor edi){region_line}\n"
             f"🆔 <code>{ch.channel_id}</code>",
             reply_markup=admin_main_kb,
             parse_mode="HTML",
         )
     await msg.answer(
-        f"✅ <b>{name_esc}</b> ({ch_type_label}) qo'shildi!\n🆔 <code>{ch.channel_id}</code>",
+        f"✅ <b>{name_esc}</b> ({ch_type_label}) qo'shildi!{region_line}\n🆔 <code>{ch.channel_id}</code>",
         reply_markup=admin_main_kb,
         parse_mode="HTML",
     )
+
+
+@admin_router.callback_query(F.data == "chreg_cancel", AddChannel.waiting_region_scope)
+@admin_router.callback_query(F.data == "chreg_cancel", AddChannel.waiting_region_pick)
+async def ch_region_cancel(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await call.message.edit_text("❌ Bekor.")
+    except Exception:
+        pass
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "chreg_all", AddChannel.waiting_region_scope)
+async def ch_region_all(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    data = await state.get_data()
+    await state.clear()
+    try:
+        await call.message.edit_text("✅ Region: Barcha viloyatlar")
+    except Exception:
+        pass
+    await _finalize_add_channel(
+        msg=call.message,
+        channel_name=data["channel_name"],
+        channel_url=data["channel_url"],
+        channel_id=int(data["channel_id"]),
+        is_news=False,
+        region=None,
+    )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "chreg_specific", AddChannel.waiting_region_scope)
+async def ch_region_specific(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(AddChannel.waiting_region_pick)
+    kb = region_picker_kb(callback_prefix="chregpick_", with_cancel=True, cancel_cb="chreg_cancel")
+    await call.message.edit_text("📍 Viloyatni tanlang:", reply_markup=kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data.startswith("chregpick_"), AddChannel.waiting_region_pick)
+async def ch_region_pick(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return
+    code = call.data.replace("chregpick_", "", 1)
+    if not is_valid_region(code):
+        return await call.answer("❌ Noto'g'ri region!", show_alert=True)
+    data = await state.get_data()
+    await state.clear()
+    try:
+        await call.message.edit_text(f"✅ Region: <b>{region_label(code)}</b>", parse_mode="HTML")
+    except Exception:
+        pass
+    await _finalize_add_channel(
+        msg=call.message,
+        channel_name=data["channel_name"],
+        channel_url=data["channel_url"],
+        channel_id=int(data["channel_id"]),
+        is_news=False,
+        region=code,
+    )
+    await call.answer()
 
 
 @admin_router.message(F.text == "🔙 Chiqish")
