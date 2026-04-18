@@ -7,9 +7,11 @@ Qo'shiladi:
   - animes.added_by_id, added_by_username, added_at
   - admins.added_by, added_at
 """
+
 import asyncio
-import asyncpg
 import os
+
+import asyncpg
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,15 +29,15 @@ SQL_STATEMENTS = [
     """,
     "CREATE INDEX IF NOT EXISTS ix_anisub_anime ON anime_subscriptions(anime_id)",
     "CREATE INDEX IF NOT EXISTS ix_anisub_user  ON anime_subscriptions(user_id)",
-
     # animes — kim qo'shgan
     "ALTER TABLE animes ADD COLUMN IF NOT EXISTS added_by_id       BIGINT       NULL",
     "ALTER TABLE animes ADD COLUMN IF NOT EXISTS added_by_username VARCHAR(100) NULL",
     "ALTER TABLE animes ADD COLUMN IF NOT EXISTS added_at          TIMESTAMP    DEFAULT NOW()",
-
     # admins — kim qo'shgan, qachon
     "ALTER TABLE admins ADD COLUMN IF NOT EXISTS added_by  BIGINT    NULL",
     "ALTER TABLE admins ADD COLUMN IF NOT EXISTS added_at  TIMESTAMP DEFAULT NOW()",
+    # admins — per-admin ruxsatlar (JSON list)
+    "ALTER TABLE admins ADD COLUMN IF NOT EXISTS permissions JSON NULL",
 ]
 
 

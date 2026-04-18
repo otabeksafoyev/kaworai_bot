@@ -85,6 +85,8 @@ class AdminProState(StatesGroup):
     waiting_user_id = State()
     waiting_pro_days = State()
     waiting_msg_text = State()
+    # Yangi admin qo'shayotganda ruxsatlarni tugmalar orqali tanlash
+    waiting_admin_perms = State()
 
 
 # 🔹 Episode qo‘shish — bot orqali birma-bir yoki bulk (auto-detect)

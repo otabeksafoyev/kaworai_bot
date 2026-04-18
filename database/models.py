@@ -91,6 +91,11 @@ class Admin(Base):
     telegram_id = Column(BigInteger, primary_key=True)
     nickname = Column(String(100), nullable=True)
     role = Column(String(20), default="admin")
+    # `permissions` — qaysi bo'limlardan foydalana oladi: JSON list (ruxsat
+    # kalitlari). Masalan: ["add_anime", "add_episode"]. Agar NULL bo'lsa
+    # (eski adminlar uchun) — backward-compat uchun "hammasi" deb qaraymiz.
+    # Ruxsat tekshiruvi: handlers/admin.py dagi `has_permission` helper.
+    permissions = Column(JSON, nullable=True)
     # added_by va added_at migration_v2.py ishlatilgandan keyin qo'shiladi
 
 

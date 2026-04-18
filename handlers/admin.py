@@ -60,7 +60,7 @@ ADMIN_REPLY_BUTTONS: set[str] = {
     "➕ Anime qo'shish",
     "🎞 Qism qo'shish",
     "🎌 Anime boshqaruv",
-    "📢 Kanal sozlamalari",
+    "📢 Kanallar",
     "📊 Statistika",
     "✉️ Xabar yuborish",
     "👑 Pro boshqaruv",
@@ -69,6 +69,95 @@ ADMIN_REPLY_BUTTONS: set[str] = {
     "🔙 Chiqish",
     "🚫 Bekor qilish",
 }
+
+# ─── Admin ruxsatlari (per-admin permissions) ─────────────────────────────
+#
+# Owner (`ADMIN_ID`) har doim hamma ruxsatga ega. Qo'shimcha adminlarga
+# owner tanlagan ruxsat bo'limlarigina ochiladi. Eski adminlar uchun
+# `permissions` NULL bo'lsa — backward-compatible tarzda hamma ruxsat
+# berilgan deb qaraladi (ekspluatatsiyada buzilmasin).
+
+PERMS_ALL: list[tuple[str, str]] = [
+    ("add_anime", "➕ Anime qo'shish"),
+    ("add_episode", "🎞 Qism qo'shish"),
+    ("anime_manage", "🎌 Anime boshqaruv"),
+    ("channels", "📢 Kanallar"),
+    ("stats", "📊 Statistika"),
+    ("broadcast", "✉️ Xabar yuborish"),
+    ("pro_manage", "👑 Pro boshqaruv"),
+    ("top18", "🏆 Top 18"),
+    ("backup", "🗄 Baza zaxira"),
+]
+PERMS_KEYS: set[str] = {k for k, _ in PERMS_ALL}
+
+# Reply tugma → ruxsat kaliti mapping (middleware'da tekshiramiz)
+_BUTTON_TO_PERM: dict[str, str] = {
+    "➕ Anime qo'shish": "add_anime",
+    "🎞 Qism qo'shish": "add_episode",
+    "🎌 Anime boshqaruv": "anime_manage",
+    "📢 Kanallar": "channels",
+    "📊 Statistika": "stats",
+    "✉️ Xabar yuborish": "broadcast",
+    "👑 Pro boshqaruv": "pro_manage",
+    "🏆 Top 18": "top18",
+    "🗄 Baza zaxira": "backup",
+}
+
+
+async def get_admin_perms(user_id: int) -> list[str] | None:
+    """
+    Adminni ruxsatlar ro'yxatini qaytaradi. Owner uchun `None` — "hamma"
+    degan ma'noda (tekshiruvlarda True). Adminda `permissions=NULL` bo'lsa
+    ham `None` qaytaramiz (eski ma'lumotlar uchun backward-compat).
+    Admin emas — bo'sh ro'yxat.
+    """
+    if _is_owner(user_id):
+        return None
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(select(Admin).where(Admin.telegram_id == user_id))).scalar_one_or_none()
+    if row is None:
+        return []
+    perms = getattr(row, "permissions", None)
+    if perms is None:
+        return None  # backward-compat: hammasi
+    # DB'dan list kutamiz; noto'g'ri tur kelsa — bo'sh
+    return [p for p in perms if isinstance(p, str)] if isinstance(perms, list) else []
+
+
+async def has_permission(user_id: int, perm: str) -> bool:
+    """Owner har doim True. Admin `permissions` NULL bo'lsa — True. Aks holda — ro'yxatda bo'lsa True."""
+    perms = await get_admin_perms(user_id)
+    if perms is None:
+        return True
+    return perm in perms
+
+
+def _perm_picker_kb(selected: list[str]) -> InlineKeyboardMarkup:
+    """Ruxsatlarni tugmalar orqali tanlash: ikki ustunli, ✅/▫️ toggle + Saqlash/Bekor."""
+    sel = set(selected or [])
+    rows: list[list[InlineKeyboardButton]] = []
+    pair: list[InlineKeyboardButton] = []
+    for key, label in PERMS_ALL:
+        mark = "✅" if key in sel else "▫️"
+        pair.append(InlineKeyboardButton(text=f"{mark} {label}", callback_data=f"perm_tog_{key}"))
+        if len(pair) == 2:
+            rows.append(pair)
+            pair = []
+    if pair:
+        rows.append(pair)
+    rows.append(
+        [
+            InlineKeyboardButton(text="☑️ Hammasi", callback_data="perm_all"),
+            InlineKeyboardButton(text="▫️ Tozalash", callback_data="perm_clear"),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(text="💾 Saqlash", callback_data="perm_save"),
+            InlineKeyboardButton(text="❌ Bekor", callback_data="perm_cancel"),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @admin_router.message.outer_middleware()
@@ -125,6 +214,27 @@ async def _admin_button_state_reset(handler, event, data):
                         event.from_user.id if event.from_user else None,
                         event.text,
                     )
+
+        # Ruxsat tekshiruvi — admin (owner emas) tugmani bossa-yu unga ruxsat
+        # berilmagan bo'lsa, handler'gacha o'tkazmaymiz va qisqa ogohlantirish
+        # ko'rsatamiz. Bu eng toza usul: har bir handler'ga `has_permission`
+        # qo'shmay, bitta joyda gating qilamiz.
+        perm_key = _BUTTON_TO_PERM.get(event.text)
+        if perm_key and event.from_user:
+            try:
+                if not await has_permission(event.from_user.id, perm_key):
+                    try:
+                        await event.answer("⛔ Sizda bu bo'limga ruxsat yo'q. Asosiy admin bilan bog'laning.")
+                    except Exception:
+                        logger.exception("admin middleware: no-perm reply failed")
+                    return  # handler'ga o'tkazmaymiz
+            except Exception:
+                # Ruxsat DB'sida xato bo'lsa ham tugmani bloklab qo'ymaymiz.
+                logger.exception(
+                    "admin middleware: has_permission() failed user=%s perm=%s",
+                    event.from_user.id,
+                    perm_key,
+                )
     return await handler(event, data)
 
 
@@ -299,10 +409,10 @@ async def _send_anime_post(
 admin_main_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Anime qo'shish"), KeyboardButton(text="🎞 Qism qo'shish")],
-        [KeyboardButton(text="🎌 Anime boshqaruv"), KeyboardButton(text="📢 Kanal sozlamalari")],
-        [KeyboardButton(text="📊 Statistika"), KeyboardButton(text="✉️ Xabar yuborish")],
-        [KeyboardButton(text="👑 Pro boshqaruv"), KeyboardButton(text="🏆 Top 18")],
-        [KeyboardButton(text="🗄 Baza zaxira"), KeyboardButton(text="🔙 Chiqish")],
+        [KeyboardButton(text="🎌 Anime boshqaruv"), KeyboardButton(text="📢 Kanallar")],
+        [KeyboardButton(text="👑 Pro boshqaruv"), KeyboardButton(text="✉️ Xabar yuborish")],
+        [KeyboardButton(text="🗄 Baza zaxira"), KeyboardButton(text="📊 Statistika")],
+        [KeyboardButton(text="🏆 Top 18"), KeyboardButton(text="🔙 Chiqish")],
     ],
     resize_keyboard=True,
 )
@@ -534,9 +644,37 @@ async def pm_id_received(msg: Message, state: FSMContext):
         if not _is_owner(msg.from_user.id):
             await state.clear()
             return await msg.answer("❌ Faqat owner!", reply_markup=admin_main_kb)
+        if _is_owner(target_id):
+            await state.clear()
+            return await msg.answer("⚠️ Bu foydalanuvchi allaqachon owner!", reply_markup=admin_main_kb)
+        async with AsyncSessionLocal() as session:
+            existing = await session.get(Admin, target_id)
+        if existing:
+            await state.clear()
+            return await msg.answer(
+                f"⚠️ <code>{target_id}</code> allaqachon admin! Ruxsatlarini o'zgartirish uchun "
+                "admin ro'yxatidan tanlang.",
+                parse_mode="HTML",
+                reply_markup=admin_main_kb,
+            )
         nickname = " ".join(parts[1:]) if len(parts) > 1 else None
-        await state.clear()
-        await _do_add_admin(msg, target_id, nickname)
+        # Standart boshlang'ich to'plami — eng xavfsiz minimum (faqat kontent
+        # qo'shish). Owner picker'da xohlagan tarzda o'zgartiradi.
+        initial = ["add_episode"]
+        await state.set_state(AdminProState.waiting_admin_perms)
+        await state.update_data(
+            perm_target_id=target_id,
+            perm_target_nick=nickname,
+            perm_selected=initial,
+            perm_edit_mode=False,
+        )
+        await msg.answer(
+            f"🔐 <b>Ruxsatlarni tanlang</b> — <code>{target_id}</code>"
+            + (f" ({esc(nickname)})" if nickname else "")
+            + "\n\nTugmalardan tanlang (✅ — ochiq, ▫️ — yopiq). Oxirida <b>Saqlash</b> bosing.",
+            parse_mode="HTML",
+            reply_markup=_perm_picker_kb(initial),
+        )
 
     elif action == "remove_admin":
         if not _is_owner(msg.from_user.id):
@@ -807,6 +945,14 @@ async def pm_pro_list(call: types.CallbackQuery):
     await call.answer()
 
 
+def _perms_short(perms: list[str] | None) -> str:
+    """Ro'yxatdagi adminlar uchun qisqa ko'rinish — '9/9', '3/9' yoki 'hammasi'."""
+    if perms is None:
+        return "hammasi"
+    total = len(PERMS_ALL)
+    return f"{len(perms)}/{total}"
+
+
 @admin_router.callback_query(F.data == "pm_admin_list")
 async def pm_admin_list(call: types.CallbackQuery):
     if not await is_admin(call.from_user.id):
@@ -819,24 +965,37 @@ async def pm_admin_list(call: types.CallbackQuery):
     owner_str = ", ".join(f"<code>{o}</code>" for o in ADMINS)
     text = f"👑 <b>Ownerlar:</b> {owner_str}\n\n"
 
+    kb_rows: list[list[InlineKeyboardButton]] = []
     if admins:
         text += f"🛠 <b>Adminlar ({len(admins)} ta):</b>\n\n"
         for i, a in enumerate(admins, 1):
             # Nickname odatda admin tomonidan yoziladi, lekin baribir
             # HTML injection'dan himoya uchun ekran qilamiz.
             nick = esc(a.nickname) if a.nickname else "—"
-            text += f"{i}. <code>{a.telegram_id}</code> — {nick} ({esc(a.role)})\n"
+            perms_val = getattr(a, "permissions", None)
+            perms_list = perms_val if isinstance(perms_val, list) else None
+            text += f"{i}. <code>{a.telegram_id}</code> — {nick} ({esc(a.role)}, ruxsat: {_perms_short(perms_list)})\n"
+            # Owner uchun har bir admin yonida "Ruxsatlarni tahrirlash" tugmasi
+            if _is_owner(call.from_user.id):
+                kb_rows.append(
+                    [
+                        InlineKeyboardButton(
+                            text=f"✏️ {a.telegram_id} ruxsatlari", callback_data=f"perm_edit_{a.telegram_id}"
+                        )
+                    ]
+                )
     else:
         text += "🛠 Qo'shimcha adminlar yo'q."
 
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows) if kb_rows else None
     try:
-        await call.message.edit_text(text, parse_mode="HTML")
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
     except Exception:
-        await call.message.answer(text, parse_mode="HTML")
+        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
     await call.answer()
 
 
-async def _do_add_admin(msg: Message, new_id: int, nickname: str | None):
+async def _do_add_admin(msg: Message, new_id: int, nickname: str | None, permissions: list[str] | None = None):
     if _is_owner(new_id):
         return await msg.answer("⚠️ Bu foydalanuvchi allaqachon owner!", reply_markup=admin_main_kb)
 
@@ -846,20 +1005,190 @@ async def _do_add_admin(msg: Message, new_id: int, nickname: str | None):
             return await msg.answer(
                 f"⚠️ <code>{new_id}</code> allaqachon admin!", parse_mode="HTML", reply_markup=admin_main_kb
             )
-        session.add(Admin(telegram_id=new_id, nickname=nickname, role="admin"))
+        # `permissions=None` — backward compat (eski mijozlar uchun "hammasi"
+        # degan semantika). Yangi flow har doim list yuboradi.
+        session.add(Admin(telegram_id=new_id, nickname=nickname, role="admin", permissions=permissions))
         await session.commit()
 
+    # Admin'ga bildirish — qanday bo'limlar ochilgan
+    if permissions is None:
+        perms_line = "hammasi"
+    elif not permissions:
+        perms_line = "hech qaysi (owner keyingroq ochadi)"
+    else:
+        label_map = {k: v for k, v in PERMS_ALL}
+        perms_line = ", ".join(label_map.get(p, p) for p in permissions)
     try:
         await msg.bot.send_message(
-            new_id, "✅ <b>Siz Kaworai botiga admin qilib qo'shildingiz!</b>\n\nAdmin panel: /admin", parse_mode="HTML"
+            new_id,
+            "✅ <b>Siz Kaworai botiga admin qilib qo'shildingiz!</b>\n\n"
+            f"🔐 <b>Ochiq bo'limlar:</b> {esc(perms_line)}\n\nAdmin panel: /admin",
+            parse_mode="HTML",
         )
     except Exception:
-        pass
+        logger.exception("_do_add_admin: new admin xabarni qabul qila olmadi")
 
     nick_str = f" ({nickname})" if nickname else ""
     await msg.answer(
-        f"✅ <code>{new_id}</code>{nick_str} admin qilindi!", parse_mode="HTML", reply_markup=admin_main_kb
+        f"✅ <code>{new_id}</code>{nick_str} admin qilindi!\n🔐 Ruxsatlar: {esc(perms_line)}",
+        parse_mode="HTML",
+        reply_markup=admin_main_kb,
     )
+
+
+# ─── Ruxsat picker: toggle / hammasi / tozalash / saqlash / bekor ───────
+
+
+@admin_router.callback_query(AdminProState.waiting_admin_perms, F.data.startswith("perm_tog_"))
+async def perm_toggle(call: types.CallbackQuery, state: FSMContext):
+    if not _is_owner(call.from_user.id):
+        return await call.answer("❌ Faqat owner!", show_alert=True)
+    key = call.data.replace("perm_tog_", "", 1)
+    if key not in PERMS_KEYS:
+        return await call.answer("Noma'lum ruxsat", show_alert=True)
+    data = await state.get_data()
+    selected: list[str] = list(data.get("perm_selected") or [])
+    if key in selected:
+        selected.remove(key)
+    else:
+        selected.append(key)
+    await state.update_data(perm_selected=selected)
+    try:
+        await call.message.edit_reply_markup(reply_markup=_perm_picker_kb(selected))
+    except Exception:
+        logger.exception("perm_toggle: edit_reply_markup xato")
+    await call.answer()
+
+
+@admin_router.callback_query(AdminProState.waiting_admin_perms, F.data == "perm_all")
+async def perm_all(call: types.CallbackQuery, state: FSMContext):
+    if not _is_owner(call.from_user.id):
+        return await call.answer("❌ Faqat owner!", show_alert=True)
+    selected = [k for k, _ in PERMS_ALL]
+    await state.update_data(perm_selected=selected)
+    try:
+        await call.message.edit_reply_markup(reply_markup=_perm_picker_kb(selected))
+    except Exception:
+        logger.exception("perm_all: edit_reply_markup xato")
+    await call.answer("Hammasi belgilandi")
+
+
+@admin_router.callback_query(AdminProState.waiting_admin_perms, F.data == "perm_clear")
+async def perm_clear(call: types.CallbackQuery, state: FSMContext):
+    if not _is_owner(call.from_user.id):
+        return await call.answer("❌ Faqat owner!", show_alert=True)
+    await state.update_data(perm_selected=[])
+    try:
+        await call.message.edit_reply_markup(reply_markup=_perm_picker_kb([]))
+    except Exception:
+        logger.exception("perm_clear: edit_reply_markup xato")
+    await call.answer("Tozalandi")
+
+
+@admin_router.callback_query(AdminProState.waiting_admin_perms, F.data == "perm_cancel")
+async def perm_cancel(call: types.CallbackQuery, state: FSMContext):
+    if not _is_owner(call.from_user.id):
+        return await call.answer("❌ Faqat owner!", show_alert=True)
+    await state.clear()
+    try:
+        await call.message.edit_text("❌ Bekor qilindi.")
+    except Exception:
+        await call.message.answer("❌ Bekor qilindi.", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(AdminProState.waiting_admin_perms, F.data == "perm_save")
+async def perm_save(call: types.CallbackQuery, state: FSMContext):
+    if not _is_owner(call.from_user.id):
+        return await call.answer("❌ Faqat owner!", show_alert=True)
+    data = await state.get_data()
+    target_id = data.get("perm_target_id")
+    selected: list[str] = list(data.get("perm_selected") or [])
+    # Noto'g'ri qiymatlarni filtrlaymiz
+    selected = [k for k in selected if k in PERMS_KEYS]
+    edit_mode: bool = bool(data.get("perm_edit_mode"))
+    nickname = data.get("perm_target_nick")
+    await state.clear()
+
+    if target_id is None:
+        return await call.answer("Target yo'q", show_alert=True)
+
+    if edit_mode:
+        # Mavjud admin'ning ruxsatlarini yangilash
+        async with AsyncSessionLocal() as session:
+            admin = await session.get(Admin, int(target_id))
+            if not admin:
+                try:
+                    await call.message.edit_text(f"❌ Admin <code>{target_id}</code> topilmadi.", parse_mode="HTML")
+                except Exception:
+                    await call.message.answer(f"❌ Admin {target_id} topilmadi.")
+                return await call.answer()
+            admin.permissions = selected
+            await session.commit()
+        label_map = {k: v for k, v in PERMS_ALL}
+        perms_line = ", ".join(label_map.get(p, p) for p in selected) if selected else "hech qaysi"
+        try:
+            await call.message.edit_text(
+                f"✅ <code>{target_id}</code> ruxsatlari yangilandi.\n🔐 {esc(perms_line)}",
+                parse_mode="HTML",
+            )
+        except Exception:
+            await call.message.answer(
+                f"✅ {target_id} ruxsatlari yangilandi.\n🔐 {perms_line}",
+                reply_markup=admin_main_kb,
+            )
+        # Admin'ga ogohlantirish
+        try:
+            await call.bot.send_message(
+                int(target_id),
+                f"🔐 <b>Ruxsatlaringiz yangilandi.</b>\nOchiq bo'limlar: {esc(perms_line)}",
+                parse_mode="HTML",
+            )
+        except Exception:
+            logger.exception("perm_save: admin'ga bildirib bo'lmadi")
+        await call.answer("Saqlandi")
+        return
+
+    # Yangi admin qo'shish
+    # Message'ni callback.message orqali yaratish — _do_add_admin Message kutadi
+    await _do_add_admin(call.message, int(target_id), nickname, permissions=selected)
+    await call.answer("Qo'shildi")
+
+
+@admin_router.callback_query(F.data.startswith("perm_edit_"))
+async def perm_edit_start(call: types.CallbackQuery, state: FSMContext):
+    """Mavjud adminni ruxsatlarini tahrirlash — pm_admin_list dan kelinadi."""
+    if not _is_owner(call.from_user.id):
+        return await call.answer("❌ Faqat owner!", show_alert=True)
+    try:
+        target_id = int(call.data.replace("perm_edit_", "", 1))
+    except ValueError:
+        return await call.answer("Noto'g'ri ID", show_alert=True)
+    async with AsyncSessionLocal() as session:
+        admin = await session.get(Admin, target_id)
+    if not admin:
+        return await call.answer("Admin topilmadi", show_alert=True)
+    perms_val = getattr(admin, "permissions", None)
+    initial = perms_val if isinstance(perms_val, list) else [k for k, _ in PERMS_ALL]
+    nickname = admin.nickname
+    await state.set_state(AdminProState.waiting_admin_perms)
+    await state.update_data(
+        perm_target_id=target_id,
+        perm_target_nick=nickname,
+        perm_selected=list(initial),
+        perm_edit_mode=True,
+    )
+    try:
+        await call.message.answer(
+            f"🔐 <b>Ruxsatlarni tahrirlash</b> — <code>{target_id}</code>"
+            + (f" ({esc(nickname)})" if nickname else "")
+            + "\n\nTugmalardan tanlang. Oxirida <b>Saqlash</b> bosing.",
+            parse_mode="HTML",
+            reply_markup=_perm_picker_kb(list(initial)),
+        )
+    except Exception:
+        logger.exception("perm_edit_start: xabar yuborish xato")
+    await call.answer()
 
 
 async def _do_remove_admin(msg: Message, target_id: int):
@@ -3497,14 +3826,35 @@ async def ep_got_to(msg: Message, state: FSMContext):
 
 async def _post_episode_to_secret(bot: Bot, anime_id: int, episode: int, file_id: str, is_document: bool):
     """
-    Videoni maxfiy kanalga `ID: X\nQism: Y` caption bilan yuboradi. Bu
-    yuborish `add_episode_from_channel` handlerini ishga tushiradi va u
-    bazaga qo'shadi — shu orqali qism qo'shishning yagona yo'lidan foydalanamiz.
+    Videoni maxfiy kanalga `ID: X\nQism: Y` caption bilan yuboradi — fayl
+    jurnali sifatida (keyinchalik kanal orqali qo'lda ham qo'shish mumkin
+    bo'lsin). Bazaga yozish esa shu yerda emas, `_save_episode_to_db` da
+    bajariladi: chunki bot o'z kanal postlarini har doim ham qayta
+    o'qiyolmaydi (`channel_post` handler ishlamay qolishi mumkin).
     """
     caption = f"ID: {anime_id}\nQism: {episode}"
     if is_document:
         return await bot.send_document(chat_id=SECRET_CHANNEL_ID, document=file_id, caption=caption)
     return await bot.send_video(chat_id=SECRET_CHANNEL_ID, video=file_id, caption=caption)
+
+
+async def _save_episode_to_db(anime_id: int, episode: int, file_id: str) -> tuple[bool, str, int]:
+    """
+    Bazaga qism yozadi. (ok, message, saved_episode) qaytaradi.
+    Agar anime topilmasa — (False, "...", 0).
+    Agar shu qism raqami allaqachon bo'lsa — max+1 ga siljitadi (mavjud flow
+    bilan mos). `saved_episode` — bazaga yozilgan haqiqiy raqam.
+    """
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+        if not anime:
+            return False, f"Anime ID {anime_id} topilmadi", 0
+        r = await session.execute(select(func.max(Series.episode)).where(Series.anime_id == anime_id))
+        last_ep = r.scalar() or 0
+        ep = episode if episode > last_ep else last_ep + 1
+        session.add(Series(anime_id=anime_id, episode=ep, file_id=file_id))
+        await session.commit()
+        return True, anime.title or str(anime_id), ep
 
 
 @admin_router.message(AddEpisodeState.waiting_single_video)
@@ -3521,14 +3871,18 @@ async def ep_single_got_video(msg: Message, state: FSMContext):
     current = int(data.get("ep_current") or data.get("ep_from") or 1)
     to_ep = int(data["ep_to"])
     file_id = msg.video.file_id if msg.video else msg.document.file_id
+    is_doc = bool(msg.document and not msg.video)
+    # 1) Bazaga yozamiz — bu asosiy manba, bot xatolariga qarshi ishonchli
+    ok, info, saved_ep = await _save_episode_to_db(anime_id, current, file_id)
+    if not ok:
+        return await msg.answer(f"❌ Bazaga yozib bo'lmadi: {info}")
+    # 2) Maxfiy kanalga fayl jurnali sifatida yuboramiz (xatosi — bu yerda
+    #    kritik emas, qism allaqachon bazada).
     try:
-        await _post_episode_to_secret(
-            msg.bot, anime_id, current, file_id, is_document=bool(msg.document and not msg.video)
-        )
-    except Exception as e:
-        logger.exception("ep_single: secret kanalga yuborib bo'lmadi")
-        return await msg.answer(f"❌ Maxfiy kanalga yuborib bo'lmadi: {e}")
-    await msg.answer(f"✅ {current}-qism qo'shildi!")
+        await _post_episode_to_secret(msg.bot, anime_id, saved_ep, file_id, is_document=is_doc)
+    except Exception:
+        logger.exception("ep_single: secret kanalga yuborib bo'lmadi (baza yozildi)")
+    await msg.answer(f"✅ {saved_ep}-qism qo'shildi!")
     next_ep = current + 1
     if next_ep > to_ep:
         await state.clear()
@@ -3741,19 +4095,30 @@ async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
             failed += 1
             errs.append("episode=None")
             continue
+        # 1) Bazaga yozish — asosiy manba
         try:
-            await _post_episode_to_secret(
-                call.bot, anime_id, int(ep), it["file_id"], is_document=bool(it.get("is_doc"))
-            )
-            ok += 1
+            saved_ok, info, saved_ep = await _save_episode_to_db(anime_id, int(ep), it["file_id"])
         except Exception as e:
-            logger.exception("ep_bulk_commit: yuborish xato")
+            logger.exception("ep_bulk_commit: baza yozish xato")
             failed += 1
             errs.append(str(e)[:120])
+            continue
+        if not saved_ok:
+            failed += 1
+            errs.append(info)
+            continue
+        # 2) Maxfiy kanalga jurnal — xatoga tushsa, qism baribir bazada
+        try:
+            await _post_episode_to_secret(
+                call.bot, anime_id, saved_ep, it["file_id"], is_document=bool(it.get("is_doc"))
+            )
+        except Exception:
+            logger.exception("ep_bulk_commit: secret kanalga yuborib bo'lmadi (baza yozildi)")
+        ok += 1
     await state.clear()
     txt = [
         "🏁 <b>Bulk tayyor</b>",
-        f"✅ Yuborildi: {ok}",
+        f"✅ Bazaga qo'shildi: {ok}",
     ]
     if failed:
         txt.append(f"❌ Xato: {failed}")
