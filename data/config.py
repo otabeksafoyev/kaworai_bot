@@ -30,6 +30,8 @@ SECRET_CHANNEL_ID = env.int("SECRET_CHANNEL_ID")
 # Bot orqali qism qo'shishda preview/stage kanal (admin ko'rib tasdiqlash uchun).
 # Agar 0 bo'lsa — preview bot DM'ida yuboriladi.
 PREVIEW_CHANNEL_ID = env.int("PREVIEW_CHANNEL_ID", 0)
+# Kunlik ZIP zaxira yuboriladigan kanal. 0 bo'lsa — kunlik zaxira o'chiq.
+BACKUP_CHANNEL_ID = env.int("BACKUP_CHANNEL_ID", 0)
 
 # Pro to'lov tizimi — maxfiy PII/moliya ma'lumotlari
 # Bularning hammasi .env orqali taqdim etilishi kerak.
