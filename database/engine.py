@@ -95,6 +95,8 @@ MIGRATIONS = [
     # Admins — qo'shimcha
     "ALTER TABLE admins ADD COLUMN IF NOT EXISTS added_by BIGINT",
     "ALTER TABLE admins ADD COLUMN IF NOT EXISTS added_at TIMESTAMP DEFAULT NOW()",
+    # Admins — per-admin ruxsatlar (PR #19, JSON list: ["add_anime", ...])
+    "ALTER TABLE admins ADD COLUMN IF NOT EXISTS permissions JSON",
     # AnimeSubscription jadvali
     """
     CREATE TABLE IF NOT EXISTS anime_subscriptions (
