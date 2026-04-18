@@ -370,17 +370,35 @@ async def _send_anime_post(
     msg: Message = None,
     extra_button: dict | None = None,
     custom_caption: str | None = None,
+    media_kind: str = "auto",
 ) -> bool:
     """
-    Kanalga anime post yuboradi — poster + treyler.
+    Kanalga anime post yuboradi — POSTER yoki TREYLER (hech qachon ikkalasi ham birga emas).
+
+    `media_kind`:
+      - "poster"  → faqat poster (agar mavjud bo'lsa), aks holda matn
+      - "trailer" → faqat treyler video (agar mavjud bo'lsa), aks holda matn
+      - "text"    → faqat matn
+      - "auto"    → poster bor bo'lsa poster, aks holda treyler, aks holda matn
+
     `extra_button`: ixtiyoriy {"text": ..., "url": ...} — "Ko'rish" oldidan
     qo'shimcha button chiqadi. `custom_caption`: bo'lmasa
     `_build_post_caption` avto tuziladi.
     """
     caption = custom_caption if custom_caption is not None else _build_post_caption(anime)
     watch_kb = _watch_kb(anime.id, extra_button=extra_button)
-    try:
+
+    kind = (media_kind or "auto").lower()
+    if kind == "auto":
         if anime.poster_file_id:
+            kind = "poster"
+        elif anime.trailer_file_id:
+            kind = "trailer"
+        else:
+            kind = "text"
+
+    try:
+        if kind == "poster" and anime.poster_file_id:
             await bot.send_photo(
                 chat_id=ch.channel_id,
                 photo=anime.poster_file_id,
@@ -388,15 +406,17 @@ async def _send_anime_post(
                 reply_markup=watch_kb,
                 parse_mode="HTML",
             )
-        else:
-            await bot.send_message(chat_id=ch.channel_id, text=caption, reply_markup=watch_kb, parse_mode="HTML")
-        if anime.trailer_file_id:
+        elif kind == "trailer" and anime.trailer_file_id:
             await bot.send_video(
                 chat_id=ch.channel_id,
                 video=anime.trailer_file_id,
-                caption=f"🎬 <b>{anime.title}</b> — Treyler",
+                caption=caption,
+                reply_markup=watch_kb,
                 parse_mode="HTML",
             )
+        else:
+            # Tanlangan media mavjud emas yoki "text" — faqat matn yuboramiz.
+            await bot.send_message(chat_id=ch.channel_id, text=caption, reply_markup=watch_kb, parse_mode="HTML")
         return True
     except Exception as e:
         if msg:
@@ -1254,7 +1274,7 @@ async def _show_anime_info(msg: Message, anime_id: int):
                 InlineKeyboardButton(text="🔒 Pro-lock toggle", callback_data=f"adm_prolock_{anime_id}"),
                 InlineKeyboardButton(text="💎 HGem toggle", callback_data=f"adm_hgem_{anime_id}"),
             ],
-            [InlineKeyboardButton(text="📢 Kanalga post", callback_data=f"postch_all_{anime_id}")],
+            [InlineKeyboardButton(text="📢 Kanalga post", callback_data=f"postpick_{anime_id}")],
         ]
     )
 
@@ -2535,6 +2555,26 @@ async def send_to_channel_with_media(call: types.CallbackQuery):
     except Exception:
         await call.message.answer(f"✅ {sent} ta kanalga yuborildi!")
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data.startswith("postpick_"))
+async def postpick_media(call: types.CallbackQuery):
+    """Anime post tugmasi — poster/treyler tanlash menyusini ochadi.
+
+    Ikkisi bir vaqtda hech qachon yuborilmaydi: admin bittasini tanlaydi.
+    """
+    if not await is_admin(call.from_user.id):
+        return
+    try:
+        anime_id = int(call.data.replace("postpick_", ""))
+    except ValueError:
+        return await call.answer("Xato", show_alert=True)
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+    if not anime:
+        return await call.answer("❌ Topilmadi!", show_alert=True)
+    await _ask_send_to_channel(call.message, call.bot, anime)
     await call.answer()
 
 

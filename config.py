@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     SECRET_CHANNEL_ID: int = 0
     NEWS_CHANNEL_ID: int = 0
     PREVIEW_CHANNEL_ID: int = 0
+    # Kunlik ZIP zaxira yuboriladigan kanal. 0 bo'lsa — kunlik zaxira o'chiq.
+    BACKUP_CHANNEL_ID: int = 0
 
     # ── Pro to'lov tizimi (.env orqali majburiy) ─────────────
     PAYMENT_CHANNEL_ID: int

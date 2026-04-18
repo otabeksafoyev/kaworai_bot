@@ -5,6 +5,7 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from data.config import BACKUP_CHANNEL_ID
 from database.engine import init_db
 from handlers.admin import admin_router
 from handlers.admin_pro import pro_admin_router
@@ -18,6 +19,11 @@ from handlers.users_pro import pro_user_router
 from loader import bot, dp
 from middlewares.subscription import SubscriptionMiddleware
 from middlewares.throttling import ThrottlingMiddleware
+from utils.daily_backup import daily_backup_loop
+
+# Fon task'larga reference — asyncio.create_task natijasini shu yerda saqlaymiz,
+# aks holda GC ularni erta to'xtatib qo'yishi mumkin (RUF006).
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
 async def on_startup():
@@ -28,6 +34,15 @@ async def on_startup():
     except Exception as e:
         logging.error(f"Bazani yaratishda jiddiy xato: {e}")
         sys.exit(1)
+
+    # Kunlik ZIP zaxira scheduler — alohida fon task sifatida ishlaydi.
+    # BACKUP_CHANNEL_ID=0 bo'lsa loop o'zi darrov chiqadi (no-op).
+    if BACKUP_CHANNEL_ID:
+        # Task reference saqlanadi (RUF006) — GC tomonidan erta to'xtatilmasligi uchun.
+        _BACKGROUND_TASKS.add(asyncio.create_task(daily_backup_loop(bot)))
+        logging.info("Kunlik zaxira scheduler ishga tushirildi (kanal=%s)", BACKUP_CHANNEL_ID)
+    else:
+        logging.info("BACKUP_CHANNEL_ID=0 — kunlik zaxira o'chiq")
 
 
 async def main():
