@@ -1,9 +1,18 @@
+import re
 from datetime import datetime
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Admin, Anime, AnimeRating, AnimeSubscription, Series, SubscriptionChannel, User
+
+_SEASON_SUFFIX_RE = re.compile(r"\s+\d+\s*-?\s*fasl\s*$", re.IGNORECASE)
+
+
+def strip_season_suffix(title: str) -> str:
+    """'Naruto 2-fasl' → 'Naruto'. Fasl qo'shimchasi bo'lmasa — o'zi."""
+    return _SEASON_SUFFIX_RE.sub("", title or "").strip()
+
 
 # ═══════════════════════════════════════════════════════════
 #  USER
@@ -182,6 +191,31 @@ async def get_anime_by_id(session: AsyncSession, anime_id: int) -> Anime | None:
 async def get_all_animes(session: AsyncSession) -> list:
     result = await session.execute(select(Anime).order_by(Anime.id.desc()))
     return result.scalars().all()
+
+
+async def find_next_season_anime(session: AsyncSession, anime_id: int) -> Anime | None:
+    """Shu anime uchun keyingi fasl (bir xil asosiy nom + season+1).
+
+    Topilmasa — None. 1-faslni ko'rib tugatgan user avtomatik 2-faslga
+    o'tishni taklif etish uchun ishlatiladi.
+    """
+    anime = await session.get(Anime, anime_id)
+    if not anime:
+        return None
+    base_title = strip_season_suffix(anime.title or "").lower()
+    if not base_title:
+        return None
+    current_season = int(getattr(anime, "season", 1) or 1)
+    next_season = current_season + 1
+    # Seasonga mos kelgan kontentlarni olamiz, keyin title bo'yicha aniq
+    # solishtiramiz (fasl qo'shimchasisiz). Bu case-insensitive.
+    result = await session.execute(select(Anime).where(Anime.season == next_season))
+    for candidate in result.scalars().all():
+        if candidate.id == anime.id:
+            continue
+        if strip_season_suffix(candidate.title or "").lower() == base_title:
+            return candidate
+    return None
 
 
 async def get_animes_by_owner(session: AsyncSession, owner_id: int | None) -> list:
