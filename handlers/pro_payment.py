@@ -112,10 +112,11 @@ def _page1_text() -> str:
 
 
 def _page1_kb() -> InlineKeyboardMarkup:
+    # Bot API 9.4 style ranglari: success=yashil (sotib olish), primary=ko'k (menyu).
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🟢 Sotib olish", callback_data="pro_page2")],
-            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")],
+            [InlineKeyboardButton(text="🟢 Sotib olish", callback_data="pro_page2", style="success")],
+            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")],
         ]
     )
 
@@ -136,18 +137,19 @@ def _page2_text() -> str:
 
 
 def _page2_kb() -> InlineKeyboardMarkup:
+    # Tarif tanlash — success (yashil), ortga — primary (ko'k).
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="❤️ 1 oylik", callback_data="pro_plan_1")],
+            [InlineKeyboardButton(text="❤️ 1 oylik", callback_data="pro_plan_1", style="success")],
             [
-                InlineKeyboardButton(text="🔥 2 oylik (-11%)", callback_data="pro_plan_2"),
-                InlineKeyboardButton(text="❤️‍🔥 3 oylik (-22%)", callback_data="pro_plan_3"),
+                InlineKeyboardButton(text="🔥 2 oylik (-11%)", callback_data="pro_plan_2", style="success"),
+                InlineKeyboardButton(text="❤️‍🔥 3 oylik (-22%)", callback_data="pro_plan_3", style="success"),
             ],
             [
-                InlineKeyboardButton(text="⚡ 6 oylik (-28%)", callback_data="pro_plan_6"),
-                InlineKeyboardButton(text="🌙 1 yillik (-40%)", callback_data="pro_plan_12"),
+                InlineKeyboardButton(text="⚡ 6 oylik (-28%)", callback_data="pro_plan_6", style="success"),
+                InlineKeyboardButton(text="🌙 1 yillik (-40%)", callback_data="pro_plan_12", style="success"),
             ],
-            [InlineKeyboardButton(text="🔙 Ortga", callback_data="pro_page1")],
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data="pro_page1", style="primary")],
         ]
     )
 
@@ -182,8 +184,14 @@ def _page3_text(plan_key: str) -> str:
 def _page3_kb(plan_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📸 Chekni yuborish", callback_data=f"pro_send_receipt_{plan_key}")],
-            [InlineKeyboardButton(text="🔙 Ortga", callback_data="pro_page2")],
+            [
+                InlineKeyboardButton(
+                    text="📸 Chekni yuborish",
+                    callback_data=f"pro_send_receipt_{plan_key}",
+                    style="success",
+                )
+            ],
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data="pro_page2", style="primary")],
         ]
     )
 
@@ -204,7 +212,7 @@ def _page4_text() -> str:
 def _page4_kb(plan_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Ortga", callback_data=f"pro_plan_{plan_key}")],
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data=f"pro_plan_{plan_key}", style="primary")],
         ]
     )
 
@@ -227,13 +235,22 @@ def _admin_caption(user_id: int, username, full_name: str, plan_key: str) -> str
 
 
 def _admin_kb(user_id: int, plan_key: str) -> InlineKeyboardMarkup:
+    # Tasdiqlash — success (yashil), rad etish — danger (qizil), xabar — primary (ko'k).
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"pro_confirm_{user_id}_{plan_key}"),
-                InlineKeyboardButton(text="❌ Tasdiqlanmadi", callback_data=f"pro_reject_{user_id}_{plan_key}"),
+                InlineKeyboardButton(
+                    text="✅ Tasdiqlash",
+                    callback_data=f"pro_confirm_{user_id}_{plan_key}",
+                    style="success",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Tasdiqlanmadi",
+                    callback_data=f"pro_reject_{user_id}_{plan_key}",
+                    style="danger",
+                ),
             ],
-            [InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}")],
+            [InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}", style="primary")],
         ]
     )
 
@@ -278,25 +295,26 @@ async def _show_pro_active_menu(call: CallbackQuery):
         if user and user.pro_until:
             until_str = f"\n📅 Pro tugash sanasi: <b>{user.pro_until.strftime('%d.%m.%Y')}</b>"
 
+    # Pro aktiv menyu — barchasi success (yashil), chiqish primary (ko'k).
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🤖 AI Tavsiyalar", callback_data="pro_recommend"),
-                InlineKeyboardButton(text="😌 Kayfiyatim", callback_data="pro_mood"),
+                InlineKeyboardButton(text="🤖 AI Tavsiyalar", callback_data="pro_recommend", style="success"),
+                InlineKeyboardButton(text="😌 Kayfiyatim", callback_data="pro_mood", style="success"),
             ],
             [
-                InlineKeyboardButton(text="🔥 Trending", callback_data="pro_trending"),
-                InlineKeyboardButton(text="⭐ Top reyting", callback_data="pro_top"),
+                InlineKeyboardButton(text="🔥 Trending", callback_data="pro_trending", style="success"),
+                InlineKeyboardButton(text="⭐ Top reyting", callback_data="pro_top", style="success"),
             ],
             [
-                InlineKeyboardButton(text="📈 Rising", callback_data="pro_rising"),
-                InlineKeyboardButton(text="💎 Hidden Gems", callback_data="pro_hidden"),
+                InlineKeyboardButton(text="📈 Rising", callback_data="pro_rising", style="success"),
+                InlineKeyboardButton(text="💎 Hidden Gems", callback_data="pro_hidden", style="success"),
             ],
             [
-                InlineKeyboardButton(text="▶️ Davom ettirish", callback_data="pro_continue"),
-                InlineKeyboardButton(text="👤 Mening didim", callback_data="pro_taste"),
+                InlineKeyboardButton(text="▶️ Davom ettirish", callback_data="pro_continue", style="success"),
+                InlineKeyboardButton(text="👤 Mening didim", callback_data="pro_taste", style="success"),
             ],
-            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")],
+            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")],
         ]
     )
 

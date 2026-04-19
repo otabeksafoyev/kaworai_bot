@@ -58,6 +58,10 @@ class Anime(Base):
     popularity_score = Column(Float, default=0.0)
     is_hidden_gem = Column(Boolean, default=False)
     is_pro_locked = Column(Boolean, default=False)
+    # Kontent egasi (owner) — bosh admin uchun NULL, hamkor qo'shgan
+    # kontentda uning telegram_id si. Hamkor faqat o'z kontentini ko'radi,
+    # tahrirlaydi, o'chiradi. Bosh admin hammasini ko'radi.
+    owner_id = Column(BigInteger, nullable=True, index=True)
     # Migration orqali qo'shiladi (migration_v2.py)
     # added_by_id, added_by_username, added_at
 
@@ -116,6 +120,10 @@ class SubscriptionChannel(Base):
     # NULL = hamma uchun; aks holda faqat shu viloyat foydalanuvchilarga
     # tekshiruv qo'llaniladi. News va optional kanallarga ta'sir qilmaydi.
     region = Column(String(40), nullable=True)
+    # Kanal egasi. NULL = global (bosh admin qo'shgan, hamma userga
+    # qo'llaniladi). Hamkor telegram_id'si bo'lsa — bu kanal faqat shu
+    # hamkor qo'shgan kontent ochilganida tekshiriladi.
+    owner_id = Column(BigInteger, nullable=True, index=True)
 
 
 class AnimeSubscription(Base):
