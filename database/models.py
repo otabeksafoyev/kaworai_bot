@@ -28,6 +28,14 @@ class User(Base):
     # Foydalanuvchi tanlagan viloyat kodi (masalan `tashkent_city`).
     # NULL = hali tanlanmagan. Birinchi /start'da so'raladi.
     region = Column(String(40), nullable=True)
+    # Re-engagement (qayta-faollashtirish) tizimi:
+    #   last_active      — userning oxirgi aktivligi (har xabar/callback'da yangilanadi).
+    #   last_reminder_at — eslatma xabari oxirgi yuborilgan vaqt (NULL = hech qachon).
+    #   reminder_stage   — qaysi bosqichdagi eslatma: 0=hech, 1=21-kun, 2=24-kun,
+    #                     3=30-kun, 4=45-kun, 5=sukut (60+ kun).
+    last_active = Column(DateTime, server_default=func.now(), index=True)
+    last_reminder_at = Column(DateTime, nullable=True)
+    reminder_stage = Column(Integer, default=0)
 
     watch_history = relationship("UserWatchHistory", back_populates="user", cascade="all, delete-orphan")
     taste_profile = relationship("UserTasteProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -62,6 +70,14 @@ class Anime(Base):
     # kontentda uning telegram_id si. Hamkor faqat o'z kontentini ko'radi,
     # tahrirlaydi, o'chiradi. Bosh admin hammasini ko'radi.
     owner_id = Column(BigInteger, nullable=True, index=True)
+    # Psixologik daraja (0..10). `Psixologik` janri tanlangan kontent uchun
+    # admin qo'lda kiritadi — Pro AI tavsiyalari shu daraja bilan aniqroq
+    # moslaydi. NULL = hali kiritilmagan (eski ma'lumotlar yoki boshqa janr).
+    psychological_level = Column(Integer, nullable=True)
+    # Fasl raqami. 1 = birinchi fasl (default). Bir xil nomdagi kontentni
+    # qayta qo'shishda admin 2,3,... fasl deb belgilaydi; shu raqam title'ga
+    # avto-qo'shilib saqlanadi (masalan "Naruto 2-fasl").
+    season = Column(Integer, default=1)
     # Migration orqali qo'shiladi (migration_v2.py)
     # added_by_id, added_by_username, added_at
 

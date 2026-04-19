@@ -106,6 +106,14 @@ MIGRATIONS = [
     "ALTER TABLE channels ADD COLUMN IF NOT EXISTS owner_id BIGINT",
     "CREATE INDEX IF NOT EXISTS ix_animes_owner ON animes(owner_id)",
     "CREATE INDEX IF NOT EXISTS ix_channels_owner ON channels(owner_id)",
+    # Anime — psixologik daraja (0..10) va fasl raqami
+    "ALTER TABLE animes ADD COLUMN IF NOT EXISTS psychological_level INTEGER",
+    "ALTER TABLE animes ADD COLUMN IF NOT EXISTS season INTEGER DEFAULT 1",
+    # Users — re-engagement (qayta-faollashtirish) uchun maydonlar
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active TIMESTAMP DEFAULT NOW()",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMP",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS reminder_stage INTEGER DEFAULT 0",
+    "CREATE INDEX IF NOT EXISTS ix_users_last_active ON users(last_active)",
     # AnimeSubscription jadvali
     """
     CREATE TABLE IF NOT EXISTS anime_subscriptions (

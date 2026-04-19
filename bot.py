@@ -20,6 +20,7 @@ from loader import bot, dp
 from middlewares.subscription import SubscriptionMiddleware
 from middlewares.throttling import ThrottlingMiddleware
 from utils.daily_backup import daily_backup_loop
+from utils.reengagement import reengagement_loop, reengagement_router
 
 # Fon task'larga reference — asyncio.create_task natijasini shu yerda saqlaymiz,
 # aks holda GC ularni erta to'xtatib qo'yishi mumkin (RUF006).
@@ -43,6 +44,11 @@ async def on_startup():
         logging.info("Kunlik zaxira scheduler ishga tushirildi (kanal=%s)", BACKUP_CHANNEL_ID)
     else:
         logging.info("BACKUP_CHANNEL_ID=0 — kunlik zaxira o'chiq")
+
+    # Re-engagement (qayta-faollashtirish) scheduler — har 24 soatda
+    # uzoq vaqt faol bo'lmagan userlarga yumshoq eslatma yuboradi.
+    _BACKGROUND_TASKS.add(asyncio.create_task(reengagement_loop(bot)))
+    logging.info("Re-engagement scheduler ishga tushirildi")
 
 
 async def main():
@@ -70,6 +76,7 @@ async def main():
     dp.include_router(callback_router)
     dp.include_router(inline_router)
     dp.include_router(genre_router)
+    dp.include_router(reengagement_router)
 
     # Throttling middleware — foydalanuvchi spam / brute-force qilishining
     # oldini oladi. Handler qabul qilinganidan oldin ishga tushadi, shuning
