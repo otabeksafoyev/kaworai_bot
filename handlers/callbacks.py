@@ -567,8 +567,12 @@ async def show_problems_menu(call: CallbackQuery):
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔊 Ovoz tezlashib ketgan", callback_data=f"prob_speed_{anime_id}_{episode}")],
-            [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"ep_{anime_id}_{episode}")],
+            [
+                InlineKeyboardButton(
+                    text="🔊 Ovoz tezlashib ketgan", callback_data=f"prob_speed_{anime_id}_{episode}", style="primary"
+                )
+            ],
+            [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"ep_{anime_id}_{episode}", style="primary")],
         ]
     )
     try:
@@ -603,7 +607,9 @@ async def problem_speed(call: CallbackQuery):
         )
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"problems_{anime_id}_{episode}")]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"problems_{anime_id}_{episode}", style="primary")]
+        ]
     )
     try:
         await call.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
@@ -628,13 +634,13 @@ async def rate_anime(call: CallbackQuery):
     rows = []
     row = []
     for i in range(1, 11):
-        row.append(InlineKeyboardButton(text=str(i), callback_data=f"score_{anime_id}_{i}"))
+        row.append(InlineKeyboardButton(text=str(i), callback_data=f"score_{anime_id}_{i}", style="primary"))
         if len(row) == 5:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
-    rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data=f"ep_{anime_id}_cancel")])
+    rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data=f"ep_{anime_id}_cancel", style="danger")])
 
     await call.message.answer(
         "⭐ <b>Baho bering (1-10):</b>", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="HTML"

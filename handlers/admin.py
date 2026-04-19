@@ -151,7 +151,7 @@ def _perm_picker_kb(selected: list[str]) -> InlineKeyboardMarkup:
     pair: list[InlineKeyboardButton] = []
     for key, label in PERMS_ALL:
         mark = "✅" if key in sel else "▫️"
-        pair.append(InlineKeyboardButton(text=f"{mark} {label}", callback_data=f"perm_tog_{key}"))
+        pair.append(InlineKeyboardButton(text=f"{mark} {label}", callback_data=f"perm_tog_{key}", style="primary"))
         if len(pair) == 2:
             rows.append(pair)
             pair = []
@@ -159,14 +159,14 @@ def _perm_picker_kb(selected: list[str]) -> InlineKeyboardMarkup:
         rows.append(pair)
     rows.append(
         [
-            InlineKeyboardButton(text="☑️ Hammasi", callback_data="perm_all"),
-            InlineKeyboardButton(text="▫️ Tozalash", callback_data="perm_clear"),
+            InlineKeyboardButton(text="☑️ Hammasi", callback_data="perm_all", style="success"),
+            InlineKeyboardButton(text="▫️ Tozalash", callback_data="perm_clear", style="primary"),
         ]
     )
     rows.append(
         [
-            InlineKeyboardButton(text="💾 Saqlash", callback_data="perm_save"),
-            InlineKeyboardButton(text="❌ Bekor", callback_data="perm_cancel"),
+            InlineKeyboardButton(text="💾 Saqlash", callback_data="perm_save", style="success"),
+            InlineKeyboardButton(text="❌ Bekor", callback_data="perm_cancel", style="danger"),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -296,8 +296,8 @@ def _yn_kb(yes_cb: str, no_cb: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Ha", callback_data=yes_cb),
-                InlineKeyboardButton(text="❌ Yo'q", callback_data=no_cb),
+                InlineKeyboardButton(text="✅ Ha", callback_data=yes_cb, style="success"),
+                InlineKeyboardButton(text="❌ Yo'q", callback_data=no_cb, style="danger"),
             ]
         ]
     )
@@ -305,7 +305,7 @@ def _yn_kb(yes_cb: str, no_cb: str) -> InlineKeyboardMarkup:
 
 def _skip_kb(skip_cb: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="⏭ O'tkazib yuborish", callback_data=skip_cb)]]
+        inline_keyboard=[[InlineKeyboardButton(text="⏭ O'tkazib yuborish", callback_data=skip_cb, style="primary")]]
     )
 
 
@@ -322,8 +322,8 @@ def _watch_kb(anime_id, extra_button: dict | None = None) -> InlineKeyboardMarku
     """
     rows: list[list[InlineKeyboardButton]] = []
     if extra_button and extra_button.get("text") and extra_button.get("url"):
-        rows.append([InlineKeyboardButton(text=extra_button["text"], url=extra_button["url"])])
-    rows.append([InlineKeyboardButton(text="🧧 Ko'rish", url=_watch_url(anime_id))])
+        rows.append([InlineKeyboardButton(text=extra_button["text"], url=extra_button["url"], style="primary")])
+    rows.append([InlineKeyboardButton(text="🧧 Ko'rish", url=_watch_url(anime_id), style="success")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -495,29 +495,29 @@ cancel_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="🚫 Bekor qilis
 
 ADD_STATUS_KB = InlineKeyboardMarkup(
     inline_keyboard=[
-        [InlineKeyboardButton(text="📡 Davom etmoqda", callback_data="addstatus_ongoing")],
-        [InlineKeyboardButton(text="✅ Tugagan", callback_data="addstatus_completed")],
-        [InlineKeyboardButton(text="📢 Kutilmoqda", callback_data="addstatus_announced")],
+        [InlineKeyboardButton(text="📡 Davom etmoqda", callback_data="addstatus_ongoing", style="success")],
+        [InlineKeyboardButton(text="✅ Tugagan", callback_data="addstatus_completed", style="success")],
+        [InlineKeyboardButton(text="📢 Kutilmoqda", callback_data="addstatus_announced", style="success")],
     ]
 )
 
 EDIT_STATUS_KB = InlineKeyboardMarkup(
     inline_keyboard=[
-        [InlineKeyboardButton(text="📡 Davom etmoqda", callback_data="editstatus_ongoing")],
-        [InlineKeyboardButton(text="✅ Tugagan", callback_data="editstatus_completed")],
-        [InlineKeyboardButton(text="📢 Kutilmoqda", callback_data="editstatus_announced")],
+        [InlineKeyboardButton(text="📡 Davom etmoqda", callback_data="editstatus_ongoing", style="success")],
+        [InlineKeyboardButton(text="✅ Tugagan", callback_data="editstatus_completed", style="success")],
+        [InlineKeyboardButton(text="📢 Kutilmoqda", callback_data="editstatus_announced", style="success")],
     ]
 )
 
 TYPE_KB = InlineKeyboardMarkup(
     inline_keyboard=[
         [
-            InlineKeyboardButton(text="🎌 Anime", callback_data="atype_anime"),
-            InlineKeyboardButton(text="🎥 Kino", callback_data="atype_movie"),
+            InlineKeyboardButton(text="🎌 Anime", callback_data="atype_anime", style="success"),
+            InlineKeyboardButton(text="🎥 Kino", callback_data="atype_movie", style="success"),
         ],
         [
-            InlineKeyboardButton(text="📺 Serial", callback_data="atype_serial"),
-            InlineKeyboardButton(text="🌸 Dorama", callback_data="atype_dorama"),
+            InlineKeyboardButton(text="📺 Serial", callback_data="atype_serial", style="success"),
+            InlineKeyboardButton(text="🌸 Dorama", callback_data="atype_dorama", style="success"),
         ],
     ]
 )
@@ -616,22 +616,22 @@ async def pro_manage_menu(msg: Message):
         return
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 User qidirish (ID)", callback_data="pm_user_info")],
-            [InlineKeyboardButton(text="✅ Pro berish", callback_data="pm_set_pro")],
-            [InlineKeyboardButton(text="❌ Pro olish", callback_data="pm_remove_pro")],
-            [InlineKeyboardButton(text="⭐ Pro userlar ro'yxati", callback_data="pm_pro_list")],
-            [InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━", callback_data="pm_sep")],
+            [InlineKeyboardButton(text="🔍 User qidirish (ID)", callback_data="pm_user_info", style="success")],
+            [InlineKeyboardButton(text="✅ Pro berish", callback_data="pm_set_pro", style="success")],
+            [InlineKeyboardButton(text="❌ Pro olish", callback_data="pm_remove_pro", style="danger")],
+            [InlineKeyboardButton(text="⭐ Pro userlar ro'yxati", callback_data="pm_pro_list", style="primary")],
+            [InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━", callback_data="pm_sep", style="primary")],
             [InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="pm_add_admin", style="success")],
             [InlineKeyboardButton(text="🗑 Admin o'chirish", callback_data="pm_remove_admin", style="danger")],
             [InlineKeyboardButton(text="👥 Adminlar ro'yxati", callback_data="pm_admin_list", style="primary")],
-            [InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━", callback_data="pm_sep")],
+            [InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━", callback_data="pm_sep", style="primary")],
             [InlineKeyboardButton(text="🤝 Hamkor qo'shish", callback_data="pm_add_partner", style="success")],
             [InlineKeyboardButton(text="🗑 Hamkor o'chirish", callback_data="pm_remove_partner", style="danger")],
             [InlineKeyboardButton(text="📋 Hamkorlar ro'yxati", callback_data="pm_partner_list", style="primary")],
-            [InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━", callback_data="pm_sep")],
-            [InlineKeyboardButton(text="📋 Kontent info (ID)", callback_data="pm_anime_info")],
-            [InlineKeyboardButton(text="📊 Pro statistika", callback_data="pm_stats")],
-            [InlineKeyboardButton(text="❌ Yopish", callback_data="pm_close")],
+            [InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━", callback_data="pm_sep", style="primary")],
+            [InlineKeyboardButton(text="📋 Kontent info (ID)", callback_data="pm_anime_info", style="primary")],
+            [InlineKeyboardButton(text="📊 Pro statistika", callback_data="pm_stats", style="primary")],
+            [InlineKeyboardButton(text="❌ Yopish", callback_data="pm_close", style="danger")],
         ]
     )
     await msg.answer("👑 <b>Pro Boshqaruv</b>", reply_markup=kb, parse_mode="HTML")
@@ -1022,15 +1022,15 @@ async def _show_user_info(msg: Message, user_id: int):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ 30 kun Pro", callback_data=f"adm_pro30_{user_id}"),
-                InlineKeyboardButton(text="✅ 90 kun Pro", callback_data=f"adm_pro90_{user_id}"),
+                InlineKeyboardButton(text="✅ 30 kun Pro", callback_data=f"adm_pro30_{user_id}", style="success"),
+                InlineKeyboardButton(text="✅ 90 kun Pro", callback_data=f"adm_pro90_{user_id}", style="success"),
             ],
-            [InlineKeyboardButton(text="❌ Pro olish", callback_data=f"adm_remvpro_{user_id}")],
+            [InlineKeyboardButton(text="❌ Pro olish", callback_data=f"adm_remvpro_{user_id}", style="danger")],
             [
-                InlineKeyboardButton(text="📉 7 kun qisq.", callback_data=f"adm_reduce7_{user_id}"),
-                InlineKeyboardButton(text="📉 30 kun qisq.", callback_data=f"adm_reduce30_{user_id}"),
+                InlineKeyboardButton(text="📉 7 kun qisq.", callback_data=f"adm_reduce7_{user_id}", style="danger"),
+                InlineKeyboardButton(text="📉 30 kun qisq.", callback_data=f"adm_reduce30_{user_id}", style="danger"),
             ],
-            [InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}")],
+            [InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}", style="primary")],
         ]
     )
     await msg.answer(text, reply_markup=kb, parse_mode="HTML")
@@ -1196,7 +1196,9 @@ async def pm_admin_list(call: types.CallbackQuery):
                 kb_rows.append(
                     [
                         InlineKeyboardButton(
-                            text=f"✏️ {a.telegram_id} ruxsatlari", callback_data=f"perm_edit_{a.telegram_id}"
+                            text=f"✏️ {a.telegram_id} ruxsatlari",
+                            callback_data=f"perm_edit_{a.telegram_id}",
+                            style="primary",
                         )
                     ]
                 )
@@ -1467,10 +1469,12 @@ async def _show_anime_info(msg: Message, anime_id: int):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🔒 Pro-lock toggle", callback_data=f"adm_prolock_{anime_id}"),
-                InlineKeyboardButton(text="💎 HGem toggle", callback_data=f"adm_hgem_{anime_id}"),
+                InlineKeyboardButton(
+                    text="🔒 Pro-lock toggle", callback_data=f"adm_prolock_{anime_id}", style="primary"
+                ),
+                InlineKeyboardButton(text="💎 HGem toggle", callback_data=f"adm_hgem_{anime_id}", style="primary"),
             ],
-            [InlineKeyboardButton(text="📢 Kanalga post", callback_data=f"postpick_{anime_id}")],
+            [InlineKeyboardButton(text="📢 Kanalga post", callback_data=f"postpick_{anime_id}", style="success")],
         ]
     )
 
@@ -2122,12 +2126,16 @@ async def anime_manage_menu(msg: Message):
         return
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="manage_edit_anime")],
-            [InlineKeyboardButton(text="🗑 O'chirish", callback_data="manage_delete_anime")],
-            [InlineKeyboardButton(text="🔒 Pro-lock toggle", callback_data="manage_pro_lock")],
-            [InlineKeyboardButton(text="💎 Hidden Gem toggle", callback_data="manage_hidden_gem")],
-            [InlineKeyboardButton(text="🎞 Qism oraliq o'chirish", callback_data="manage_delete_episodes")],
-            [InlineKeyboardButton(text="❌ Yopish", callback_data="manage_close")],
+            [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="manage_edit_anime", style="primary")],
+            [InlineKeyboardButton(text="🗑 O'chirish", callback_data="manage_delete_anime", style="danger")],
+            [InlineKeyboardButton(text="🔒 Pro-lock toggle", callback_data="manage_pro_lock", style="primary")],
+            [InlineKeyboardButton(text="💎 Hidden Gem toggle", callback_data="manage_hidden_gem", style="primary")],
+            [
+                InlineKeyboardButton(
+                    text="🎞 Qism oraliq o'chirish", callback_data="manage_delete_episodes", style="danger"
+                )
+            ],
+            [InlineKeyboardButton(text="❌ Yopish", callback_data="manage_close", style="danger")],
         ]
     )
     await msg.answer("🎌 <b>Anime boshqaruv</b>", reply_markup=kb, parse_mode="HTML")
@@ -2199,8 +2207,10 @@ async def delete_anime_get_id(msg: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data=f"confirm_delete_{anime_id}"),
-                InlineKeyboardButton(text="❌ Yo'q", callback_data="cancel_delete"),
+                InlineKeyboardButton(
+                    text="✅ Ha, o'chirish", callback_data=f"confirm_delete_{anime_id}", style="danger"
+                ),
+                InlineKeyboardButton(text="❌ Yo'q", callback_data="cancel_delete", style="danger"),
             ]
         ]
     )
@@ -2278,38 +2288,38 @@ async def edit_get_anime(msg: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="📝 Nomi", callback_data="ef_title"),
-                InlineKeyboardButton(text="📖 Tavsif", callback_data="ef_desc"),
+                InlineKeyboardButton(text="📝 Nomi", callback_data="ef_title", style="primary"),
+                InlineKeyboardButton(text="📖 Tavsif", callback_data="ef_desc", style="primary"),
             ],
             [
-                InlineKeyboardButton(text="🎭 Janr", callback_data="ef_genres"),
-                InlineKeyboardButton(text="📅 Yil", callback_data="ef_year"),
+                InlineKeyboardButton(text="🎭 Janr", callback_data="ef_genres", style="primary"),
+                InlineKeyboardButton(text="📅 Yil", callback_data="ef_year", style="primary"),
             ],
             [
-                InlineKeyboardButton(text="🏷 Teglar", callback_data="ef_tags"),
-                InlineKeyboardButton(text="😌 Mood", callback_data="ef_mood"),
+                InlineKeyboardButton(text="🏷 Teglar", callback_data="ef_tags", style="primary"),
+                InlineKeyboardButton(text="😌 Mood", callback_data="ef_mood", style="primary"),
             ],
             [
-                InlineKeyboardButton(text="📊 Status", callback_data="ef_status"),
-                InlineKeyboardButton(text="⭐ Reyting", callback_data="ef_rating"),
+                InlineKeyboardButton(text="📊 Status", callback_data="ef_status", style="primary"),
+                InlineKeyboardButton(text="⭐ Reyting", callback_data="ef_rating", style="primary"),
             ],
             [
-                InlineKeyboardButton(text="🖼 Poster", callback_data="ef_poster"),
-                InlineKeyboardButton(text="🎬 Treyler", callback_data="ef_trailer"),
+                InlineKeyboardButton(text="🖼 Poster", callback_data="ef_poster", style="success"),
+                InlineKeyboardButton(text="🎬 Treyler", callback_data="ef_trailer", style="primary"),
             ],
             [
-                InlineKeyboardButton(text="🖼 Inline URL", callback_data="ef_inline_url"),
-                InlineKeyboardButton(text="🔢 Qismlar soni", callback_data="ef_total_episodes"),
+                InlineKeyboardButton(text="🖼 Inline URL", callback_data="ef_inline_url", style="primary"),
+                InlineKeyboardButton(text="🔢 Qismlar soni", callback_data="ef_total_episodes", style="primary"),
             ],
             [
-                InlineKeyboardButton(text="🔒 Pro-lock", callback_data="ef_pro_lock"),
-                InlineKeyboardButton(text="💎 Hidden Gem", callback_data="ef_hidden_gem"),
+                InlineKeyboardButton(text="🔒 Pro-lock", callback_data="ef_pro_lock", style="primary"),
+                InlineKeyboardButton(text="💎 Hidden Gem", callback_data="ef_hidden_gem", style="primary"),
             ],
             # ── YANGI: Yashirin toggle ──────────────────────────────
-            [InlineKeyboardButton(text="👁 Yashirin toggle", callback_data="ef_is_hidden")],
+            [InlineKeyboardButton(text="👁 Yashirin toggle", callback_data="ef_is_hidden", style="primary")],
             # ── YANGI: Kanalga post ─────────────────────────────────
-            [InlineKeyboardButton(text="📢 Kanalga post (news)", callback_data="ef_send_news")],
-            [InlineKeyboardButton(text="❌ Bekor", callback_data="ef_cancel")],
+            [InlineKeyboardButton(text="📢 Kanalga post (news)", callback_data="ef_send_news", style="success")],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="ef_cancel", style="danger")],
         ]
     )
     await msg.answer(f"✏️ <b>{title}</b> — nimani o'zgartirasiz?", reply_markup=kb, parse_mode="HTML")
@@ -2650,9 +2660,13 @@ async def _ask_send_to_channel(msg: Message, bot: Bot, anime: Anime):
         # Media yo'q — to'g'ridan-to'g'ri kanal tanlashga o'tish
         kb = InlineKeyboardBuilder()
         for ch in channels:
-            kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"postch_{ch.id}_{anime.id}"))
-        kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data=f"postch_all_{anime.id}"))
-        kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close"))
+            kb.row(
+                InlineKeyboardButton(
+                    text=f"📢 {ch.channel_name}", callback_data=f"postch_{ch.id}_{anime.id}", style="success"
+                )
+            )
+        kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data=f"postch_all_{anime.id}", style="success"))
+        kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
         await msg.answer(
             f"📢 <b>{anime.title}</b>\n⚠️ Poster yoki treyler yo'q — faqat matn post qilinadi.\n\nQaysi kanalga?",
             reply_markup=kb.as_markup(),
@@ -2663,11 +2677,19 @@ async def _ask_send_to_channel(msg: Message, bot: Bot, anime: Anime):
     # Media bor — media turi so'rash
     kb = InlineKeyboardBuilder()
     if has_poster:
-        kb.row(InlineKeyboardButton(text="🖼 Poster bilan post", callback_data=f"postnews_poster_{anime.id}"))
+        kb.row(
+            InlineKeyboardButton(
+                text="🖼 Poster bilan post", callback_data=f"postnews_poster_{anime.id}", style="success"
+            )
+        )
     if has_trailer:
-        kb.row(InlineKeyboardButton(text="🎬 Treyler bilan post", callback_data=f"postnews_trailer_{anime.id}"))
-    kb.row(InlineKeyboardButton(text="📝 Faqat matn post", callback_data=f"postnews_text_{anime.id}"))
-    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close"))
+        kb.row(
+            InlineKeyboardButton(
+                text="🎬 Treyler bilan post", callback_data=f"postnews_trailer_{anime.id}", style="success"
+            )
+        )
+    kb.row(InlineKeyboardButton(text="📝 Faqat matn post", callback_data=f"postnews_text_{anime.id}", style="success"))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
 
     await msg.answer(f"📢 <b>{anime.title}</b>\n\nQanday post qilamiz?", reply_markup=kb.as_markup(), parse_mode="HTML")
 
@@ -2695,10 +2717,14 @@ async def postnews_media_type(call: types.CallbackQuery):
     kb = InlineKeyboardBuilder()
     for ch in channels:
         kb.row(
-            InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"postch2_{media_type}_{ch.id}_{anime_id}")
+            InlineKeyboardButton(
+                text=f"📢 {ch.channel_name}", callback_data=f"postch2_{media_type}_{ch.id}_{anime_id}", style="success"
+            )
         )
-    kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data=f"postch2_{media_type}_all_{anime_id}"))
-    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close"))
+    kb.row(
+        InlineKeyboardButton(text="📢 Barcha", callback_data=f"postch2_{media_type}_all_{anime_id}", style="success")
+    )
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
 
     media_label = {"poster": "🖼 Poster", "trailer": "🎬 Treyler", "text": "📝 Matn"}
     await call.message.edit_text(
@@ -2818,12 +2844,16 @@ async def broadcast_start(msg: Message, state: FSMContext):
         return
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🎬 Anime post (kanalga)", callback_data="bc_anime_post")],
-            [InlineKeyboardButton(text="🎭 Janr bo'yicha post", callback_data="bc_genre_post")],
-            [InlineKeyboardButton(text="📣 Kanalga buttonli post", callback_data="bc_channel_custom")],
-            [InlineKeyboardButton(text="👥 Foydalanuvchilarga xabar", callback_data="bc_users")],
-            [InlineKeyboardButton(text="📍 Viloyat so'rash (regionsiz userlar)", callback_data="bc_ask_region")],
-            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel")],
+            [InlineKeyboardButton(text="🎬 Anime post (kanalga)", callback_data="bc_anime_post", style="success")],
+            [InlineKeyboardButton(text="🎭 Janr bo'yicha post", callback_data="bc_genre_post", style="success")],
+            [InlineKeyboardButton(text="📣 Kanalga buttonli post", callback_data="bc_channel_custom", style="success")],
+            [InlineKeyboardButton(text="👥 Foydalanuvchilarga xabar", callback_data="bc_users", style="primary")],
+            [
+                InlineKeyboardButton(
+                    text="📍 Viloyat so'rash (regionsiz userlar)", callback_data="bc_ask_region", style="primary"
+                )
+            ],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel", style="danger")],
         ]
     )
     await msg.answer("📢 <b>Xabar yuborish</b>", reply_markup=kb, parse_mode="HTML")
@@ -2855,8 +2885,12 @@ async def bc_ask_region_confirm(call: types.CallbackQuery, state: FSMContext):
         return await call.answer()
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=f"✅ {pending} ta userga yuborish", callback_data="bc_ask_region_go")],
-            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel")],
+            [
+                InlineKeyboardButton(
+                    text=f"✅ {pending} ta userga yuborish", callback_data="bc_ask_region_go", style="success"
+                )
+            ],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel", style="danger")],
         ]
     )
     try:
@@ -2964,11 +2998,11 @@ async def bc_get_anime_id(msg: Message, state: FSMContext):
 
     kb = InlineKeyboardBuilder()
     if has_poster:
-        kb.row(InlineKeyboardButton(text="🖼 Poster bilan", callback_data="bcmedia_poster"))
+        kb.row(InlineKeyboardButton(text="🖼 Poster bilan", callback_data="bcmedia_poster", style="success"))
     if has_trailer:
-        kb.row(InlineKeyboardButton(text="🎬 Treyler bilan", callback_data="bcmedia_trailer"))
-    kb.row(InlineKeyboardButton(text="📝 Faqat matn", callback_data="bcmedia_text"))
-    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel"))
+        kb.row(InlineKeyboardButton(text="🎬 Treyler bilan", callback_data="bcmedia_trailer", style="primary"))
+    kb.row(InlineKeyboardButton(text="📝 Faqat matn", callback_data="bcmedia_text", style="primary"))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel", style="danger"))
 
     lock_str = " 🔒" if is_locked else ""
     await msg.answer(f"✅ <b>{title}</b>{lock_str}\n\nPost turi:", reply_markup=kb.as_markup(), parse_mode="HTML")
@@ -2985,8 +3019,8 @@ async def bc_media_type_selected(call: types.CallbackQuery, state: FSMContext):
     auto_cap = _build_post_caption(anime) if anime else ""
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Shu caption", callback_data="bccap_auto")],
-            [InlineKeyboardButton(text="✏️ O'zim yozaman", callback_data="bccap_custom")],
+            [InlineKeyboardButton(text="✅ Shu caption", callback_data="bccap_auto", style="success")],
+            [InlineKeyboardButton(text="✏️ O'zim yozaman", callback_data="bccap_custom", style="primary")],
         ]
     )
     await call.message.answer(f"📝 <b>Caption preview:</b>\n\n{auto_cap}", reply_markup=kb, parse_mode="HTML")
@@ -3031,9 +3065,9 @@ async def _bc_ask_extra_btn(msg: Message, state: FSMContext):
     await state.set_state(BroadcastState.waiting_anime_post_extra_btn_choice)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Button qo'shish", callback_data="bcxbtn_yes")],
-            [InlineKeyboardButton(text="🚫 Yo'q, shundayligicha", callback_data="bcxbtn_no")],
-            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel")],
+            [InlineKeyboardButton(text="➕ Button qo'shish", callback_data="bcxbtn_yes", style="success")],
+            [InlineKeyboardButton(text="🚫 Yo'q, shundayligicha", callback_data="bcxbtn_no", style="danger")],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel", style="danger")],
         ]
     )
     await msg.answer(
@@ -3107,9 +3141,9 @@ async def _bc_ask_channel_msg(msg: Message, state: FSMContext):
         return
     kb = InlineKeyboardBuilder()
     for ch in channels:
-        kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"bcch_{ch.id}"))
-    kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data="bcch_all"))
-    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel"))
+        kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"bcch_{ch.id}", style="primary"))
+    kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data="bcch_all", style="success"))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel", style="danger"))
     await msg.answer("📢 Qaysi kanalga?", reply_markup=kb.as_markup())
 
 
@@ -3198,9 +3232,9 @@ async def bc_genre_name(msg: Message, state: FSMContext):
         return
     kb = InlineKeyboardBuilder()
     for ch in channels:
-        kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"bcgenrech_{ch.id}"))
-    kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data="bcgenrech_all"))
-    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel"))
+        kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"bcgenrech_{ch.id}", style="primary"))
+    kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data="bcgenrech_all", style="success"))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel", style="danger"))
     await msg.answer(f"✅ {genre} janrida {len(matched)} ta kontent\n\nQaysi kanalga?", reply_markup=kb.as_markup())
 
 
@@ -3332,7 +3366,9 @@ def _build_custom_btn_kb(btn: dict | None) -> InlineKeyboardMarkup | None:
     """Custom broadcast uchun 1 ta inline button qatori. None qaytarsa — button yo'q."""
     if not btn or not btn.get("text") or not btn.get("url"):
         return None
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=btn["text"], url=btn["url"])]])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=btn["text"], url=btn["url"], style="primary")]]
+    )
 
 
 @admin_router.callback_query(F.data == "bc_channel_custom")
@@ -3376,9 +3412,9 @@ async def bc_ch_content_received(msg: Message, state: FSMContext):
     await state.set_state(BroadcastState.waiting_ch_btn_choice)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Button qo'shish", callback_data="bcchbtn_yes")],
-            [InlineKeyboardButton(text="🚫 Yo'q", callback_data="bcchbtn_no")],
-            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel")],
+            [InlineKeyboardButton(text="➕ Button qo'shish", callback_data="bcchbtn_yes", style="success")],
+            [InlineKeyboardButton(text="🚫 Yo'q", callback_data="bcchbtn_no", style="danger")],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel", style="danger")],
         ]
     )
     await msg.answer("🔗 <b>Inline-button qo'ymoqchimisiz?</b>", reply_markup=kb, parse_mode="HTML")
@@ -3461,9 +3497,9 @@ async def _bc_ch_preview(msg: Message, state: FSMContext):
         return
     kb = InlineKeyboardBuilder()
     for ch in channels:
-        kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"bcchsend_{ch.id}"))
-    kb.row(InlineKeyboardButton(text="📢 Barcha news", callback_data="bcchsend_all"))
-    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel"))
+        kb.row(InlineKeyboardButton(text=f"📢 {ch.channel_name}", callback_data=f"bcchsend_{ch.id}", style="primary"))
+    kb.row(InlineKeyboardButton(text="📢 Barcha news", callback_data="bcchsend_all", style="primary"))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="bc_cancel", style="danger"))
     await msg.answer("📢 Qaysi kanalga yuborilsin?", reply_markup=kb.as_markup())
 
 
@@ -3570,9 +3606,9 @@ async def backup_menu(msg: Message, state: FSMContext):
     await state.clear()
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⬇️ Zaxira olish (ZIP)", callback_data="bk_export")],
-            [InlineKeyboardButton(text="⬆️ Zaxiradan tiklash", callback_data="bk_restore")],
-            [InlineKeyboardButton(text="❌ Yopish", callback_data="bk_close")],
+            [InlineKeyboardButton(text="⬇️ Zaxira olish (ZIP)", callback_data="bk_export", style="primary")],
+            [InlineKeyboardButton(text="⬆️ Zaxiradan tiklash", callback_data="bk_restore", style="danger")],
+            [InlineKeyboardButton(text="❌ Yopish", callback_data="bk_close", style="danger")],
         ]
     )
     await msg.answer(
@@ -3609,12 +3645,12 @@ async def bk_export(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id):
         return
     rows = [
-        [InlineKeyboardButton(text="📦 Hammasi", callback_data="bkexp_all")],
+        [InlineKeyboardButton(text="📦 Hammasi", callback_data="bkexp_all", style="success")],
     ]
     for slug, label in _CONTENT_TYPES:
-        rows.append([InlineKeyboardButton(text=f"🏷 {label}", callback_data=f"bkexp_type_{slug}")])
-    rows.append([InlineKeyboardButton(text="🔢 ID bo'yicha", callback_data="bkexp_ids")])
-    rows.append([InlineKeyboardButton(text="❌ Yopish", callback_data="bk_close")])
+        rows.append([InlineKeyboardButton(text=f"🏷 {label}", callback_data=f"bkexp_type_{slug}", style="primary")])
+    rows.append([InlineKeyboardButton(text="🔢 ID bo'yicha", callback_data="bkexp_ids", style="success")])
+    rows.append([InlineKeyboardButton(text="❌ Yopish", callback_data="bk_close", style="danger")])
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
     try:
         await call.message.edit_text(
@@ -3818,13 +3854,15 @@ async def bk_restore_file(msg: Message, state: FSMContext):
         ct = (row or {}).get("content_type") or "anime"
         counts[ct] = counts.get(ct, 0) + 1
 
-    rows = [[InlineKeyboardButton(text=f"📦 Hammasi ({len(animes_data)})", callback_data="bkrst_all")]]
+    rows = [[InlineKeyboardButton(text=f"📦 Hammasi ({len(animes_data)})", callback_data="bkrst_all", style="success")]]
     for slug, label in _CONTENT_TYPES:
         c = counts.get(slug, 0)
         if c:
-            rows.append([InlineKeyboardButton(text=f"🏷 {label} ({c})", callback_data=f"bkrst_type_{slug}")])
-    rows.append([InlineKeyboardButton(text="🔢 ID bo'yicha", callback_data="bkrst_ids")])
-    rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data="bkrst_cancel")])
+            rows.append(
+                [InlineKeyboardButton(text=f"🏷 {label} ({c})", callback_data=f"bkrst_type_{slug}", style="primary")]
+            )
+    rows.append([InlineKeyboardButton(text="🔢 ID bo'yicha", callback_data="bkrst_ids", style="success")])
+    rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data="bkrst_cancel", style="danger")])
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
 
     await msg.answer(
@@ -4049,10 +4087,14 @@ async def add_episode_start(msg: Message, state: FSMContext):
     await state.clear()
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📡 Maxfiy kanal orqali", callback_data="ep_via_channel")],
-            [InlineKeyboardButton(text="🤖 Bot orqali (birma-bir)", callback_data="ep_via_bot_single")],
-            [InlineKeyboardButton(text="📦 Bot orqali (bulk, auto)", callback_data="ep_via_bot_bulk")],
-            [InlineKeyboardButton(text="❌ Yopish", callback_data="ep_close")],
+            [InlineKeyboardButton(text="📡 Maxfiy kanal orqali", callback_data="ep_via_channel", style="primary")],
+            [
+                InlineKeyboardButton(
+                    text="🤖 Bot orqali (birma-bir)", callback_data="ep_via_bot_single", style="primary"
+                )
+            ],
+            [InlineKeyboardButton(text="📦 Bot orqali (bulk, auto)", callback_data="ep_via_bot_bulk", style="primary")],
+            [InlineKeyboardButton(text="❌ Yopish", callback_data="ep_close", style="danger")],
         ]
     )
     await msg.answer(
@@ -4199,8 +4241,12 @@ async def ep_got_to(msg: Message, state: FSMContext):
         await state.set_state(AddEpisodeState.waiting_bulk_videos)
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Tayyor — ko'rib chiqish", callback_data="ep_bulk_done")],
-                [InlineKeyboardButton(text="❌ Bekor", callback_data="ep_bulk_cancel")],
+                [
+                    InlineKeyboardButton(
+                        text="✅ Tayyor — ko'rib chiqish", callback_data="ep_bulk_done", style="success"
+                    )
+                ],
+                [InlineKeyboardButton(text="❌ Bekor", callback_data="ep_bulk_cancel", style="danger")],
             ]
         )
         await msg.answer(
@@ -4488,8 +4534,12 @@ async def _ep_bulk_show_preview(msg: Message, state: FSMContext):
     lines.append(f"📤 {posted}/{len(items_sorted)} ta video {where} yuborildi — ko'rib chiqing.")
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Tasdiqlash — maxfiy kanalga yuborish", callback_data="ep_bulk_commit")],
-            [InlineKeyboardButton(text="❌ Bekor", callback_data="ep_bulk_cancel")],
+            [
+                InlineKeyboardButton(
+                    text="✅ Tasdiqlash — maxfiy kanalga yuborish", callback_data="ep_bulk_commit", style="success"
+                )
+            ],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="ep_bulk_cancel", style="danger")],
         ]
     )
     await state.set_state(AddEpisodeState.waiting_bulk_confirm)
@@ -4674,8 +4724,9 @@ async def del_ep_get_to(msg: Message, state: FSMContext):
                 InlineKeyboardButton(
                     text=f"✅ {from_ep}-{to_ep} o'chir",
                     callback_data=f"delepconfirm_{data['del_ep_anime_id']}_{from_ep}_{to_ep}",
+                    style="danger",
                 ),
-                InlineKeyboardButton(text="❌ Bekor", callback_data="cancel_delete"),
+                InlineKeyboardButton(text="❌ Bekor", callback_data="cancel_delete", style="danger"),
             ]
         ]
     )
@@ -4779,8 +4830,8 @@ async def channel_manager(msg: Message):
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="➕ Obuna kanali", callback_data="add_channel"),
-                    InlineKeyboardButton(text="📰 News kanal", callback_data="add_news_channel"),
+                    InlineKeyboardButton(text="➕ Obuna kanali", callback_data="add_channel", style="primary"),
+                    InlineKeyboardButton(text="📰 News kanal", callback_data="add_news_channel", style="primary"),
                 ]
             ]
         )
@@ -4793,12 +4844,14 @@ async def channel_manager(msg: Message):
         text += f"{st} {cht} — <b>{ch.channel_name}</b>\n{ch.channel_url}\n\n"
         btn_t = "⛔ O'chir" if ch.is_active else "✅ Yoq"
         kb.row(
-            InlineKeyboardButton(text=f"{btn_t} | {ch.channel_name}", callback_data=f"toggle_ch_{ch.id}"),
-            InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"del_ch_{ch.id}"),
+            InlineKeyboardButton(
+                text=f"{btn_t} | {ch.channel_name}", callback_data=f"toggle_ch_{ch.id}", style="primary"
+            ),
+            InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"del_ch_{ch.id}", style="danger"),
         )
     kb.row(
-        InlineKeyboardButton(text="➕ Obuna kanali", callback_data="add_channel"),
-        InlineKeyboardButton(text="📰 News kanal", callback_data="add_news_channel"),
+        InlineKeyboardButton(text="➕ Obuna kanali", callback_data="add_channel", style="primary"),
+        InlineKeyboardButton(text="📰 News kanal", callback_data="add_news_channel", style="primary"),
     )
     await msg.answer(text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
@@ -4892,8 +4945,8 @@ async def save_ch_url(msg: Message, state: FSMContext):
     await state.set_state(AddChannel.waiting_type)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="👁 Faqat ko'rsatish", callback_data="ch_type_show")],
-            [InlineKeyboardButton(text="🔒 Majburiy obuna", callback_data="ch_type_required")],
+            [InlineKeyboardButton(text="👁 Faqat ko'rsatish", callback_data="ch_type_show", style="primary")],
+            [InlineKeyboardButton(text="🔒 Majburiy obuna", callback_data="ch_type_required", style="primary")],
         ]
     )
     await msg.answer("3️⃣ Kanal turi:", reply_markup=kb)
@@ -4964,9 +5017,9 @@ async def save_ch_id(msg: Message, state: FSMContext):
     await state.set_state(AddChannel.waiting_region_scope)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🌍 Barcha viloyatlar", callback_data="chreg_all")],
-            [InlineKeyboardButton(text="📍 Faqat bitta viloyat", callback_data="chreg_specific")],
-            [InlineKeyboardButton(text="❌ Bekor", callback_data="chreg_cancel")],
+            [InlineKeyboardButton(text="🌍 Barcha viloyatlar", callback_data="chreg_all", style="primary")],
+            [InlineKeyboardButton(text="📍 Faqat bitta viloyat", callback_data="chreg_specific", style="primary")],
+            [InlineKeyboardButton(text="❌ Bekor", callback_data="chreg_cancel", style="danger")],
         ]
     )
     await msg.answer(
