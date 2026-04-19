@@ -1,4 +1,4 @@
-aiogram==3.13.1
+aiogram==3.27.0
 sqlalchemy[asyncio]==2.0.35
 asyncpg==0.30.0
 redis==5.0.8
