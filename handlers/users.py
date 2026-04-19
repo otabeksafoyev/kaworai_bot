@@ -14,7 +14,7 @@ from datetime import datetime
 
 from aiogram import F, Router, types
 from aiogram.filters import CommandObject, CommandStart
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaVideo
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import func, select
 
@@ -22,6 +22,7 @@ from database.engine import AsyncSessionLocal
 from database.models import Anime, AnimeSubscription, Series, User
 from database.queries import (
     add_or_update_rating,
+    find_next_season_anime,
     get_active_channels,
     get_or_create_user,
     get_user_rating,
@@ -282,12 +283,26 @@ async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id
 
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
+    # MUHIM: Poster `protect_content=not is_pro` bilan yuboriladi.
+    # Shunda keyingi `edit_media` chaqiruvlari (poster → video) xuddi shu
+    # xabarning himoya flag'ini meros qilib oladi va oddiy userlar video
+    # qismlarini yuklab/ulashib ololmaydi. Pro uchun cheklov yo'q.
     try:
         if anime.poster_file_id:
-            await message.answer_photo(photo=anime.poster_file_id, caption=caption, reply_markup=kb, parse_mode="HTML")
+            await message.answer_photo(
+                photo=anime.poster_file_id,
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="HTML",
+                protect_content=not is_pro,
+            )
         elif anime.inline_thumbnail_url:
             await message.answer_photo(
-                photo=anime.inline_thumbnail_url, caption=caption, reply_markup=kb, parse_mode="HTML"
+                photo=anime.inline_thumbnail_url,
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="HTML",
+                protect_content=not is_pro,
             )
         else:
             await message.answer(caption, reply_markup=kb, parse_mode="HTML")
@@ -398,12 +413,23 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
 
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
+    # Poster protect_content=not is_pro bilan yuboriladi — edit_media meros qiladi.
     try:
         if anime.poster_file_id:
-            await message.answer_photo(photo=anime.poster_file_id, caption=caption, reply_markup=kb, parse_mode="HTML")
+            await message.answer_photo(
+                photo=anime.poster_file_id,
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="HTML",
+                protect_content=not is_pro,
+            )
         elif anime.inline_thumbnail_url:
             await message.answer_photo(
-                photo=anime.inline_thumbnail_url, caption=caption, reply_markup=kb, parse_mode="HTML"
+                photo=anime.inline_thumbnail_url,
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="HTML",
+                protect_content=not is_pro,
             )
         else:
             await message.answer(caption, reply_markup=kb, parse_mode="HTML")
@@ -614,17 +640,32 @@ async def watch_start(call: types.CallbackQuery):
     caption = _build_episode_caption(anime, first_ep.episode, len(episodes))
     kb = _build_episode_keyboard(anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0)
 
+    # Silliq UX: mavjud xabarda poster → 1-qism videosiga almashtiramiz
+    # (yangi xabar yubormaymiz). Poster protect_content=not is_pro bilan
+    # yuborilgan, shuning uchun edit_media'dan keyin video ham himoyali qoladi.
+    sent = False
     try:
-        await call.message.answer_video(
-            video=first_ep.file_id,
-            caption=caption,
+        await call.message.edit_media(
+            media=InputMediaVideo(media=first_ep.file_id, caption=caption, parse_mode="HTML"),
             reply_markup=kb,
-            parse_mode="HTML",
-            protect_content=not is_pro,
         )
+        sent = True
     except Exception as e:
-        logger.error(f"watch_start error: {e}")
-        await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
+        logger.debug(f"watch_start edit_media failed, fallback to send: {e}")
+
+    if not sent:
+        # Edit ishlamadi (masalan, matn xabari edi) — yangi protect_content video.
+        try:
+            await call.message.answer_video(
+                video=first_ep.file_id,
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="HTML",
+                protect_content=not is_pro,
+            )
+        except Exception as e:
+            logger.error(f"watch_start error: {e}")
+            await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
 
     try:
         from database.queries import add_to_watch_history, record_view
@@ -884,17 +925,29 @@ async def show_episodes_list(call: types.CallbackQuery):
     caption = _build_episode_caption(anime, first_ep.episode, len(episodes))
     kb = _build_episode_keyboard(anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0)
 
+    # Silliq UX: mavjud xabar ichida video almashtiriladi.
+    sent = False
     try:
-        await call.message.answer_video(
-            video=first_ep.file_id,
-            caption=caption,
+        await call.message.edit_media(
+            media=InputMediaVideo(media=first_ep.file_id, caption=caption, parse_mode="HTML"),
             reply_markup=kb,
-            parse_mode="HTML",
-            protect_content=not is_pro,
         )
+        sent = True
     except Exception as e:
-        logger.error(f"show_episodes_list error: {e}")
-        await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
+        logger.debug(f"show_episodes_list edit_media failed: {e}")
+
+    if not sent:
+        try:
+            await call.message.answer_video(
+                video=first_ep.file_id,
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="HTML",
+                protect_content=not is_pro,
+            )
+        except Exception as e:
+            logger.error(f"show_episodes_list error: {e}")
+            await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1039,15 +1092,34 @@ async def rate_anime_set(call: types.CallbackQuery):
             return await call.answer(f"✅ Siz allaqachon baho bergansiz: {existing.score}/10", show_alert=True)
         new_avg = await add_or_update_rating(session, anime_id, call.from_user.id, score)
         anime = await session.get(Anime, anime_id)
+        next_season = await find_next_season_anime(session, anime_id)
 
     title = anime.title if anime else f"ID {anime_id}"
+    text = (
+        f"✅ <b>Baho qabul qilindi!</b>\n\n"
+        f"🎬 <b>{title}</b>\n"
+        f"⭐ Sizning bahoyingiz: <b>{score}/10</b>\n"
+        f"📊 O'rtacha reyting: <b>{new_avg}/10</b>"
+    )
+    kb_rows: list[list[InlineKeyboardButton]] = []
+    if next_season is not None:
+        # Keyingi fasl mavjud — userga darhol tavsiya qilamiz.
+        text += f"\n\n🎌 <b>Yaxshi xabar!</b> <i>{next_season.title}</i> ham mavjud.\nTomosha qilishni xohlaysizmi?"
+        kb_rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"▶️ {next_season.title}",
+                    callback_data=f"watch_start_{next_season.id}",
+                    style="success",
+                )
+            ]
+        )
+    kb_rows.append([InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")])
     try:
         await call.message.edit_text(
-            f"✅ <b>Baho qabul qilindi!</b>\n\n"
-            f"🎬 <b>{title}</b>\n"
-            f"⭐ Sizning bahoyingiz: <b>{score}/10</b>\n"
-            f"📊 O'rtacha reyting: <b>{new_avg}/10</b>",
+            text,
             parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
         )
     except Exception:
         pass
@@ -1070,7 +1142,25 @@ async def rate_cancel(call: types.CallbackQuery):
 
 @user_router.callback_query(F.data == "main_menu")
 async def go_main_menu(call: types.CallbackQuery):
+    """Asosiy menyu — silliq o'tish uchun avval `edit_media` bilan mavjud
+    xabarni asosiy bannerga aylantirishga urinamiz. Agar mavjud xabar
+    media emas bo'lsa yoki edit xato bersa — yangi xabar yuboramiz.
+    """
     await call.answer()
+    caption = "🎌 <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
+    kb = get_main_menu_keyboard()
+
+    try:
+        await call.message.edit_media(
+            media=InputMediaPhoto(media=PHOTO_URL, caption=caption, parse_mode="HTML"),
+            reply_markup=kb,
+        )
+        return
+    except Exception as e:
+        logger.debug(f"go_main_menu edit_media failed: {e}")
+
+    # Matn xabar bo'lsa edit_media ishlamaydi — fallback: eski xabarni
+    # o'chirib, yangi rasmli menyuni yuboramiz.
     try:
         await call.message.delete()
     except Exception:

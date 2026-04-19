@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
@@ -178,6 +179,30 @@ def _build_sub_payload(required_not_subbed: list, optional_channels: list) -> tu
     return "\n".join(lines), get_sub_keyboard(kb_channels)
 
 
+async def _is_pro_user(user_id: int) -> bool:
+    """Pro foydalanuvchini tekshiradi — agar faol Pro bo'lsa True.
+
+    Majburiy kanal tekshiruvi Pro foydalanuvchilar uchun o'tkazib yuboriladi
+    (ular kontentni yuklab olish/ulashish imtiyozlariga ega). DB xatosida
+    False qaytaradi — xavfsiz default.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(select(User.is_pro, User.pro_until).where(User.telegram_id == user_id))
+            row = res.one_or_none()
+            if not row:
+                return False
+            is_pro, pro_until = row
+            if not is_pro:
+                return False
+            if pro_until and pro_until < datetime.utcnow():
+                return False
+            return True
+    except Exception:
+        logger.debug("is_pro_user: check failed uid=%s", user_id, exc_info=True)
+        return False
+
+
 async def _touch_last_active(user_id: int) -> None:
     """Foydalanuvchi `last_active` vaqtini yangilaydi va eslatma bosqichini
     nolga tushuradi.
@@ -215,6 +240,11 @@ class SubscriptionMiddleware(BaseMiddleware):
 
         # Admin — to'siqsiz
         if str(user.id) in ADMINS:
+            return await handler(event, data)
+
+        # Pro foydalanuvchi — majburiy kanal tekshiruvidan ozod.
+        # Pro imtiyozlari: kontentni yuklash/ulashish + kanalsiz kirish.
+        if await _is_pro_user(user.id):
             return await handler(event, data)
 
         # Bu callbacklar — to'siqsiz
