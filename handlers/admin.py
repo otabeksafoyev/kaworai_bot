@@ -21,7 +21,18 @@ from sqlalchemy import func, select
 from data import config
 from database.engine import AsyncSessionLocal
 from database.models import Admin, Anime, RelatedContent, Series, SubscriptionChannel, User
-from database.queries import add_channel, get_all_channels, get_news_channels, remove_channel, toggle_channel
+from database.queries import (
+    add_channel,
+    add_partner,
+    count_owner_animes,
+    get_all_channels,
+    get_all_partners,
+    get_news_channels,
+    is_partner,
+    remove_channel,
+    remove_partner,
+    toggle_channel,
+)
 from handlers.genres import GENRES, normalize_genre
 from handlers.users import mark_admin_active, mark_admin_inactive
 from states.admin_states import (
@@ -58,9 +69,9 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
 # (masalan `pm_id_received` uni raqam emas deb rad etardi) va admin
 # buyruqlari "ishlamayapti" deb ko'rinardi.
 ADMIN_REPLY_BUTTONS: set[str] = {
-    "➕ Anime qo'shish",
+    "➕ Kontent qo'shish",
     "🎞 Qism qo'shish",
-    "🎌 Anime boshqaruv",
+    "🗂 Kontent boshqaruv",
     "📢 Kanallar",
     "📊 Statistika",
     "✉️ Xabar yuborish",
@@ -79,9 +90,9 @@ ADMIN_REPLY_BUTTONS: set[str] = {
 # berilgan deb qaraladi (ekspluatatsiyada buzilmasin).
 
 PERMS_ALL: list[tuple[str, str]] = [
-    ("add_anime", "➕ Anime qo'shish"),
+    ("add_anime", "➕ Kontent qo'shish"),
     ("add_episode", "🎞 Qism qo'shish"),
-    ("anime_manage", "🎌 Anime boshqaruv"),
+    ("anime_manage", "🗂 Kontent boshqaruv"),
     ("channels", "📢 Kanallar"),
     ("stats", "📊 Statistika"),
     ("broadcast", "✉️ Xabar yuborish"),
@@ -93,9 +104,9 @@ PERMS_KEYS: set[str] = {k for k, _ in PERMS_ALL}
 
 # Reply tugma → ruxsat kaliti mapping (middleware'da tekshiramiz)
 _BUTTON_TO_PERM: dict[str, str] = {
-    "➕ Anime qo'shish": "add_anime",
+    "➕ Kontent qo'shish": "add_anime",
     "🎞 Qism qo'shish": "add_episode",
-    "🎌 Anime boshqaruv": "anime_manage",
+    "🗂 Kontent boshqaruv": "anime_manage",
     "📢 Kanallar": "channels",
     "📊 Statistika": "stats",
     "✉️ Xabar yuborish": "broadcast",
@@ -244,11 +255,41 @@ def _is_owner(user_id: int) -> bool:
 
 
 async def is_admin(user_id: int) -> bool:
+    """
+    Admin yoki hamkor (partner) bo'lsa — True. Ikkalasi ham admin panelning
+    kontent/qism/kanallar oqimlaridan foydalanadi. Farq:
+    - Admin: barcha kontentni ko'radi, global kanallar qo'shadi.
+    - Partner: faqat o'z kontenti va kanallari bilan ishlaydi (owner_id scoping).
+    Owner ro'lini ajratish uchun `_get_owner_ctx()` va `is_partner_user()` bor.
+    """
     if _is_owner(user_id):
         return True
     async with AsyncSessionLocal() as session:
         r = await session.execute(select(Admin).where(Admin.telegram_id == user_id))
         return r.scalar_one_or_none() is not None
+
+
+async def is_partner_user(user_id: int) -> bool:
+    """admins.role='partner' bo'lgan user (hamkor) — True."""
+    if _is_owner(user_id):
+        return False
+    async with AsyncSessionLocal() as session:
+        return await is_partner(session, user_id)
+
+
+async def _get_owner_ctx(user_id: int) -> int | None:
+    """
+    Kontent/kanal qo'shganda `owner_id` uchun qiymat:
+    - None: bosh admin yoki oddiy admin (global).
+    - user_id: hamkor (partner) — faqat o'z kontenti va kanallari.
+    """
+    if _is_owner(user_id):
+        return None
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(select(Admin).where(Admin.telegram_id == user_id))).scalar_one_or_none()
+        if row and getattr(row, "role", None) == "partner":
+            return user_id
+    return None
 
 
 def _yn_kb(yes_cb: str, no_cb: str) -> InlineKeyboardMarkup:
@@ -429,11 +470,23 @@ async def _send_anime_post(
 
 admin_main_kb = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="➕ Anime qo'shish"), KeyboardButton(text="🎞 Qism qo'shish")],
-        [KeyboardButton(text="🎌 Anime boshqaruv"), KeyboardButton(text="📢 Kanallar")],
+        [KeyboardButton(text="➕ Kontent qo'shish"), KeyboardButton(text="🎞 Qism qo'shish")],
+        [KeyboardButton(text="🗂 Kontent boshqaruv"), KeyboardButton(text="📢 Kanallar")],
         [KeyboardButton(text="👑 Pro boshqaruv"), KeyboardButton(text="✉️ Xabar yuborish")],
         [KeyboardButton(text="🗄 Baza zaxira"), KeyboardButton(text="📊 Statistika")],
         [KeyboardButton(text="🏆 Top 18"), KeyboardButton(text="🔙 Chiqish")],
+    ],
+    resize_keyboard=True,
+)
+
+# Hamkor (partner) uchun cheklangan reply klaviatura — faqat o'z
+# kontent va kanallari bilan ishlash. Admin panelidagi "Pro boshqaruv",
+# "Top 18", "Baza zaxira", "Xabar yuborish" hamkorga ko'rinmaydi.
+partner_main_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="➕ Kontent qo'shish"), KeyboardButton(text="🎞 Qism qo'shish")],
+        [KeyboardButton(text="🗂 Kontent boshqaruv"), KeyboardButton(text="📢 Kanallar")],
+        [KeyboardButton(text="🔙 Chiqish")],
     ],
     resize_keyboard=True,
 )
@@ -499,11 +552,48 @@ async def admin_entry(msg: Message, state: FSMContext):
             session.add(admin)
             await session.commit()
 
+    # Hamkor (partner) — /admin o'rniga partner panelni ko'radi.
+    if admin and getattr(admin, "role", None) == "partner":
+        await msg.answer(
+            "🤝 <b>Hamkor paneli</b>\n\nSiz faqat o'z kontentingiz va kanallaringiz bilan ishlaysiz.",
+            reply_markup=partner_main_kb,
+            parse_mode="HTML",
+        )
+        mark_admin_active(msg.from_user.id)
+        return
+
     role_str = admin.role.upper() if admin else "OWNER"
 
     await msg.answer(f"🛠 <b>Kaworai Admin Panel</b>\nRol: {role_str}", reply_markup=admin_main_kb, parse_mode="HTML")
 
     # 🔥 SHU YERGA QO‘SHASAN
+    mark_admin_active(msg.from_user.id)
+
+
+@admin_router.message(Command("partner"))
+async def partner_entry(msg: Message, state: FSMContext):
+    """
+    Hamkor (partner) paneli. Faqat admins.role='partner' bo'lgan
+    foydalanuvchiga ochiladi. Bosh admin ham kirsa bo'ladi — diagnostika uchun.
+    """
+    try:
+        await state.clear()
+    except Exception:
+        pass
+    if not (_is_owner(msg.from_user.id) or await is_partner_user(msg.from_user.id)):
+        return await msg.answer("❌ Siz hamkor emassiz.")
+    async with AsyncSessionLocal() as session:
+        own_count = await count_owner_animes(session, msg.from_user.id)
+    await msg.answer(
+        "🤝 <b>Hamkor paneli</b>\n\n"
+        f"📦 Sizning kontentingiz: <b>{own_count}</b>\n\n"
+        "• <b>Kontent qo'shish</b> — yangi anime/kino/serial qo'shish\n"
+        "• <b>Qism qo'shish</b> — faqat o'z kontentingizga\n"
+        "• <b>Kontent boshqaruv</b> — o'zingiz qo'shganlarni tahrirlash/o'chirish\n"
+        "• <b>Kanallar</b> — sizning kontentingizga majburiy obuna kanallari",
+        reply_markup=partner_main_kb,
+        parse_mode="HTML",
+    )
     mark_admin_active(msg.from_user.id)
 
 
@@ -531,11 +621,15 @@ async def pro_manage_menu(msg: Message):
             [InlineKeyboardButton(text="❌ Pro olish", callback_data="pm_remove_pro")],
             [InlineKeyboardButton(text="⭐ Pro userlar ro'yxati", callback_data="pm_pro_list")],
             [InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━", callback_data="pm_sep")],
-            [InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="pm_add_admin")],
-            [InlineKeyboardButton(text="🗑 Admin o'chirish", callback_data="pm_remove_admin")],
-            [InlineKeyboardButton(text="👥 Adminlar ro'yxati", callback_data="pm_admin_list")],
+            [InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="pm_add_admin", style="success")],
+            [InlineKeyboardButton(text="🗑 Admin o'chirish", callback_data="pm_remove_admin", style="danger")],
+            [InlineKeyboardButton(text="👥 Adminlar ro'yxati", callback_data="pm_admin_list", style="primary")],
             [InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━", callback_data="pm_sep")],
-            [InlineKeyboardButton(text="📋 Anime info (ID)", callback_data="pm_anime_info")],
+            [InlineKeyboardButton(text="🤝 Hamkor qo'shish", callback_data="pm_add_partner", style="success")],
+            [InlineKeyboardButton(text="🗑 Hamkor o'chirish", callback_data="pm_remove_partner", style="danger")],
+            [InlineKeyboardButton(text="📋 Hamkorlar ro'yxati", callback_data="pm_partner_list", style="primary")],
+            [InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━", callback_data="pm_sep")],
+            [InlineKeyboardButton(text="📋 Kontent info (ID)", callback_data="pm_anime_info")],
             [InlineKeyboardButton(text="📊 Pro statistika", callback_data="pm_stats")],
             [InlineKeyboardButton(text="❌ Yopish", callback_data="pm_close")],
         ]
@@ -623,6 +717,67 @@ async def pm_remove_admin_start(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+# ═══════════════════════════════════════════════════════════
+#  HAMKOR (PARTNER) BOSHQARUV — faqat owner
+# ═══════════════════════════════════════════════════════════
+
+
+@admin_router.callback_query(F.data == "pm_add_partner")
+async def pm_add_partner_start(call: types.CallbackQuery, state: FSMContext):
+    if not _is_owner(call.from_user.id):
+        return await call.answer("❌ Faqat owner!", show_alert=True)
+    await state.set_state(AdminProState.waiting_user_id)
+    await state.update_data(pm_action="add_partner")
+    await call.message.answer(
+        "🤝 <b>Hamkor qo'shish</b>\n\n"
+        "Telegram ID kiriting (ixtiyoriy — ism ham):\n"
+        "<code>123456789 HamkorIsm</code>\n\n"
+        "Hamkor /partner orqali o'z panelini ochadi. U faqat o'zi qo'shgan "
+        "kontent va kanallar bilan ishlaydi.",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "pm_remove_partner")
+async def pm_remove_partner_start(call: types.CallbackQuery, state: FSMContext):
+    if not _is_owner(call.from_user.id):
+        return await call.answer("❌ Faqat owner!", show_alert=True)
+    await state.set_state(AdminProState.waiting_user_id)
+    await state.update_data(pm_action="remove_partner")
+    await call.message.answer(
+        "🗑 <b>Hamkor o'chirish</b>\n\nHamkor Telegram ID:",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "pm_partner_list")
+async def pm_partner_list(call: types.CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        return
+    async with AsyncSessionLocal() as session:
+        partners = await get_all_partners(session)
+        if not partners:
+            try:
+                await call.message.edit_text("🤝 Hamkorlar yo'q.")
+            except Exception:
+                pass
+            return await call.answer()
+        lines = ["🤝 <b>Hamkorlar ro'yxati</b>\n"]
+        for p in partners:
+            own_count = await count_owner_animes(session, p.telegram_id)
+            nick = esc(p.nickname) if p.nickname else "—"
+            lines.append(f"• <code>{p.telegram_id}</code> — {nick}  📦 {own_count}")
+    try:
+        await call.message.edit_text("\n".join(lines), parse_mode="HTML")
+    except Exception:
+        await call.message.answer("\n".join(lines), parse_mode="HTML")
+    await call.answer()
+
+
 @admin_router.message(AdminProState.waiting_user_id)
 async def pm_id_received(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -703,6 +858,46 @@ async def pm_id_received(msg: Message, state: FSMContext):
             return await msg.answer("❌ Faqat owner!", reply_markup=admin_main_kb)
         await state.clear()
         await _do_remove_admin(msg, target_id)
+
+    elif action == "add_partner":
+        if not _is_owner(msg.from_user.id):
+            await state.clear()
+            return await msg.answer("❌ Faqat owner!", reply_markup=admin_main_kb)
+        if _is_owner(target_id):
+            await state.clear()
+            return await msg.answer("⚠️ Owner'ni hamkor qilib bo'lmaydi.", reply_markup=admin_main_kb)
+        nickname = " ".join(parts[1:]) if len(parts) > 1 else None
+        await state.clear()
+        async with AsyncSessionLocal() as session:
+            _row, created = await add_partner(
+                session, telegram_id=target_id, nickname=nickname, added_by=msg.from_user.id
+            )
+        if created:
+            text = (
+                f"✅ <b>Hamkor qo'shildi:</b> <code>{target_id}</code>"
+                + (f" ({esc(nickname)})" if nickname else "")
+                + "\n\nHamkor /partner buyrug'i bilan o'z panelini ochadi."
+            )
+        else:
+            text = f"ℹ️ <code>{target_id}</code> endi hamkor sifatida belgilandi (avval admin edi — roli yangilandi)."
+        await msg.answer(text, parse_mode="HTML", reply_markup=admin_main_kb)
+
+    elif action == "remove_partner":
+        if not _is_owner(msg.from_user.id):
+            await state.clear()
+            return await msg.answer("❌ Faqat owner!", reply_markup=admin_main_kb)
+        await state.clear()
+        async with AsyncSessionLocal() as session:
+            ok = await remove_partner(session, target_id)
+        if ok:
+            await msg.answer(
+                f"✅ Hamkor <code>{target_id}</code> o'chirildi.\n\n"
+                "Uning kontenti va kanallari bazada qoladi — faqat rol yo'qoladi.",
+                parse_mode="HTML",
+                reply_markup=admin_main_kb,
+            )
+        else:
+            await msg.answer(f"❌ <code>{target_id}</code> hamkor emas.", parse_mode="HTML", reply_markup=admin_main_kb)
 
 
 @admin_router.message(AdminProState.waiting_pro_days)
@@ -1848,9 +2043,12 @@ async def process_trailer(msg: Message, state: FSMContext):
 async def _save_anime(msg: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     await state.clear()
+    owner_id = await _get_owner_ctx(msg.from_user.id)
+    is_partner_ctx = owner_id is not None
+    reply_kb = partner_main_kb if is_partner_ctx else admin_main_kb
     async with AsyncSessionLocal() as session:
         if await session.get(Anime, data["anime_id"]):
-            return await msg.answer("❌ Bu ID allaqachon mavjud!", reply_markup=admin_main_kb)
+            return await msg.answer("❌ Bu ID allaqachon mavjud!", reply_markup=reply_kb)
         new_anime = Anime(
             id=data["anime_id"],
             title=data["title"],
@@ -1870,6 +2068,7 @@ async def _save_anime(msg: Message, state: FSMContext, bot: Bot):
             poster_file_id=data.get("poster_file_id"),
             trailer_file_id=data.get("trailer_file_id"),
             inline_thumbnail_url=data.get("inline_thumbnail_url"),
+            owner_id=owner_id,  # Partner bo'lsa — user_id, bosh admin bo'lsa — None
         )
         session.add(new_anime)
         await session.flush()
@@ -1894,12 +2093,12 @@ async def _save_anime(msg: Message, state: FSMContext, bot: Bot):
 
     await msg.answer(
         f"✅ {emoji} <b>{data['title']}</b> qo'shildi!\n🆔 <code>{data['anime_id']}</code> | {lock_str}",
-        reply_markup=admin_main_kb,
+        reply_markup=reply_kb,
         parse_mode="HTML",
     )
 
-    # News kanalga yuborish so'rovi
-    if news_channels and anime_obj:
+    # News kanalga yuborish so'rovi — faqat bosh admin kontenti uchun
+    if news_channels and anime_obj and not is_partner_ctx:
         await _ask_send_to_channel(msg, bot, anime_obj)
 
     try:
@@ -4747,6 +4946,7 @@ async def save_ch_id(msg: Message, state: FSMContext):
         return await msg.answer("❌ Format: <code>-1001234567890</code>", parse_mode="HTML")
     data = await state.get_data()
     is_news = data.get("is_news_channel", False)
+    owner_id = await _get_owner_ctx(msg.from_user.id)
     # News kanalda region cheklovi yo'q — darrov qo'shamiz.
     if is_news:
         await state.clear()
@@ -4757,6 +4957,7 @@ async def save_ch_id(msg: Message, state: FSMContext):
             channel_id=channel_id,
             is_news=True,
             region=None,
+            owner_id=owner_id,
         )
     # Majburiy kanal: region scope so'raymiz.
     await state.update_data(channel_id=channel_id)
@@ -4785,8 +4986,14 @@ async def _finalize_add_channel(
     channel_id: int,
     is_news: bool,
     region: str | None,
+    owner_id: int | None = None,
 ) -> None:
-    """Kanalni DB'ga qo'shib, admin uchun xulosa xabarini yuboradi."""
+    """Kanalni DB'ga qo'shib, admin uchun xulosa xabarini yuboradi.
+
+    `owner_id` hamkor (partner) uchun — u qo'shgan majburiy kanal faqat
+    uning kontenti ochilganda tekshiriladi. Bosh admin qo'shgan kanal esa
+    `owner_id=None` bo'lib, global middleware orqali hammaga qo'llanadi.
+    """
     async with AsyncSessionLocal() as session:
         ch, status = await add_channel(
             session=session,
@@ -4795,6 +5002,7 @@ async def _finalize_add_channel(
             require_check=not is_news,
             is_news=is_news,
             channel_id=channel_id,
+            owner_id=owner_id,
         )
         # Region majburiy kanallarga DB orqali yozamiz (add_channel signaturasini
         # o'zgartirmay — oldingi imzo saqlanadi).
@@ -4868,6 +5076,7 @@ async def ch_region_all(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_text("✅ Region: Barcha viloyatlar")
     except Exception:
         pass
+    owner_id = await _get_owner_ctx(call.from_user.id)
     await _finalize_add_channel(
         msg=call.message,
         channel_name=data["channel_name"],
@@ -4875,6 +5084,7 @@ async def ch_region_all(call: types.CallbackQuery, state: FSMContext):
         channel_id=int(data["channel_id"]),
         is_news=False,
         region=None,
+        owner_id=owner_id,
     )
     await call.answer()
 
@@ -4902,6 +5112,7 @@ async def ch_region_pick(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_text(f"✅ Region: <b>{region_label(code)}</b>", parse_mode="HTML")
     except Exception:
         pass
+    owner_id = await _get_owner_ctx(call.from_user.id)
     await _finalize_add_channel(
         msg=call.message,
         channel_name=data["channel_name"],
@@ -4909,6 +5120,7 @@ async def ch_region_pick(call: types.CallbackQuery, state: FSMContext):
         channel_id=int(data["channel_id"]),
         is_news=False,
         region=code,
+        owner_id=owner_id,
     )
     await call.answer()
 

@@ -133,25 +133,26 @@ async def show_pro_main_menu(call: types.CallbackQuery):
         if user and user.pro_until:
             until_str = f"\n📅 Tugash: <b>{user.pro_until.strftime('%d.%m.%Y')}</b>"
 
+    # Pro asosiy menyu — ranglar Bot API 9.4: success (yashil) = harakatlar, primary (ko'k) = menyu.
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🤖 AI Tavsiyalar", callback_data="pro_recommend"),
-                InlineKeyboardButton(text="😌 Kayfiyatim", callback_data="pro_mood"),
+                InlineKeyboardButton(text="🤖 AI Tavsiyalar", callback_data="pro_recommend", style="success"),
+                InlineKeyboardButton(text="😌 Kayfiyatim", callback_data="pro_mood", style="success"),
             ],
             [
-                InlineKeyboardButton(text="🔥 Trending", callback_data="pro_trending"),
-                InlineKeyboardButton(text="⭐ Top reyting", callback_data="pro_top"),
+                InlineKeyboardButton(text="🔥 Trending", callback_data="pro_trending", style="success"),
+                InlineKeyboardButton(text="⭐ Top reyting", callback_data="pro_top", style="success"),
             ],
             [
-                InlineKeyboardButton(text="📈 Rising", callback_data="pro_rising"),
-                InlineKeyboardButton(text="💎 Hidden Gems", callback_data="pro_hidden"),
+                InlineKeyboardButton(text="📈 Rising", callback_data="pro_rising", style="success"),
+                InlineKeyboardButton(text="💎 Hidden Gems", callback_data="pro_hidden", style="success"),
             ],
             [
-                InlineKeyboardButton(text="▶️ Davom ettirish", callback_data="pro_continue"),
-                InlineKeyboardButton(text="👤 Mening didim", callback_data="pro_taste"),
+                InlineKeyboardButton(text="▶️ Davom ettirish", callback_data="pro_continue", style="success"),
+                InlineKeyboardButton(text="👤 Mening didim", callback_data="pro_taste", style="success"),
             ],
-            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")],
+            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")],
         ]
     )
 

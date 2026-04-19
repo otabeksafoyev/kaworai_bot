@@ -101,6 +101,11 @@ MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS region VARCHAR(40)",
     # Channels — majburiy kanallar uchun region cheklovi (PR #24)
     "ALTER TABLE channels ADD COLUMN IF NOT EXISTS region VARCHAR(40)",
+    # Hamkor (partner) tizimi — kim qo'shgani (NULL = bosh admin / global)
+    "ALTER TABLE animes ADD COLUMN IF NOT EXISTS owner_id BIGINT",
+    "ALTER TABLE channels ADD COLUMN IF NOT EXISTS owner_id BIGINT",
+    "CREATE INDEX IF NOT EXISTS ix_animes_owner ON animes(owner_id)",
+    "CREATE INDEX IF NOT EXISTS ix_channels_owner ON channels(owner_id)",
     # AnimeSubscription jadvali
     """
     CREATE TABLE IF NOT EXISTS anime_subscriptions (

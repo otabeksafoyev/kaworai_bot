@@ -182,7 +182,9 @@ async def list_admins_cmd(msg: Message):
         text += "🛠 Qo'shimcha adminlar yo'q."
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="admin_add_hint")]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="admin_add_hint", style="success")]
+        ]
     )
     await msg.answer(text, reply_markup=kb, parse_mode="HTML")
 
@@ -374,21 +376,26 @@ async def user_info_cmd(msg: Message):
         f"🔔 Obunalar: {sub_count} ta"
     )
 
+    # Pro berish — success (yashil), olib tashlash/qisqartirish — danger (qizil), xabar — primary.
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ 30 kun Pro", callback_data=f"usr_pro_{user_id}_30"),
-                InlineKeyboardButton(text="✅ 90 kun Pro", callback_data=f"usr_pro_{user_id}_90"),
+                InlineKeyboardButton(text="✅ 30 kun Pro", callback_data=f"usr_pro_{user_id}_30", style="success"),
+                InlineKeyboardButton(text="✅ 90 kun Pro", callback_data=f"usr_pro_{user_id}_90", style="success"),
             ],
             [
-                InlineKeyboardButton(text="❌ Pro olish", callback_data=f"usr_remvpro_{user_id}"),
+                InlineKeyboardButton(text="❌ Pro olish", callback_data=f"usr_remvpro_{user_id}", style="danger"),
             ],
             [
-                InlineKeyboardButton(text="📉 7 kun qisq.", callback_data=f"usr_reduce_{user_id}_7"),
-                InlineKeyboardButton(text="📉 30 kun qisq.", callback_data=f"usr_reduce_{user_id}_30"),
+                InlineKeyboardButton(text="📉 7 kun qisq.", callback_data=f"usr_reduce_{user_id}_7", style="danger"),
+                InlineKeyboardButton(
+                    text="📉 30 kun qisq.",
+                    callback_data=f"usr_reduce_{user_id}_30",
+                    style="danger",
+                ),
             ],
             [
-                InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}"),
+                InlineKeyboardButton(text="✉️ Xabar yuborish", callback_data=f"pro_msg_{user_id}", style="primary"),
             ],
         ]
     )
@@ -568,8 +575,16 @@ async def anime_info_cmd(msg: Message):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🔒 Pro-lock toggle", callback_data=f"adm_prolock_{anime_id}"),
-                InlineKeyboardButton(text="📢 Kanalga post", callback_data=f"postch_all_{anime_id}"),
+                InlineKeyboardButton(
+                    text="🔒 Pro-lock toggle",
+                    callback_data=f"adm_prolock_{anime_id}",
+                    style="primary",
+                ),
+                InlineKeyboardButton(
+                    text="📢 Kanalga post",
+                    callback_data=f"postch_all_{anime_id}",
+                    style="success",
+                ),
             ]
         ]
     )

@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import Anime, AnimeRating, AnimeSubscription, Series, SubscriptionChannel, User
+from database.models import Admin, Anime, AnimeRating, AnimeSubscription, Series, SubscriptionChannel, User
 
 # ═══════════════════════════════════════════════════════════
 #  USER
@@ -39,7 +39,30 @@ async def get_user_count(session: AsyncSession) -> int:
 
 
 async def get_active_channels(session: AsyncSession) -> list:
-    result = await session.execute(select(SubscriptionChannel).where(SubscriptionChannel.is_active == True))
+    """
+    GLOBAL majburiy kanallar (bosh admin qo'shgan). Middleware shu ro'yxatni
+    ishlatadi — barcha foydalanuvchilarga qo'llanadi.
+
+    Hamkor kanallari (`owner_id != NULL`) bu yerga kirmaydi — ular faqat
+    o'zlari qo'shgan kontent ochilganida tekshiriladi.
+    """
+    result = await session.execute(
+        select(SubscriptionChannel).where(
+            SubscriptionChannel.is_active == True,
+            SubscriptionChannel.owner_id.is_(None),
+        )
+    )
+    return result.scalars().all()
+
+
+async def get_partner_channels(session: AsyncSession, owner_id: int) -> list:
+    """Hamkorning o'z majburiy kanallari (faqat shu owner uchun)."""
+    result = await session.execute(
+        select(SubscriptionChannel).where(
+            SubscriptionChannel.is_active == True,
+            SubscriptionChannel.owner_id == owner_id,
+        )
+    )
     return result.scalars().all()
 
 
@@ -63,6 +86,7 @@ async def add_channel(
     is_news: bool = False,
     channel_id: int | None = None,
     username: str | None = None,
+    owner_id: int | None = None,
 ) -> tuple[SubscriptionChannel, str]:
     """
     Kanal qo'shadi yoki allaqachon mavjud bo'lsa bayroqlarni birlashtiradi.
@@ -122,6 +146,7 @@ async def add_channel(
         is_active=True,
         require_check=require_check,
         is_news=is_news,
+        owner_id=owner_id,
     )
     session.add(ch)
     await session.commit()
@@ -157,6 +182,72 @@ async def get_anime_by_id(session: AsyncSession, anime_id: int) -> Anime | None:
 async def get_all_animes(session: AsyncSession) -> list:
     result = await session.execute(select(Anime).order_by(Anime.id.desc()))
     return result.scalars().all()
+
+
+async def get_animes_by_owner(session: AsyncSession, owner_id: int | None) -> list:
+    """Egalik bo'yicha kontentlar: owner_id=None => bosh admin kontenti (global)."""
+    stmt = select(Anime).order_by(Anime.id.desc())
+    if owner_id is None:
+        stmt = stmt.where(Anime.owner_id.is_(None))
+    else:
+        stmt = stmt.where(Anime.owner_id == owner_id)
+    return (await session.execute(stmt)).scalars().all()
+
+
+# ═══════════════════════════════════════════════════════════
+#  PARTNERS (hamkorlar) — admins.role = 'partner'
+# ═══════════════════════════════════════════════════════════
+
+
+async def get_all_partners(session: AsyncSession) -> list:
+    """role='partner' bo'lgan hamma adminlarni qaytaradi."""
+    result = await session.execute(select(Admin).where(Admin.role == "partner"))
+    return result.scalars().all()
+
+
+async def is_partner(session: AsyncSession, user_id: int) -> bool:
+    row = (
+        await session.execute(select(Admin).where(Admin.telegram_id == user_id, Admin.role == "partner"))
+    ).scalar_one_or_none()
+    return row is not None
+
+
+async def add_partner(
+    session: AsyncSession,
+    telegram_id: int,
+    nickname: str | None = None,
+    added_by: int | None = None,
+) -> tuple:
+    """Hamkor qo'shadi. Agar admin jadvalida avvaldan bor bo'lsa — role=partner qilib yangilaydi."""
+    existing = (await session.execute(select(Admin).where(Admin.telegram_id == telegram_id))).scalar_one_or_none()
+    if existing:
+        existing.role = "partner"
+        if nickname and not existing.nickname:
+            existing.nickname = nickname
+        await session.commit()
+        return existing, False
+    row = Admin(telegram_id=telegram_id, nickname=nickname, role="partner")
+    # added_by/added_at — migration orqali qo'shilgan ustunlar, mavjud bo'lsa qo'yamiz
+    if added_by is not None:
+        try:
+            row.added_by = added_by
+        except Exception:
+            pass
+    session.add(row)
+    await session.commit()
+    return row, True
+
+
+async def remove_partner(session: AsyncSession, telegram_id: int) -> bool:
+    """Hamkorni o'chiradi (admins.role='partner' satrini)."""
+    result = await session.execute(delete(Admin).where(Admin.telegram_id == telegram_id, Admin.role == "partner"))
+    await session.commit()
+    return result.rowcount > 0
+
+
+async def count_owner_animes(session: AsyncSession, owner_id: int) -> int:
+    res = await session.execute(select(func.count(Anime.id)).where(Anime.owner_id == owner_id))
+    return int(res.scalar() or 0)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -360,6 +451,7 @@ async def get_anime_full_info(session: AsyncSession, anime_id: int) -> dict | No
 
     return {
         "id": anime.id,
+        "owner_id": getattr(anime, "owner_id", None),
         "title": anime.title,
         "type": getattr(anime, "content_type", None) or "anime",
         "year": anime.year,
