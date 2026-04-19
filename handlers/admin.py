@@ -1604,7 +1604,7 @@ async def pro_msg_send(msg: Message, state: FSMContext):
 # ═══════════════════════════════════════════════════════════
 
 
-@admin_router.message(F.text == "➕ Anime qo'shish")
+@admin_router.message(F.text == "➕ Kontent qo'shish")
 async def add_anime_start(msg: Message, state: FSMContext):
     logger.info("add_anime_start hit user_id=%s", msg.from_user.id)
     if not await is_admin(msg.from_user.id):
@@ -2120,7 +2120,7 @@ async def _save_anime(msg: Message, state: FSMContext, bot: Bot):
 # ═══════════════════════════════════════════════════════════
 
 
-@admin_router.message(F.text == "🎌 Anime boshqaruv")
+@admin_router.message(F.text == "🗂 Kontent boshqaruv")
 async def anime_manage_menu(msg: Message):
     if not await is_admin(msg.from_user.id):
         return
@@ -2138,7 +2138,7 @@ async def anime_manage_menu(msg: Message):
             [InlineKeyboardButton(text="❌ Yopish", callback_data="manage_close", style="danger")],
         ]
     )
-    await msg.answer("🎌 <b>Anime boshqaruv</b>", reply_markup=kb, parse_mode="HTML")
+    await msg.answer("🗂 <b>Kontent boshqaruv</b>", reply_markup=kb, parse_mode="HTML")
 
 
 @admin_router.callback_query(F.data == "manage_close")
