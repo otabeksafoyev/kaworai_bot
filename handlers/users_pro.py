@@ -186,7 +186,7 @@ async def pro_recommend(call: types.CallbackQuery):
 
     if not recs:
         kb = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass")]]
+            inline_keyboard=[[InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass", style="primary")]]
         )
         await safe_edit(call, "😕 Hozircha tavsiya yo'q.\nKo'proq kontent ko'ring — tizim sizni o'rganib boradi!", kb)
         return await call.answer()
@@ -206,12 +206,16 @@ async def _show_rec_item(call: types.CallbackQuery, recs: list, idx: int, identi
     )
 
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="▶️ Ko'rish", callback_data=f"watch_{item['id']}"))
+    kb.row(InlineKeyboardButton(text="▶️ Ko'rish", callback_data=f"watch_{item['id']}", style="success"))
     if idx + 1 < len(recs):
-        kb.row(InlineKeyboardButton(text=f"⏭ Keyingi ({idx + 2}/{len(recs)})", callback_data=f"pro_rec_{idx + 1}"))
+        kb.row(
+            InlineKeyboardButton(
+                text=f"⏭ Keyingi ({idx + 2}/{len(recs)})", callback_data=f"pro_rec_{idx + 1}", style="primary"
+            )
+        )
     kb.row(
-        InlineKeyboardButton(text="🔗 O'xshashlar", callback_data=f"related_{item['id']}"),
-        InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass"),
+        InlineKeyboardButton(text="🔗 O'xshashlar", callback_data=f"related_{item['id']}", style="primary"),
+        InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass", style="primary"),
     )
     await safe_edit(call, text, kb.as_markup())
 
@@ -263,8 +267,8 @@ async def pro_mood_menu(call: types.CallbackQuery):
 
     kb = InlineKeyboardBuilder()
     for mood, label in MOOD_LABELS.items():
-        kb.row(InlineKeyboardButton(text=label, callback_data=f"pmood_{mood}"))
-    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass"))
+        kb.row(InlineKeyboardButton(text=label, callback_data=f"pmood_{mood}", style="primary"))
+    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass", style="primary"))
 
     await safe_edit(
         call, "😌 <b>Hozirgi kayfiyatingiz?</b>\n\nKayfiyatingizga mos kontentlarni topib beraman!", kb.as_markup()
@@ -291,7 +295,9 @@ async def mood_selected(call: types.CallbackQuery):
         recs = []
 
     if not recs:
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="↩️ Orqaga", callback_data="pro_mood")]])
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="↩️ Orqaga", callback_data="pro_mood", style="primary")]]
+        )
         await safe_edit(call, f"😕 {label} kayfiyatga mos kontent topilmadi.", kb)
         return await call.answer()
 
@@ -307,14 +313,14 @@ async def _show_mood_item(call, recs, idx, mood, label):
     )
 
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="▶️ Ko'rish", callback_data=f"watch_{item['id']}"))
+    kb.row(InlineKeyboardButton(text="▶️ Ko'rish", callback_data=f"watch_{item['id']}", style="success"))
     if idx + 1 < len(recs):
         kb.row(
             InlineKeyboardButton(
-                text=f"⏭ Keyingi ({idx + 2}/{len(recs)})", callback_data=f"pmood_next_{mood}_{idx + 1}"
+                text=f"⏭ Keyingi ({idx + 2}/{len(recs)})", callback_data=f"pmood_next_{mood}_{idx + 1}", style="primary"
             )
         )
-    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="pro_mood"))
+    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="pro_mood", style="primary"))
     await safe_edit(call, text, kb.as_markup())
 
 
@@ -352,7 +358,9 @@ async def mood_next(call: types.CallbackQuery):
 
 async def _show_list(call: types.CallbackQuery, items: list, title: str, back_cb: str = "kawaii_pass"):
     if not items:
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="↩️ Orqaga", callback_data=back_cb)]])
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="↩️ Orqaga", callback_data=back_cb, style="primary")]]
+        )
         await safe_edit(call, f"{title}\n\n😕 Hozircha ma'lumot yo'q.", kb)
         await call.answer()
         return
@@ -367,11 +375,17 @@ async def _show_list(call: types.CallbackQuery, items: list, title: str, back_cb
         text += f"   ⭐ {item.get('rating', 0):.1f}  🎭 {genres}\n\n"
 
         if item.get("locked"):
-            kb.row(InlineKeyboardButton(text=f"🔒 {item['title'][:28]}", callback_data="pro_upgrade_hint"))
+            kb.row(
+                InlineKeyboardButton(text=f"🔒 {item['title'][:28]}", callback_data="pro_upgrade_hint", style="danger")
+            )
         else:
-            kb.row(InlineKeyboardButton(text=f"▶️ {item['title'][:28]}", callback_data=f"watch_{item['id']}"))
+            kb.row(
+                InlineKeyboardButton(
+                    text=f"▶️ {item['title'][:28]}", callback_data=f"watch_{item['id']}", style="success"
+                )
+            )
 
-    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data=back_cb))
+    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data=back_cb, style="primary"))
     await safe_edit(call, text, kb.as_markup())
     await call.answer()
 
@@ -480,7 +494,7 @@ async def pro_smart_continue(call: types.CallbackQuery):
     kb = InlineKeyboardBuilder()
 
     if not items:
-        kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass"))
+        kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass", style="primary"))
         await safe_edit(
             call,
             "▶️ <b>Smart Continue</b>\n\nHozircha davom ettiriladigan kontent yo'q.\nBiror nima ko'rishni boshlang! 😊",
@@ -492,9 +506,13 @@ async def pro_smart_continue(call: types.CallbackQuery):
     for item in items:
         ep = item.get("resume_from", 1)
         text += f"🎬 <b>{item['title']}</b> — {ep}-qismdan\n"
-        kb.row(InlineKeyboardButton(text=f"▶️ {item['title'][:22]} — {ep}-qism", callback_data=f"watch_{item['id']}"))
+        kb.row(
+            InlineKeyboardButton(
+                text=f"▶️ {item['title'][:22]} — {ep}-qism", callback_data=f"watch_{item['id']}", style="success"
+            )
+        )
 
-    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass"))
+    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass", style="primary"))
     await safe_edit(call, text, kb.as_markup())
     await call.answer()
 
@@ -540,8 +558,8 @@ async def pro_taste_profile(call: types.CallbackQuery):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🤖 Tavsiyalar", callback_data="pro_recommend"),
-                InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass"),
+                InlineKeyboardButton(text="🤖 Tavsiyalar", callback_data="pro_recommend", style="primary"),
+                InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass", style="primary"),
             ]
         ]
     )
