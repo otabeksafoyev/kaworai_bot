@@ -5,9 +5,13 @@ from aiogram.fsm.state import State, StatesGroup
 class AddAnime(StatesGroup):
     waiting_id = State()
     waiting_title = State()
+    # Bir xil nomdagi kontent mavjud bo'lsa — fasl raqamini tanlash
+    waiting_season = State()
     waiting_type = State()
     waiting_desc = State()
     waiting_genres = State()
+    # `Psixologik` janri tanlangan bo'lsa — daraja (0..10) so'raladi
+    waiting_psych_level = State()
     waiting_tags = State()
     waiting_mood = State()
     waiting_year = State()

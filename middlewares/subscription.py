@@ -6,7 +6,7 @@ from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 
 from database.engine import AsyncSessionLocal
 from database.models import User
@@ -178,6 +178,26 @@ def _build_sub_payload(required_not_subbed: list, optional_channels: list) -> tu
     return "\n".join(lines), get_sub_keyboard(kb_channels)
 
 
+async def _touch_last_active(user_id: int) -> None:
+    """Foydalanuvchi `last_active` vaqtini yangilaydi va eslatma bosqichini
+    nolga tushuradi.
+
+    Re-engagement scheduler shu maydonni kuzatadi — agar user bot bilan
+    aloqaga chiqsa, eslatma yuborilmaydi. Xato bo'lsa — jim. DB uzilganda
+    bot javob berishda davom etadi.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(User)
+                .where(User.telegram_id == user_id)
+                .values(last_active=func.now(), last_reminder_at=None, reminder_stage=0)
+            )
+            await session.commit()
+    except Exception:
+        logger.debug("touch_last_active: update failed uid=%s", user_id, exc_info=True)
+
+
 class SubscriptionMiddleware(BaseMiddleware):
     async def __call__(self, handler: Callable[[Any, dict], Awaitable[Any]], event: Any, data: dict) -> Any:
         if isinstance(event, Message):
@@ -186,6 +206,12 @@ class SubscriptionMiddleware(BaseMiddleware):
             user = event.from_user
         else:
             return await handler(event, data)
+
+        # Re-engagement uchun `last_active` ni yangilaymiz — admin yoki
+        # oddiy foydalanuvchi farqi yo'q. DB yozuvi hali bo'lmasa
+        # (masalan /start'dan oldingi callback) UPDATE samarasiz — muammo yo'q.
+        if user and user.id:
+            await _touch_last_active(user.id)
 
         # Admin — to'siqsiz
         if str(user.id) in ADMINS:

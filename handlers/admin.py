@@ -309,6 +309,58 @@ def _skip_kb(skip_cb: str) -> InlineKeyboardMarkup:
     )
 
 
+# ─── Duplicate title / season picker ──────────────────────────────────
+#
+# Admin yangi kontent qo'shayotganda, bot bazada aynan shu nomdagi
+# kontent bor-yo'qligini tekshiradi (fasl qo'shimchasini e'tiborsiz
+# qoldirib). Agar bor bo'lsa — bu anime'ning nechinchi fasli ekanligini
+# tugmalar orqali so'raydi. "1-fasl" tanlansa — bu takroriy kontent,
+# qayta qo'shishga yo'l qo'yilmaydi va admin'dan boshqa kontent so'raladi.
+
+_SEASON_SUFFIX_RE = _re_ep.compile(r"\s+\d+\s*-?\s*fasl\s*$", _re_ep.IGNORECASE)
+
+
+def _strip_season_suffix(title: str) -> str:
+    """'Naruto 2-fasl' → 'Naruto'. Fasl qo'shimchasi bo'lmasa — o'zi."""
+    return _SEASON_SUFFIX_RE.sub("", title or "").strip()
+
+
+def _season_picker_kb() -> InlineKeyboardMarkup:
+    """Fasl tanlash: 2..6 + 'Yo'q, bu boshqa anime' + 'Bekor'."""
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(text="2-fasl", callback_data="asn_2", style="success"),
+            InlineKeyboardButton(text="3-fasl", callback_data="asn_3", style="success"),
+            InlineKeyboardButton(text="4-fasl", callback_data="asn_4", style="success"),
+        ],
+        [
+            InlineKeyboardButton(text="5-fasl", callback_data="asn_5", style="success"),
+            InlineKeyboardButton(text="6-fasl", callback_data="asn_6", style="success"),
+            InlineKeyboardButton(text="➕ Boshqa", callback_data="asn_more", style="primary"),
+        ],
+        [
+            InlineKeyboardButton(text="1️⃣ Bu 1-fasl (takror)", callback_data="asn_1", style="danger"),
+        ],
+        [
+            InlineKeyboardButton(text="🆕 Yo'q, bu boshqa anime", callback_data="asn_other", style="primary"),
+            InlineKeyboardButton(text="🚫 Bekor", callback_data="asn_cancel", style="danger"),
+        ],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _psych_level_kb() -> InlineKeyboardMarkup:
+    """Psixologik daraja: 0..10 tugmalar (2 qator) + 'O'tkazib yuborish'."""
+    row1 = [InlineKeyboardButton(text=str(i), callback_data=f"apsy_{i}", style="primary") for i in range(6)]
+    row2 = [InlineKeyboardButton(text=str(i), callback_data=f"apsy_{i}", style="primary") for i in range(6, 11)]
+    rows = [
+        row1,
+        row2,
+        [InlineKeyboardButton(text="⏭ O'tkazib yuborish", callback_data="apsy_skip", style="primary")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def _watch_url(anime_id) -> str:
     return f"https://t.me/{BOT_USERNAME}?start=anime_{anime_id}"
 
@@ -1643,8 +1695,153 @@ async def process_title(msg: Message, state: FSMContext):
     if msg.text == "🚫 Bekor qilish":
         await state.clear()
         return await msg.answer("Bekor.", reply_markup=admin_main_kb)
-    await state.update_data(title=msg.text.strip())
+    raw_title = (msg.text or "").strip()
+    if not raw_title:
+        return await msg.answer("❌ Nom bo'sh bo'la olmaydi.")
+    base_title = _strip_season_suffix(raw_title)
+    # Bazadagi bir xil asosiy nomdagi kontent(lar)ni topish — case-insensitive.
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(select(Anime.id, Anime.title, Anime.season))).all()
+    existing_seasons: list[int] = []
+    existing_ids: list[int] = []
+    for r in rows:
+        if _strip_season_suffix(r.title or "").lower() == base_title.lower():
+            existing_seasons.append(int(r.season or 1))
+            existing_ids.append(int(r.id))
+    await state.update_data(title=raw_title, base_title=base_title, season=1)
+
+    if existing_seasons:
+        seasons_text = ", ".join(f"{s}-fasl" for s in sorted(set(existing_seasons)))
+        await state.update_data(existing_seasons=sorted(set(existing_seasons)))
+        await state.set_state(AddAnime.waiting_season)
+        await msg.answer(
+            f"⚠️ <b>Bir xil nomdagi kontent topildi:</b> <i>{esc(base_title)}</i>\n"
+            f"🎞 Mavjud fasllar: <b>{seasons_text}</b>\n\n"
+            "Bu yangi fasl bo'lsa — fasl raqamini tanlang.\n"
+            "Agar bu boshqa anime bo'lsa — «🆕 Yo'q, bu boshqa anime».\n"
+            "Agar bu aynan o'sha 1-fasl bo'lsa — «1️⃣ Bu 1-fasl» (qayta qo'shib bo'lmaydi).",
+            parse_mode="HTML",
+            reply_markup=_season_picker_kb(),
+        )
+        return
+
     await state.set_state(AddAnime.waiting_type)
+    await msg.answer("📁 <b>Tur:</b>", parse_mode="HTML", reply_markup=TYPE_KB)
+
+
+# ─── Season picker callbacks ──────────────────────────────────────
+#
+# `waiting_season` holatida admin bosishi mumkin:
+#   asn_2..asn_6 — fasl raqami
+#   asn_more     — matn orqali fasl raqamini kiritish (7, 8, ...)
+#   asn_1        — "bu 1-fasl" (takror) — qo'shishga ruxsat yo'q
+#   asn_other    — "yo'q, bu boshqa anime" — nomni o'zgartirib keyingi bosqichga
+#   asn_cancel   — jarayonni bekor qilish
+
+
+@admin_router.callback_query(F.data.startswith("asn_"), AddAnime.waiting_season)
+async def season_pick(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    action = call.data[4:]  # '2','3',...,'more','1','other','cancel'
+
+    if action == "cancel":
+        await state.clear()
+        try:
+            await call.message.edit_text("🚫 Bekor qilindi.")
+        except Exception:
+            logger.debug("season_pick cancel: edit_text failed", exc_info=True)
+        await call.message.answer("Panel:", reply_markup=admin_main_kb)
+        return await call.answer()
+
+    data = await state.get_data()
+    base_title = data.get("base_title") or data.get("title") or ""
+    existing = set(data.get("existing_seasons") or [])
+
+    if action == "1":
+        await state.clear()
+        try:
+            await call.message.edit_text(
+                f"❌ «{esc(base_title)}» — 1-fasl allaqachon bazada bor.\n🆕 Iltimos, boshqa kontent qo'shing.",
+                parse_mode="HTML",
+            )
+        except Exception:
+            logger.debug("season_pick 1: edit_text failed", exc_info=True)
+        await call.message.answer("Panel:", reply_markup=admin_main_kb)
+        return await call.answer("Takror kontent", show_alert=True)
+
+    if action == "other":
+        # Bu butunlay boshqa anime — yangi nom so'raymiz.
+        await state.update_data(title=None, base_title=None, season=1, existing_seasons=[])
+        await state.set_state(AddAnime.waiting_title)
+        try:
+            await call.message.edit_text(
+                "🆕 Tushunarli — bu boshqa kontent. Nomini farqli ko'rsating.\n"
+                "<i>Masalan: sarlavhaga izoh qo'shing.</i>",
+                parse_mode="HTML",
+            )
+        except Exception:
+            logger.debug("season_pick other: edit_text failed", exc_info=True)
+        return await call.answer()
+
+    if action == "more":
+        # Matn orqali fasl raqamini kiritishni kutamiz (waiting_season ichidagi message handler).
+        try:
+            await call.message.edit_text(
+                f"🔢 Fasl raqamini yozib yuboring (2..999):\n"
+                f"Mavjud fasllar: <b>{', '.join(f'{s}-fasl' for s in sorted(existing)) or '—'}</b>",
+                parse_mode="HTML",
+            )
+        except Exception:
+            logger.debug("season_pick more: edit_text failed", exc_info=True)
+        return await call.answer()
+
+    # Raqam tugma: '2','3','4','5','6'
+    if action.isdigit():
+        season = int(action)
+        if season in existing:
+            return await call.answer(f"❌ {season}-fasl allaqachon bor!", show_alert=True)
+        await _apply_season_and_continue(call.message, state, base_title, season)
+        return await call.answer()
+
+    return await call.answer()
+
+
+@admin_router.message(AddAnime.waiting_season)
+async def season_manual_input(msg: Message, state: FSMContext):
+    """Admin "➕ Boshqa" bosgandan keyin raqamni matn orqali yuborsa."""
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    raw = (msg.text or "").strip()
+    if not raw.isdigit():
+        return await msg.answer("❌ Faqat raqam. Tugmalardan foydalaning yoki 2..999 oralig'ida raqam yozing.")
+    season = int(raw)
+    if season < 2 or season > 999:
+        return await msg.answer("❌ Fasl 2..999 oralig'ida bo'lishi kerak.")
+    data = await state.get_data()
+    base_title = data.get("base_title") or ""
+    existing = set(data.get("existing_seasons") or [])
+    if season in existing:
+        return await msg.answer(f"❌ {season}-fasl allaqachon bor — boshqa raqam tanlang.")
+    await _apply_season_and_continue(msg, state, base_title, season)
+
+
+async def _apply_season_and_continue(msg: Message, state: FSMContext, base_title: str, season: int) -> None:
+    """Fasl tanlangan — title'ni yangilab, type so'rashga o'tamiz."""
+    new_title = f"{base_title} {season}-fasl" if season > 1 and base_title else base_title
+    await state.update_data(title=new_title, season=season)
+    await state.set_state(AddAnime.waiting_type)
+    try:
+        await msg.edit_text(
+            f"✅ Saqlandi: <b>{esc(new_title)}</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        # Message bo'lsa (matn input) — edit_text ishlamaydi, yangi xabar yuboramiz.
+        pass
     await msg.answer("📁 <b>Tur:</b>", parse_mode="HTML", reply_markup=TYPE_KB)
 
 
@@ -1716,7 +1913,11 @@ async def add_genre_cancel(call: types.CallbackQuery, state: FSMContext):
 
 @admin_router.callback_query(F.data == "ag_done", AddAnime.waiting_genres)
 async def add_genre_done(call: types.CallbackQuery, state: FSMContext):
-    """Add anime — tanlangan janrlarni tasdiqlab, keyingi bosqichga o'tish."""
+    """Add anime — tanlangan janrlarni tasdiqlab, keyingi bosqichga o'tish.
+
+    Agar `Psixologik` janri tanlangan bo'lsa — darajani (0..10) so'rash
+    bosqichiga o'tamiz. Aks holda — darrov teg bosqichiga.
+    """
     if not await is_admin(call.from_user.id):
         return await call.answer()
     data = await state.get_data()
@@ -1724,7 +1925,6 @@ async def add_genre_done(call: types.CallbackQuery, state: FSMContext):
     if not selected:
         return await call.answer("❌ Kamida bitta janr tanlang!", show_alert=True)
     await state.update_data(genres=selected)
-    await state.set_state(AddAnime.waiting_tags)
     labels = ", ".join(GENRES.get(k, k) for k in selected)
     try:
         await call.message.edit_text(
@@ -1733,12 +1933,84 @@ async def add_genre_done(call: types.CallbackQuery, state: FSMContext):
         )
     except Exception:
         logger.debug("add_genre_done: edit_text failed", exc_info=True)
+
+    if "Psixologik" in selected:
+        await state.set_state(AddAnime.waiting_psych_level)
+        await call.message.answer(
+            "🧠 <b>Psixologik daraja</b> (0..10):\n"
+            "<i>0 — yengil; 5 — o'rtacha; 10 — juda og'ir.\n"
+            "Bu Pro AI tavsiyalari uchun ishlatiladi.</i>",
+            parse_mode="HTML",
+            reply_markup=_psych_level_kb(),
+        )
+        return await call.answer()
+
+    await state.set_state(AddAnime.waiting_tags)
     await call.message.answer(
         "🏷 <b>Teglar</b>:\n<i>dark, survival, revenge</i>",
         parse_mode="HTML",
         reply_markup=_skip_kb("skip_tags"),
     )
     await call.answer()
+
+
+# ─── Psychological level callbacks ────────────────────────────────
+
+
+@admin_router.callback_query(F.data.startswith("apsy_"), AddAnime.waiting_psych_level)
+async def psych_level_pick(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    action = call.data[5:]
+    if action == "skip":
+        await state.update_data(psychological_level=None)
+        level_txt = "o'tkazib yuborildi"
+    else:
+        try:
+            lvl = int(action)
+        except ValueError:
+            return await call.answer()
+        if lvl < 0 or lvl > 10:
+            return await call.answer("❌ 0..10 oralig'ida bo'lishi kerak", show_alert=True)
+        await state.update_data(psychological_level=lvl)
+        level_txt = f"<b>{lvl}/10</b>"
+    try:
+        await call.message.edit_text(
+            f"🧠 Psixologik daraja: {level_txt}",
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.debug("psych_level_pick: edit_text failed", exc_info=True)
+    await state.set_state(AddAnime.waiting_tags)
+    await call.message.answer(
+        "🏷 <b>Teglar</b>:\n<i>dark, survival, revenge</i>",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_tags"),
+    )
+    await call.answer()
+
+
+@admin_router.message(AddAnime.waiting_psych_level)
+async def psych_level_manual_input(msg: Message, state: FSMContext):
+    """Admin darajani matn orqali yuborsa (0..10)."""
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    raw = (msg.text or "").strip()
+    if not raw.isdigit():
+        return await msg.answer("❌ Faqat 0..10 oralig'ida raqam. Tugmalardan foydalaning.")
+    lvl = int(raw)
+    if lvl < 0 or lvl > 10:
+        return await msg.answer("❌ Daraja 0..10 oralig'ida bo'lishi kerak.")
+    await state.update_data(psychological_level=lvl)
+    await state.set_state(AddAnime.waiting_tags)
+    await msg.answer(
+        f"🧠 Psixologik daraja: <b>{lvl}/10</b>\n\n🏷 <b>Teglar</b>:\n<i>dark, survival, revenge</i>",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_tags"),
+    )
 
 
 @admin_router.message(AddAnime.waiting_genres)
@@ -2073,6 +2345,9 @@ async def _save_anime(msg: Message, state: FSMContext, bot: Bot):
             trailer_file_id=data.get("trailer_file_id"),
             inline_thumbnail_url=data.get("inline_thumbnail_url"),
             owner_id=owner_id,  # Partner bo'lsa — user_id, bosh admin bo'lsa — None
+            # Yangi: fasl raqami va psixologik daraja (ikkalasi ham ixtiyoriy).
+            season=int(data.get("season") or 1),
+            psychological_level=data.get("psychological_level"),
         )
         session.add(new_anime)
         await session.flush()
