@@ -314,6 +314,7 @@ async def _show_pro_active_menu(call: CallbackQuery):
                 InlineKeyboardButton(text="▶️ Davom ettirish", callback_data="pro_continue", style="success"),
                 InlineKeyboardButton(text="👤 Mening didim", callback_data="pro_taste", style="success"),
             ],
+            [InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="pro_settings", style="primary")],
             [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")],
         ]
     )
