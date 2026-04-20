@@ -108,14 +108,16 @@ def _build_episode_keyboard(
 
     row_buttons = []
     for ep in page_eps:
+        # Faqat tanlangan (joriy) qism yashil (success).
+        # Boshqa qismlar — ko'k (primary). Shunda tanlanganligi aniq ko'rinadi.
         if ep == current_ep:
             label = f"✅ {ep}"
+            btn_style = "success"
         else:
             label = str(ep)
-        # Bot API 9.4: style="success" (yashil) — qism tugmalari uchun.
-        # Agar user klienti 9.4 ni qo'llab-quvvatlamasa, rang ko'rsatilmaydi (fallback).
+            btn_style = "primary"
         row_buttons.append(
-            InlineKeyboardButton(text=label, callback_data=f"ep_{anime_id}_{ep}_{page}", style="success")
+            InlineKeyboardButton(text=label, callback_data=f"ep_{anime_id}_{ep}_{page}", style=btn_style)
         )
     for i in range(0, len(row_buttons), GRID_COLS):
         builder.row(*row_buttons[i : i + GRID_COLS])
@@ -879,7 +881,14 @@ async def episode_navigate(call: types.CallbackQuery):
                 # Oxirgi qismda "Keyingi" bosildi — keyingi fasl bormi?
                 next_anime = await find_next_season_anime(session, anime_id)
                 if next_anime is None:
-                    return await call.answer("✅ Bu oxirgi qism!", show_alert=True)
+                    # Keyingi fasl yo'q — userni oxirgi qismda qoldiramiz,
+                    # obuna bo'lib qo'yishni taklif qilamiz (yangi qism chiqsa xabar).
+                    already_subscribed = await is_subscribed_anime(session, anime_id, user_id)
+                    if already_subscribed:
+                        msg = "✅ Bu oxirgi qism!\n🔔 Obunadasiz — yangi qism chiqsa sizga xabar beramiz."
+                    else:
+                        msg = "✅ Bu oxirgi qism!\n❤️ Obuna bo'lib qo'ying — yangi qism chiqqanda xabar beramiz."
+                    return await call.answer(msg, show_alert=True)
                 # Keyingi faslning 1-qismiga o'tamiz.
                 if next_anime.is_pro_locked and not is_pro:
                     return await call.answer("🔒 Keyingi fasl Pro foydalanuvchilar uchun!", show_alert=True)
