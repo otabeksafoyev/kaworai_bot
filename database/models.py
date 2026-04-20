@@ -41,6 +41,11 @@ class User(Base):
     #   "send" — har bosishda yangi video xabar yuboriladi (eski xabar o'chadi)
     # Oddiy userlar uchun har doim "edit" ishlatiladi (bu sozlama Pro uchun).
     ux_mode = Column(String(10), default="edit")
+    # Pro foydalanuvchi tanlagan `/start` menyusidagi qo'shimcha tugmalar —
+    # JSON ro'yxat (shortcut kalitlar: "pro_recommend", "pro_mood", "pro_trending"
+    # va h.k.). Qo'shilgan tartibi = menyudagi tartibi (eng tepada). Default
+    # menyu tugmalari doim quyi qismida qoladi. Oddiy userlar uchun e'tiborsiz.
+    start_extras = Column(JSON, default=list)
 
     watch_history = relationship("UserWatchHistory", back_populates="user", cascade="all, delete-orphan")
     taste_profile = relationship("UserTasteProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")

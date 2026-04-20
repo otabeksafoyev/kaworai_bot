@@ -506,9 +506,43 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
 # ═══════════════════════════════════════════════════════════
 
 
-def get_main_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+# Pro `start_extras` kalitlari uchun ko'rinadigan nomlar — userlar ko'radigan
+# labellar. Yangi Pro shortcut qo'shilsa, bu yerga va `queries.ALLOWED_START_EXTRAS`
+# ga qo'shish kerak.
+_PRO_START_SHORTCUTS: dict[str, str] = {
+    "pro_recommend": "🤖 AI Tavsiyalar",
+    "pro_mood": "😌 Kayfiyatim",
+    "pro_trending": "🔥 Trending",
+    "pro_top": "⭐ Top reyting",
+    "pro_rising": "📈 Rising",
+    "pro_hidden": "💎 Hidden Gems",
+    "pro_continue": "▶️ Davom ettirish",
+    "pro_taste": "👤 Mening didim",
+}
+
+
+def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboardMarkup:
+    """Asosiy /start menyusi.
+
+    `pro_extras` — Pro user tanlagan shortcut kalitlar (tartibi). Tanlangan
+    bo'lsa, default tugmalardan oldin (tepada) ko'rsatiladi, 2 ustunli grid'da.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+    if pro_extras:
+        row: list[InlineKeyboardButton] = []
+        for key in pro_extras:
+            label = _PRO_START_SHORTCUTS.get(key)
+            if not label:
+                continue
+            row.append(InlineKeyboardButton(text=label, callback_data=key, style="primary"))
+            if len(row) == 2:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+
+    rows.extend(
+        [
             [
                 InlineKeyboardButton(text="✨ Janr bo'yicha", callback_data="genres", style="success"),
                 InlineKeyboardButton(text="🔎 Qidiruv", switch_inline_query_current_chat="", style="success"),
@@ -522,25 +556,49 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
             ],
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _get_user_start_extras(user_id: int) -> list[str]:
+    """Pro user tanlagan /start shortcut'larini DB'dan oladi.
+
+    Oddiy user yoki Pro bo'lmasa — bo'sh ro'yxat. DB xato bersa — bo'sh
+    ro'yxat (menyu har doim ko'rsatilishi kerak).
+    """
+    try:
+        from database.queries import get_user_start_extras
+
+        async with AsyncSessionLocal() as session:
+            user = await session.get(User, user_id)
+            now = datetime.utcnow()
+            is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
+            if not is_pro:
+                return []
+            return await get_user_start_extras(session, user_id)
+    except Exception as e:
+        logger.warning(f"start_extras load failed for {user_id}: {e}")
+        return []
 
 
 async def send_main_menu(target, delete_prev: bool = False):
     if isinstance(target, types.CallbackQuery):
         msg = target.message
+        user_id = target.from_user.id
     else:
         msg = target
+        user_id = target.from_user.id if target.from_user else 0
     caption = "🎌 <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
+    extras = await _get_user_start_extras(user_id) if user_id else []
+    kb = get_main_menu_keyboard(extras)
     try:
         if delete_prev:
             try:
                 await msg.delete()
             except Exception:
                 pass
-        await msg.answer_photo(
-            photo=PHOTO_URL, caption=caption, reply_markup=get_main_menu_keyboard(), parse_mode="HTML"
-        )
+        await msg.answer_photo(photo=PHOTO_URL, caption=caption, reply_markup=kb, parse_mode="HTML")
     except Exception:
-        await msg.answer(caption, reply_markup=get_main_menu_keyboard(), parse_mode="HTML")
+        await msg.answer(caption, reply_markup=kb, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1191,7 +1249,8 @@ async def go_main_menu(call: types.CallbackQuery):
     """
     await call.answer()
     caption = "🎌 <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
-    kb = get_main_menu_keyboard()
+    extras = await _get_user_start_extras(call.from_user.id)
+    kb = get_main_menu_keyboard(extras)
 
     try:
         await call.message.edit_media(

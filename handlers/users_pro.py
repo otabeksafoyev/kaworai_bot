@@ -595,26 +595,83 @@ async def pro_upgrade_hint(call: types.CallbackQuery):
 # ═══════════════════════════════════════════════════════════
 
 
-def _ux_mode_kb(current: str) -> InlineKeyboardMarkup:
-    """Sozlamalar ichidagi UX rejim tanlovi. Joriy rejim tasdiqlangan.
-
-    `edit` — har bosishda mavjud xabar tahrirlanadi (bitta xabar qoladi).
-    `send` — har bosishda yangi xabar yuboriladi (eski o'chadi).
-    """
-    edit_label = ("✅ " if current == "edit" else "") + "📝 Tahrirlash (silliq)"
-    send_label = ("✅ " if current == "send" else "") + "📤 Har safar yangi xabar"
+def _settings_root_kb(ux_mode: str) -> InlineKeyboardMarkup:
+    """Sozlamalar ildiz menyusi — UX rejimi + /start menyu tuzatish."""
+    edit_label = ("✅ " if ux_mode == "edit" else "") + "📝 Tahrirlash (silliq)"
+    send_label = ("✅ " if ux_mode == "send" else "") + "📤 Har safar yangi xabar"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=edit_label, callback_data="pro_ux_set_edit", style="success")],
             [InlineKeyboardButton(text=send_label, callback_data="pro_ux_set_send", style="success")],
+            [
+                InlineKeyboardButton(
+                    text="🎨 Bosh menyu tuzatish (Pro shortcut'lar)",
+                    callback_data="pro_start_menu_edit",
+                    style="primary",
+                )
+            ],
             [InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass", style="primary")],
         ]
     )
 
 
+# Pro shortcut — ko'rinadigan nomlari.
+_PRO_SHORTCUT_LABELS = {
+    "pro_recommend": "🤖 AI Tavsiyalar",
+    "pro_mood": "😌 Kayfiyatim",
+    "pro_trending": "🔥 Trending",
+    "pro_top": "⭐ Top reyting",
+    "pro_rising": "📈 Rising",
+    "pro_hidden": "💎 Hidden Gems",
+    "pro_continue": "▶️ Davom ettirish",
+    "pro_taste": "👤 Mening didim",
+}
+
+
+def _start_menu_edit_kb(selected: list[str]) -> InlineKeyboardMarkup:
+    """Bosh menyu tuzatish — har shortcut toggle, order-aware, 2 ustunli grid."""
+    from database.queries import ALLOWED_START_EXTRAS, MAX_START_EXTRAS
+
+    buttons: list[list[InlineKeyboardButton]] = []
+    # Tartibni saqlash uchun: avval tanlanganlar (tartibida raqamlar bilan),
+    # keyin qolganlari. Shu tariqa user nimani qo'shgani ko'rinadi.
+    row: list[InlineKeyboardButton] = []
+    shown: set[str] = set()
+    for idx, key in enumerate(selected, start=1):
+        if key not in ALLOWED_START_EXTRAS:
+            continue
+        label = f"{idx}. ✅ {_PRO_SHORTCUT_LABELS.get(key, key)}"
+        row.append(InlineKeyboardButton(text=label, callback_data=f"pro_sm_t_{key}", style="success"))
+        shown.add(key)
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    for key in ALLOWED_START_EXTRAS:
+        if key in shown:
+            continue
+        label = _PRO_SHORTCUT_LABELS.get(key, key)
+        row.append(InlineKeyboardButton(text=label, callback_data=f"pro_sm_t_{key}", style="primary"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([InlineKeyboardButton(text="🧹 Hammasini tozalash", callback_data="pro_sm_clear", style="danger")])
+    buttons.append(
+        [
+            InlineKeyboardButton(text="↩️ Sozlamalar", callback_data="pro_settings", style="primary"),
+            InlineKeyboardButton(
+                text=f"ℹ️ {len(selected)}/{MAX_START_EXTRAS}", callback_data="pro_sm_info", style="primary"
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 @pro_user_router.callback_query(F.data == "pro_settings")
 async def pro_settings(call: types.CallbackQuery):
-    """Pro sozlamalar — hozircha UX rejimi tanlovi."""
+    """Pro sozlamalar ildizi — UX rejimi + bosh menyu tuzatish."""
     if not await check_pro(call.from_user.id):
         return await call.answer("🔒 Pro kerak!", show_alert=True)
 
@@ -628,9 +685,10 @@ async def pro_settings(call: types.CallbackQuery):
         "🎬 <b>Qism ko'rish rejimi:</b>\n"
         "Bosganda qanday ko'rinsin — bitta xabar tahrirlansin yoki "
         "har safar yangi xabar kelsin?\n\n"
-        "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>")
+        "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>") + "\n\n"
+        "🎨 <b>Bosh menyu tuzatish</b> — /start menyusiga Pro shortcut tugmalar qo'shing."
     )
-    await safe_edit(call, text, _ux_mode_kb(mode))
+    await safe_edit(call, text, _settings_root_kb(mode))
     await call.answer()
 
 
@@ -657,7 +715,93 @@ async def pro_ux_set(call: types.CallbackQuery):
         "🎬 <b>Qism ko'rish rejimi:</b>\n"
         "Bosganda qanday ko'rinsin — bitta xabar tahrirlansin yoki "
         "har safar yangi xabar kelsin?\n\n"
-        "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>")
+        "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>") + "\n\n"
+        "🎨 <b>Bosh menyu tuzatish</b> — /start menyusiga Pro shortcut tugmalar qo'shing."
     )
-    await safe_edit(call, text, _ux_mode_kb(mode))
+    await safe_edit(call, text, _settings_root_kb(mode))
     await call.answer("✅ Saqlandi", show_alert=False)
+
+
+@pro_user_router.callback_query(F.data == "pro_start_menu_edit")
+async def pro_start_menu_edit(call: types.CallbackQuery):
+    """Bosh menyu (start) ni tuzatish oynasi — Pro shortcut'larni toggle qilish."""
+    if not await check_pro(call.from_user.id):
+        return await call.answer("🔒 Pro kerak!", show_alert=True)
+
+    from database.queries import MAX_START_EXTRAS, get_user_start_extras
+
+    async with AsyncSessionLocal() as session:
+        selected = await get_user_start_extras(session, call.from_user.id)
+
+    text = (
+        "🎨 <b>Bosh menyu tuzatish</b>\n\n"
+        "/start menyusiga Pro shortcut'lar qo'shib, istalgan Pro bo'limni "
+        "bir bosishda ochiladigan qiling. Tanlov tartibi = menyudagi tartib.\n\n"
+        f"Chegara: <b>{MAX_START_EXTRAS}</b> ta. Tozalash uchun qayta bosing."
+    )
+    await safe_edit(call, text, _start_menu_edit_kb(selected))
+    await call.answer()
+
+
+@pro_user_router.callback_query(F.data.startswith("pro_sm_t_"))
+async def pro_start_menu_toggle(call: types.CallbackQuery):
+    """Shortcut kalitini qo'shish/olib tashlash (toggle)."""
+    if not await check_pro(call.from_user.id):
+        return await call.answer("🔒 Pro kerak!", show_alert=True)
+
+    key = call.data.replace("pro_sm_t_", "")
+    from database.queries import ALLOWED_START_EXTRAS, MAX_START_EXTRAS, toggle_user_start_extra
+
+    if key not in ALLOWED_START_EXTRAS:
+        return await call.answer()
+
+    async with AsyncSessionLocal() as session:
+        ok, current = await toggle_user_start_extra(session, call.from_user.id, key)
+
+    if not ok and len(current) >= MAX_START_EXTRAS:
+        return await call.answer(
+            f"❌ Chegaraga yetdingiz ({MAX_START_EXTRAS}). Birortasini olib tashlang.",
+            show_alert=True,
+        )
+    if not ok:
+        return await call.answer("❌ Saqlanmadi", show_alert=True)
+
+    # UI ni yangilaymiz — faqat klaviatura.
+    try:
+        await call.message.edit_reply_markup(reply_markup=_start_menu_edit_kb(current))
+    except Exception:
+        pass
+    label = _PRO_SHORTCUT_LABELS.get(key, key)
+    added = key in current
+    await call.answer(("➕ " if added else "➖ ") + label, show_alert=False)
+
+
+@pro_user_router.callback_query(F.data == "pro_sm_clear")
+async def pro_start_menu_clear(call: types.CallbackQuery):
+    """Bosh menyudagi barcha qo'shilgan shortcut'larni tozalash."""
+    if not await check_pro(call.from_user.id):
+        return await call.answer("🔒 Pro kerak!", show_alert=True)
+
+    from database.queries import set_user_start_extras
+
+    async with AsyncSessionLocal() as session:
+        await set_user_start_extras(session, call.from_user.id, [])
+
+    try:
+        await call.message.edit_reply_markup(reply_markup=_start_menu_edit_kb([]))
+    except Exception:
+        pass
+    await call.answer("🧹 Tozalandi", show_alert=False)
+
+
+@pro_user_router.callback_query(F.data == "pro_sm_info")
+async def pro_start_menu_info(call: types.CallbackQuery):
+    """Counter tugmasi bosilganda — hech narsa qilmaydi, faqat info."""
+    from database.queries import MAX_START_EXTRAS, get_user_start_extras
+
+    async with AsyncSessionLocal() as session:
+        selected = await get_user_start_extras(session, call.from_user.id)
+    await call.answer(
+        f"Tanlangan: {len(selected)} / {MAX_START_EXTRAS}\nLimit to'lsa, birini olib tashlang.",
+        show_alert=False,
+    )
