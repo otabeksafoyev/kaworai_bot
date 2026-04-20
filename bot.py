@@ -20,7 +20,9 @@ from loader import bot, dp
 from middlewares.subscription import SubscriptionMiddleware
 from middlewares.throttling import ThrottlingMiddleware
 from utils.daily_backup import daily_backup_loop
+from utils.healthcheck import start_healthcheck_server
 from utils.reengagement import reengagement_loop, reengagement_router
+from utils.sentry_init import init_sentry
 
 # Fon task'larga reference — asyncio.create_task natijasini shu yerda saqlaymiz,
 # aks holda GC ularni erta to'xtatib qo'yishi mumkin (RUF006).
@@ -50,6 +52,14 @@ async def on_startup():
     _BACKGROUND_TASKS.add(asyncio.create_task(reengagement_loop(bot)))
     logging.info("Re-engagement scheduler ishga tushirildi")
 
+    # Health-check HTTP serveri (Railway/K8s probe uchun). HEALTHCHECK_PORT=0
+    # bo'lsa ishga tushmaydi — lokal dev'da muammo yo'q. Runner'ga modul
+    # global'i orqali reference saqlaymiz — aks holda GC uni yig'ib
+    # qo'yishi mumkin. Process tugaganda OS port'ni ozod qiladi.
+    runner = await start_healthcheck_server()
+    if runner is not None:
+        globals()["_HEALTHCHECK_RUNNER"] = runner
+
 
 async def main():
     logging.basicConfig(
@@ -60,6 +70,10 @@ async def main():
             logging.FileHandler("bot.log", encoding="utf-8"),
         ],
     )
+
+    # Sentry — logging va aiogram o'rnatilishidan oldin chaqirilishi kerak,
+    # shunda init davridagi xatolar ham qamrab olinadi.
+    init_sentry()
 
     await on_startup()
 
