@@ -26,6 +26,7 @@ from database.queries import (
     get_active_channels,
     get_or_create_user,
     get_user_rating,
+    get_user_ux_mode,
     is_subscribed_anime,
 )
 from middlewares.subscription import check_subscription, get_sub_keyboard
@@ -182,6 +183,65 @@ def _build_episode_caption(anime: Anime, episode: int, total_eps: int) -> str:
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
     emoji = type_emoji.get(anime.content_type or "anime", "🎬")
     return f"{emoji} <b>{anime.title}</b>\n▶ {episode}-qism  |  🎞 Jami: {total_eps} qism"
+
+
+async def _deliver_episode_video(
+    call: types.CallbackQuery,
+    *,
+    file_id: str,
+    caption: str,
+    kb: InlineKeyboardMarkup,
+    is_pro: bool,
+    ux_mode: str,
+) -> None:
+    """Qism videosini yetkazish — UX rejimiga qarab ishlaydi.
+
+    * `ux_mode == "send"` (faqat Pro tanlasa): eski xabar o'chiriladi,
+      yangi `answer_video` yuboriladi. Shu holda har bosish yangi xabar.
+    * `ux_mode == "edit"` (default): mavjud xabar `edit_media` bilan
+      almashtiriladi (silliq UX). Agar edit xato bo'lsa — send fallback.
+
+    `protect_content=not is_pro` — oddiy userlar yuklab/ulashib olmaydi.
+    """
+    media = InputMediaVideo(media=file_id, caption=caption, parse_mode="HTML")
+    if ux_mode == "send":
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+        try:
+            await call.message.answer_video(
+                video=file_id,
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="HTML",
+                protect_content=not is_pro,
+            )
+            return
+        except Exception as e:
+            logger.warning(f"episode send-mode fallback: {e}")
+            # Agar yangi xabar yuborilmasa — oxirgi chora matn xabar.
+            await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
+            return
+
+    # Default: edit_media (silliq)
+    try:
+        await call.message.edit_media(media=media, reply_markup=kb)
+        return
+    except Exception as e:
+        logger.debug(f"edit_media failed, falling back to send: {e}")
+
+    try:
+        await call.message.answer_video(
+            video=file_id,
+            caption=caption,
+            reply_markup=kb,
+            parse_mode="HTML",
+            protect_content=not is_pro,
+        )
+    except Exception as e:
+        logger.error(f"episode fallback send: {e}")
+        await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -630,6 +690,8 @@ async def watch_start(call: types.CallbackQuery):
         )
         episodes = eps_res.scalars().all()
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
+        # Pro tanlagan UX rejimi (edit/send). Non-Pro har doim edit — silliq.
+        ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
 
     if not episodes:
         return await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
@@ -640,32 +702,7 @@ async def watch_start(call: types.CallbackQuery):
     caption = _build_episode_caption(anime, first_ep.episode, len(episodes))
     kb = _build_episode_keyboard(anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0)
 
-    # Silliq UX: mavjud xabarda poster → 1-qism videosiga almashtiramiz
-    # (yangi xabar yubormaymiz). Poster protect_content=not is_pro bilan
-    # yuborilgan, shuning uchun edit_media'dan keyin video ham himoyali qoladi.
-    sent = False
-    try:
-        await call.message.edit_media(
-            media=InputMediaVideo(media=first_ep.file_id, caption=caption, parse_mode="HTML"),
-            reply_markup=kb,
-        )
-        sent = True
-    except Exception as e:
-        logger.debug(f"watch_start edit_media failed, fallback to send: {e}")
-
-    if not sent:
-        # Edit ishlamadi (masalan, matn xabari edi) — yangi protect_content video.
-        try:
-            await call.message.answer_video(
-                video=first_ep.file_id,
-                caption=caption,
-                reply_markup=kb,
-                parse_mode="HTML",
-                protect_content=not is_pro,
-            )
-        except Exception as e:
-            logger.error(f"watch_start error: {e}")
-            await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
+    await _deliver_episode_video(call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode)
 
     try:
         from database.queries import add_to_watch_history, record_view
@@ -722,29 +759,14 @@ async def episode_select(call: types.CallbackQuery):
         )
         all_episodes = [e.episode for e in all_eps_res.scalars().all()]
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
+        ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
 
     caption = _build_episode_caption(anime, episode, len(all_episodes))
     kb = _build_episode_keyboard(anime_id, all_episodes, episode, subscribed, is_pro, page=page)
 
     await call.answer()
 
-    try:
-        await call.message.edit_media(
-            media=InputMediaVideo(media=ep_obj.file_id, caption=caption, parse_mode="HTML"),
-            reply_markup=kb,
-        )
-    except Exception as e:
-        logger.warning(f"edit_media failed: {e}")
-        try:
-            await call.message.answer_video(
-                video=ep_obj.file_id,
-                caption=caption,
-                reply_markup=kb,
-                parse_mode="HTML",
-                protect_content=not is_pro,
-            )
-        except Exception as e2:
-            logger.error(f"episode_select fallback: {e2}")
+    await _deliver_episode_video(call, file_id=ep_obj.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode)
 
     try:
         from database.queries import add_to_watch_history, record_view
@@ -839,50 +861,81 @@ async def episode_navigate(call: types.CallbackQuery):
         except ValueError:
             idx = 0
 
+        ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
+
+        season_jump = False
+        next_anime = None
+        next_ep_obj = None
+        next_ep_numbers: list[int] = []
+
         if direction == "prev":
             if idx == 0:
                 return await call.answer("⛔ Bu birinchi qism!", show_alert=True)
             new_idx = idx - 1
         else:
             if idx >= len(ep_numbers) - 1:
-                return await call.answer("✅ Bu oxirgi qism!", show_alert=True)
-            new_idx = idx + 1
+                # Oxirgi qismda "Keyingi" bosildi — keyingi fasl bormi?
+                next_anime = await find_next_season_anime(session, anime_id)
+                if next_anime is None:
+                    return await call.answer("✅ Bu oxirgi qism!", show_alert=True)
+                # Keyingi faslning 1-qismiga o'tamiz.
+                if next_anime.is_pro_locked and not is_pro:
+                    return await call.answer("🔒 Keyingi fasl Pro foydalanuvchilar uchun!", show_alert=True)
+                next_eps_res = await session.execute(
+                    select(Series).where(Series.anime_id == next_anime.id).order_by(Series.episode.asc())
+                )
+                next_eps = next_eps_res.scalars().all()
+                if not next_eps:
+                    return await call.answer("📭 Keyingi fasl qismlari hali qo'shilmagan!", show_alert=True)
+                season_jump = True
+                next_ep_obj = next_eps[0]
+                next_ep_numbers = [e.episode for e in next_eps]
+                new_idx = 0  # yangi faslning 1-qismi indeksi
+            else:
+                new_idx = idx + 1
 
-        new_ep_num = ep_numbers[new_idx]
-        new_ep_obj = all_eps[new_idx]
-        new_page = new_idx // GRID_SIZE
-        subscribed = await is_subscribed_anime(session, anime_id, user_id)
+        if season_jump and next_anime is not None and next_ep_obj is not None:
+            target_anime = next_anime
+            target_ep_obj = next_ep_obj
+            target_ep_numbers = next_ep_numbers
+            target_ep_num = next_ep_numbers[0]
+        else:
+            target_anime = anime
+            target_ep_obj = all_eps[new_idx]
+            target_ep_numbers = ep_numbers
+            target_ep_num = ep_numbers[new_idx]
 
-    caption = _build_episode_caption(anime, new_ep_num, len(ep_numbers))
-    kb = _build_episode_keyboard(anime_id, ep_numbers, new_ep_num, subscribed, is_pro, page=new_page)
+        subscribed = await is_subscribed_anime(session, target_anime.id, user_id)
 
-    await call.answer()
+    new_page = new_idx // GRID_SIZE if not season_jump else 0
+    caption = _build_episode_caption(target_anime, target_ep_num, len(target_ep_numbers))
+    if season_jump:
+        # Userga yangi fasl boshlanganini bildiramiz (caption ichida).
+        caption = f"🎉 <b>Yangi fasl boshlanmoqda!</b>\n\n{caption}"
+    kb = _build_episode_keyboard(target_anime.id, target_ep_numbers, target_ep_num, subscribed, is_pro, page=new_page)
 
-    try:
-        await call.message.edit_media(
-            media=InputMediaVideo(media=new_ep_obj.file_id, caption=caption, parse_mode="HTML"),
-            reply_markup=kb,
-        )
-    except Exception as e:
-        logger.warning(f"epnav error: {e}")
-        try:
-            await call.message.answer_video(
-                video=new_ep_obj.file_id,
-                caption=caption,
-                reply_markup=kb,
-                parse_mode="HTML",
-                protect_content=not is_pro,
-            )
-        except Exception as e2:
-            logger.error(f"epnav fallback: {e2}")
+    # Fasl o'tishi — eski fasl xabar qolishi mantiqsiz, shuning uchun
+    # har doim yangi xabar yuboramiz (user o'zining rejimi qanday bo'lsa ham).
+    delivery_mode = "send" if season_jump else ux_mode
+    await call.answer("🎉 2-faslga o'tildi!" if season_jump else None, show_alert=season_jump)
+
+    await _deliver_episode_video(
+        call, file_id=target_ep_obj.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=delivery_mode
+    )
 
     try:
         from database.queries import add_to_watch_history, record_view
 
         async with AsyncSessionLocal() as session:
-            is_completed = new_idx == len(ep_numbers) - 1
-            await add_to_watch_history(session, user_id, anime_id, episode=new_ep_num, is_completed=is_completed)
-            await record_view(session, anime_id, user_id)
+            # Eski fasl oxirigacha ko'rilgan bo'lsa — completed deb belgilaymiz.
+            if season_jump:
+                await add_to_watch_history(session, user_id, anime_id, episode=current_ep, is_completed=True)
+                await add_to_watch_history(session, user_id, target_anime.id, episode=target_ep_num)
+                await record_view(session, target_anime.id, user_id)
+            else:
+                is_completed = new_idx == len(ep_numbers) - 1
+                await add_to_watch_history(session, user_id, anime_id, episode=target_ep_num, is_completed=is_completed)
+                await record_view(session, anime_id, user_id)
     except Exception as e:
         logger.error(f"epnav history: {e}")
 
@@ -915,6 +968,7 @@ async def show_episodes_list(call: types.CallbackQuery):
         )
         episodes = eps_res.scalars().all()
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
+        ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
 
     if not episodes:
         return await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
@@ -925,29 +979,7 @@ async def show_episodes_list(call: types.CallbackQuery):
     caption = _build_episode_caption(anime, first_ep.episode, len(episodes))
     kb = _build_episode_keyboard(anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0)
 
-    # Silliq UX: mavjud xabar ichida video almashtiriladi.
-    sent = False
-    try:
-        await call.message.edit_media(
-            media=InputMediaVideo(media=first_ep.file_id, caption=caption, parse_mode="HTML"),
-            reply_markup=kb,
-        )
-        sent = True
-    except Exception as e:
-        logger.debug(f"show_episodes_list edit_media failed: {e}")
-
-    if not sent:
-        try:
-            await call.message.answer_video(
-                video=first_ep.file_id,
-                caption=caption,
-                reply_markup=kb,
-                parse_mode="HTML",
-                protect_content=not is_pro,
-            )
-        except Exception as e:
-            logger.error(f"show_episodes_list error: {e}")
-            await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
+    await _deliver_episode_video(call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode)
 
 
 # ═══════════════════════════════════════════════════════════
