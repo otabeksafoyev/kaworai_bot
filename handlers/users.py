@@ -196,8 +196,9 @@ async def _deliver_episode_video(
 ) -> None:
     """Qism videosini yetkazish — UX rejimiga qarab ishlaydi.
 
-    * `ux_mode == "send"` (faqat Pro tanlasa): eski xabar o'chiriladi,
-      yangi `answer_video` yuboriladi. Shu holda har bosish yangi xabar.
+    * `ux_mode == "send"` (faqat Pro tanlasa): eski xabar **o'chmaydi**,
+      faqat tugmalari olib tashlanadi (video va captioni joyida qoladi),
+      keyin yangi video xabar yuboriladi. Har bir qism botda saqlanib boradi.
     * `ux_mode == "edit"` (default): mavjud xabar `edit_media` bilan
       almashtiriladi (silliq UX). Agar edit xato bo'lsa — send fallback.
 
@@ -205,10 +206,11 @@ async def _deliver_episode_video(
     """
     media = InputMediaVideo(media=file_id, caption=caption, parse_mode="HTML")
     if ux_mode == "send":
+        # Eski xabarning tugmalarini olib tashlaymiz (video o'zi qoladi).
         try:
-            await call.message.delete()
-        except Exception:
-            pass
+            await call.message.edit_reply_markup(reply_markup=None)
+        except Exception as e:
+            logger.debug(f"strip old markup failed (ignored): {e}")
         try:
             await call.message.answer_video(
                 video=file_id,
@@ -220,7 +222,7 @@ async def _deliver_episode_video(
             return
         except Exception as e:
             logger.warning(f"episode send-mode fallback: {e}")
-            # Agar yangi xabar yuborilmasa — oxirgi chora matn xabar.
+            # Agar yangi video yuborilmasa — oxirgi chora matn xabar.
             await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
             return
 
