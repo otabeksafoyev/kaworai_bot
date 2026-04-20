@@ -42,6 +42,30 @@ async def get_user_count(session: AsyncSession) -> int:
     return result.scalar()
 
 
+async def get_user_ux_mode(session: AsyncSession, user_id: int) -> str:
+    """Pro foydalanuvchi tanlagan UX rejimi. Default: 'edit' (silliq).
+
+    "edit" — xabar tahrirlanadi (bitta xabar saqlanadi).
+    "send" — har bosishda yangi video xabar yuboriladi (eski o'chadi).
+    Oddiy user yoki yo'q bo'lsa — har doim 'edit'.
+    """
+    res = await session.execute(select(User.ux_mode).where(User.telegram_id == user_id))
+    mode = res.scalar_one_or_none()
+    return mode if mode in ("edit", "send") else "edit"
+
+
+async def set_user_ux_mode(session: AsyncSession, user_id: int, mode: str) -> bool:
+    """UX rejimini o'zgartiradi. `mode` ∈ {'edit','send'}. True — saqlandi."""
+    if mode not in ("edit", "send"):
+        return False
+    user = await session.get(User, user_id)
+    if not user:
+        return False
+    user.ux_mode = mode
+    await session.commit()
+    return True
+
+
 # ═══════════════════════════════════════════════════════════
 #  CHANNELS
 # ═══════════════════════════════════════════════════════════

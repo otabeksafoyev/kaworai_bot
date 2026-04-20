@@ -152,6 +152,7 @@ async def show_pro_main_menu(call: types.CallbackQuery):
                 InlineKeyboardButton(text="▶️ Davom ettirish", callback_data="pro_continue", style="success"),
                 InlineKeyboardButton(text="👤 Mening didim", callback_data="pro_taste", style="success"),
             ],
+            [InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="pro_settings", style="primary")],
             [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")],
         ]
     )
@@ -587,3 +588,76 @@ async def pro_upgrade_hint(call: types.CallbackQuery):
     await call.answer(
         "🔒 Bu kontent Kaworai Pro uchun!\nPro bo'lish uchun 🟢 Kaworai Pro tugmasini bosing.", show_alert=True
     )
+
+
+# ═══════════════════════════════════════════════════════════
+#  PRO SOZLAMALAR — UX rejimi (edit vs send)
+# ═══════════════════════════════════════════════════════════
+
+
+def _ux_mode_kb(current: str) -> InlineKeyboardMarkup:
+    """Sozlamalar ichidagi UX rejim tanlovi. Joriy rejim tasdiqlangan.
+
+    `edit` — har bosishda mavjud xabar tahrirlanadi (bitta xabar qoladi).
+    `send` — har bosishda yangi xabar yuboriladi (eski o'chadi).
+    """
+    edit_label = ("✅ " if current == "edit" else "") + "📝 Tahrirlash (silliq)"
+    send_label = ("✅ " if current == "send" else "") + "📤 Har safar yangi xabar"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=edit_label, callback_data="pro_ux_set_edit", style="success")],
+            [InlineKeyboardButton(text=send_label, callback_data="pro_ux_set_send", style="success")],
+            [InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass", style="primary")],
+        ]
+    )
+
+
+@pro_user_router.callback_query(F.data == "pro_settings")
+async def pro_settings(call: types.CallbackQuery):
+    """Pro sozlamalar — hozircha UX rejimi tanlovi."""
+    if not await check_pro(call.from_user.id):
+        return await call.answer("🔒 Pro kerak!", show_alert=True)
+
+    from database.queries import get_user_ux_mode
+
+    async with AsyncSessionLocal() as session:
+        mode = await get_user_ux_mode(session, call.from_user.id)
+
+    text = (
+        "⚙️ <b>Pro sozlamalar</b>\n\n"
+        "🎬 <b>Qism ko'rish rejimi:</b>\n"
+        "Bosganda qanday ko'rinsin — bitta xabar tahrirlansin yoki "
+        "har safar yangi xabar kelsin?\n\n"
+        "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>")
+    )
+    await safe_edit(call, text, _ux_mode_kb(mode))
+    await call.answer()
+
+
+@pro_user_router.callback_query(F.data.startswith("pro_ux_set_"))
+async def pro_ux_set(call: types.CallbackQuery):
+    """Rejimni saqlash: pro_ux_set_edit / pro_ux_set_send."""
+    if not await check_pro(call.from_user.id):
+        return await call.answer("🔒 Pro kerak!", show_alert=True)
+
+    mode = call.data.replace("pro_ux_set_", "")
+    if mode not in ("edit", "send"):
+        return await call.answer()
+
+    from database.queries import set_user_ux_mode
+
+    async with AsyncSessionLocal() as session:
+        ok = await set_user_ux_mode(session, call.from_user.id, mode)
+
+    if not ok:
+        return await call.answer("❌ Saqlanmadi", show_alert=True)
+
+    text = (
+        "⚙️ <b>Pro sozlamalar</b>\n\n"
+        "🎬 <b>Qism ko'rish rejimi:</b>\n"
+        "Bosganda qanday ko'rinsin — bitta xabar tahrirlansin yoki "
+        "har safar yangi xabar kelsin?\n\n"
+        "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>")
+    )
+    await safe_edit(call, text, _ux_mode_kb(mode))
+    await call.answer("✅ Saqlandi", show_alert=False)

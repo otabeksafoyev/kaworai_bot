@@ -36,6 +36,11 @@ class User(Base):
     last_active = Column(DateTime, server_default=func.now(), index=True)
     last_reminder_at = Column(DateTime, nullable=True)
     reminder_stage = Column(Integer, default=0)
+    # Pro foydalanuvchi tanlagan UX rejimi:
+    #   "edit" (default) — xabar tahrirlanadi (silliq, bitta xabar qoladi)
+    #   "send" — har bosishda yangi video xabar yuboriladi (eski xabar o'chadi)
+    # Oddiy userlar uchun har doim "edit" ishlatiladi (bu sozlama Pro uchun).
+    ux_mode = Column(String(10), default="edit")
 
     watch_history = relationship("UserWatchHistory", back_populates="user", cascade="all, delete-orphan")
     taste_profile = relationship("UserTasteProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")

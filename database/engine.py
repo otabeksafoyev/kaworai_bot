@@ -114,6 +114,8 @@ MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMP",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS reminder_stage INTEGER DEFAULT 0",
     "CREATE INDEX IF NOT EXISTS ix_users_last_active ON users(last_active)",
+    # Users — Pro UX rejimi (edit=silliq tahrir, send=har safar yangi xabar)
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS ux_mode VARCHAR(10) DEFAULT 'edit'",
     # AnimeSubscription jadvali
     """
     CREATE TABLE IF NOT EXISTS anime_subscriptions (
