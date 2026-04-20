@@ -91,6 +91,7 @@ def _trailer_rejection_reason(video) -> str | None:
         return f"❌ Video juda uzun: {mins:.1f} daqiqa (chegara {limit_mins:.0f} daqiqa)."
     return None
 
+
 logger = logging.getLogger(__name__)
 
 admin_router = Router()
@@ -3687,10 +3688,7 @@ async def broadcast_to_users(msg: Message, state: FSMContext):
         await asyncio.sleep(0.05)
     label = "🌍 Barcha" if region == "all" else f"📍 {region_label(region)}"
     await msg.answer(
-        f"✅ Yuborildi! (filter: <b>{esc(label)}</b>)\n"
-        f"👤 OK: {success}\n"
-        f"🚫 Bloklagan: {blocked}\n"
-        f"❌ Xato: {failed}",
+        f"✅ Yuborildi! (filter: <b>{esc(label)}</b>)\n👤 OK: {success}\n🚫 Bloklagan: {blocked}\n❌ Xato: {failed}",
         reply_markup=admin_main_kb,
         parse_mode="HTML",
     )
