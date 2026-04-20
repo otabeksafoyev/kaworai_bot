@@ -17,6 +17,7 @@ Ishlatish:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -24,8 +25,41 @@ from aiohttp import web
 
 logger = logging.getLogger(__name__)
 
+# DB ping uchun cheklov: agar baza 2 soniya ichida javob bermasa —
+# "down" deb hisoblaymiz va 503 qaytaramiz. Orchestrator qayta deploy
+# qilsa, baza ham tiklangan bo'lishi kerak.
+_DB_PING_TIMEOUT_SEC = 2.0
+
 
 async def _healthz(_request: web.Request) -> web.Response:
+    """
+    Bot + baza tirikligini tekshiradi.
+
+    Baza ping muvaffaqiyatli bo'lsa — 200 OK `ok`.
+    Baza javob bermasa yoki xato bo'lsa — 503 `db_down`.
+
+    Bu Railway/K8s probe uchun muhim: agar faqat `ok` qaytarsak, baza
+    o'chgan bo'lsa ham bot "tirik" ko'rinadi va orchestrator qayta deploy
+    qilmaydi. DB ping qo'shilganda — baza uzilganda ham aniq signal bor.
+    """
+    # Lazy import — healthcheck moduli database'ga bog'lanib qolmasligi uchun
+    # (unit test'larda yoki database yo'q bo'lsa ham ishlaydi).
+    try:
+        from database.engine import db_ping
+    except Exception:
+        return web.Response(text="ok", content_type="text/plain")
+
+    try:
+        alive = await asyncio.wait_for(db_ping(), timeout=_DB_PING_TIMEOUT_SEC)
+    except asyncio.TimeoutError:
+        logger.warning("healthcheck: DB ping timeout (%.1fs)", _DB_PING_TIMEOUT_SEC)
+        return web.Response(status=503, text="db_timeout", content_type="text/plain")
+    except Exception:
+        logger.exception("healthcheck: DB ping unexpected error")
+        return web.Response(status=503, text="db_error", content_type="text/plain")
+
+    if not alive:
+        return web.Response(status=503, text="db_down", content_type="text/plain")
     return web.Response(text="ok", content_type="text/plain")
 
 

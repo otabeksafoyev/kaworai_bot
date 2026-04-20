@@ -3675,8 +3675,21 @@ async def broadcast_to_users(msg: Message, state: FSMContext):
     # Broadcast — flood-wait va "user bloklagan" holatlarini alohida ushlaymiz.
     # 200k userga yuborganda Telegram sekundiga ~30 xabar chegara qo'yadi;
     # TelegramRetryAfter ni kutib qayta urinsak, 99%+ yetib boradi.
+    # Progres xabari har _PROGRESS_STEP userda yangilanadi — admin real
+    # vaqtda jarayonni ko'radi.
+    total = len(user_ids)
+    label = "🌍 Barcha" if region == "all" else f"📍 {region_label(region)}"
+    progress_msg = await msg.answer(
+        f"📣 Broadcast boshlandi (filter: <b>{esc(label)}</b>)\n👥 Jami: {total}\n⏳ 0 / {total}",
+        parse_mode="HTML",
+    )
+
     success = failed = blocked = 0
-    for uid in user_ids:
+    _PROGRESS_STEP = 500 if total > 5000 else 100
+    last_update_sent = 0
+    last_update_ts = asyncio.get_event_loop().time()
+
+    for idx, uid in enumerate(user_ids, start=1):
         # Copy_to — forward belgisiz ko'chirish. Har bir user uchun alohida.
         result = await send_with_retry(lambda u=uid: msg.copy_to(chat_id=u))
         if result == "ok":
@@ -3686,12 +3699,41 @@ async def broadcast_to_users(msg: Message, state: FSMContext):
         else:
             failed += 1
         await asyncio.sleep(0.05)
-    label = "🌍 Barcha" if region == "all" else f"📍 {region_label(region)}"
-    await msg.answer(
-        f"✅ Yuborildi! (filter: <b>{esc(label)}</b>)\n👤 OK: {success}\n🚫 Bloklagan: {blocked}\n❌ Xato: {failed}",
-        reply_markup=admin_main_kb,
-        parse_mode="HTML",
+
+        # Progres yangilash: har _PROGRESS_STEP user'da yoki har 5 sekundda.
+        # Telegram edit_message rate-limit bor (1/sek per chat), shuning uchun
+        # tez-tez chaqirsak 429 bo'lib ketadi. Step + vaqt chegarasi birga.
+        now = asyncio.get_event_loop().time()
+        should_update = (idx - last_update_sent) >= _PROGRESS_STEP and (now - last_update_ts) >= 2.0
+        if should_update and idx < total:
+            try:
+                await progress_msg.edit_text(
+                    f"📣 Broadcast (filter: <b>{esc(label)}</b>)\n"
+                    f"👥 Jami: {total}\n"
+                    f"⏳ {idx} / {total}\n"
+                    f"✅ OK: {success}  🚫 Bloklagan: {blocked}  ❌ Xato: {failed}",
+                    parse_mode="HTML",
+                )
+                last_update_sent = idx
+                last_update_ts = now
+            except Exception:
+                # Edit xato bo'lsa (masalan flood-wait 429) — progres ko'rsatishni tashlaymiz,
+                # broadcast davom etadi. Yakuniy hisobot oxirida baribir chiqadi.
+                pass
+
+    # Yakuniy xabar — oldingi progress msg'ni yangilaymiz, yangi yubormaymiz.
+    final_text = (
+        f"✅ Yuborildi! (filter: <b>{esc(label)}</b>)\n"
+        f"👥 Jami: {total}\n"
+        f"👤 OK: {success}\n"
+        f"🚫 Bloklagan: {blocked}\n"
+        f"❌ Xato: {failed}"
     )
+    try:
+        await progress_msg.edit_text(final_text, parse_mode="HTML")
+    except Exception:
+        await msg.answer(final_text, parse_mode="HTML")
+    await msg.answer("Admin panel:", reply_markup=admin_main_kb)
 
 
 # ═══════════════════════════════════════════════════════════

@@ -56,7 +56,21 @@ def init_sentry() -> bool:
     )
 
     environment = os.getenv("SENTRY_ENVIRONMENT", "production").strip() or "production"
-    release = os.getenv("SENTRY_RELEASE", "").strip() or None
+
+    # Release tag — Railway deploy'da qaysi commit ishlab turganini bilish
+    # uchun muhim. Aniq qiymat SENTRY_RELEASE'dan olinadi; bo'sh bo'lsa
+    # Railway va GitHub Actions avtomatik beradigan env var'lardan birini
+    # qidiramiz. Hech biri bo'lmasa — release qo'yilmaydi (Sentry o'zi
+    # "unknown"ni belgilaydi).
+    release = (
+        (os.getenv("SENTRY_RELEASE", "") or "").strip()
+        or (os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or "").strip()
+        or (os.getenv("GIT_COMMIT", "") or "").strip()
+        or None
+    )
+    if release:
+        # Qisqartiramiz — to'liq SHA bezakli ko'rinmaydi.
+        release = release[:12]
 
     # traces_sample_rate — performance monitoring (0.0 = o'chiq).
     # 200k user'da barcha tranzaksiyalarni kuzatish quota'ni yeb qo'yadi.

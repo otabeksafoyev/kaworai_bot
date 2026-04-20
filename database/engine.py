@@ -59,16 +59,72 @@ print(f"--- [INFO] DATABASE_URL: {_mask_db_url(DATABASE_URL)}")
 
 Base = declarative_base()
 
+# ── Connection pool — Railway Postgres limit'iga mos ──
+# Railway free/hobby tier'da Postgres odatda 25 ta connection bilan cheklangan.
+# Agar pool_size + max_overflow > 25 bo'lsa, burst paytida (masalan 200k user
+# broadcast'da yoki har daqiqa ishlaydigan reengagement loop'da) bot
+# `FATAL: remaining connection slots are reserved` bilan yiqiladi.
+#
+# Default qiymatlar (Railway-safe): pool_size=10, max_overflow=5 → jami 15.
+# Shunda Postgres tomon admin/plugin uchun 10 slot qolishi mumkin.
+# Agar boshqa plan (Pro) ishlatilsa — `DB_POOL_SIZE` va `DB_MAX_OVERFLOW`
+# env var'lari orqali sozlanadi, kod o'zgartirilmaydi.
+#
+# `pool_timeout` — agar barcha connection band bo'lsa, shuncha soniya
+# kutib keyin xato qaytaradi (aks holda coroutine cheksiz osilib qoladi).
+# `pool_recycle=1800` — har 30 daqiqada connection yangilanadi (Postgres
+# idle timeout / proxy timeout'dan oldin).
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = (os.getenv(name, "") or "").strip()
+    if not raw:
+        return default
+    try:
+        val = int(raw)
+        return val if val > 0 else default
+    except ValueError:
+        return default
+
+
+DB_POOL_SIZE = _int_env("DB_POOL_SIZE", 10)
+DB_MAX_OVERFLOW = _int_env("DB_MAX_OVERFLOW", 5)
+DB_POOL_TIMEOUT = _int_env("DB_POOL_TIMEOUT", 30)
+DB_POOL_RECYCLE = _int_env("DB_POOL_RECYCLE", 1800)
+
+print(
+    f"--- [INFO] DB pool: size={DB_POOL_SIZE} overflow={DB_MAX_OVERFLOW} "
+    f"timeout={DB_POOL_TIMEOUT}s recycle={DB_POOL_RECYCLE}s"
+)
+
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    pool_size=20,
-    max_overflow=30,
-    pool_recycle=3600,
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    pool_timeout=DB_POOL_TIMEOUT,
+    pool_recycle=DB_POOL_RECYCLE,
     pool_pre_ping=True,
 )
 
 AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def db_ping() -> bool:
+    """
+    Baza bilan ulanishni tez tekshiradi (healthcheck uchun).
+
+    Qaytaradi:
+        True — `SELECT 1` muvaffaqiyatli o'tdi.
+        False — ulanish xatosi yoki timeout.
+    """
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
 
 # Barcha migration — mavjud bo'lsa o'tkazib yuboradi
 MIGRATIONS = [
