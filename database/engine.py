@@ -116,6 +116,8 @@ MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS ix_users_last_active ON users(last_active)",
     # Users — Pro UX rejimi (edit=silliq tahrir, send=har safar yangi xabar)
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ux_mode VARCHAR(10) DEFAULT 'edit'",
+    # Users — Pro /start menyu qo'shimcha tugmalar (JSON list, Pro shortcut keys)
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS start_extras JSONB DEFAULT '[]'",
     # AnimeSubscription jadvali
     """
     CREATE TABLE IF NOT EXISTS anime_subscriptions (

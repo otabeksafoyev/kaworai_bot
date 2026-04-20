@@ -66,6 +66,83 @@ async def set_user_ux_mode(session: AsyncSession, user_id: int, mode: str) -> bo
     return True
 
 
+# Pro userlar /start menyusiga qo'shishi mumkin bo'lgan shortcut'lar ro'yxati.
+# Kalit = button callback_data (boshqa handlerda tutilgan). Kun sayin yangilanishi
+# mumkin — shu yerga yangi Pro action qo'shilsa, avtomatik tanlanish uchun
+# ko'rinadi.
+ALLOWED_START_EXTRAS: set[str] = {
+    "pro_recommend",
+    "pro_mood",
+    "pro_trending",
+    "pro_top",
+    "pro_rising",
+    "pro_hidden",
+    "pro_continue",
+    "pro_taste",
+}
+
+# Bir vaqtda /start menyusiga nechta Pro shortcut qo'shish mumkinligi —
+# menyuni juda uzun qilib yubormaslik uchun chegarasini qo'yamiz.
+MAX_START_EXTRAS = 6
+
+
+async def get_user_start_extras(session: AsyncSession, user_id: int) -> list[str]:
+    """Pro user /start menyusiga qo'shgan shortcut kalitlarini qaytaradi.
+
+    Tartib — userning qo'shgan tartibi. Noto'g'ri (eskirgan) kalitlar
+    avtomatik filterlanadi. User topilmasa — bo'sh ro'yxat.
+    """
+    res = await session.execute(select(User.start_extras).where(User.telegram_id == user_id))
+    raw = res.scalar_one_or_none()
+    if not raw or not isinstance(raw, list):
+        return []
+    return [k for k in raw if isinstance(k, str) and k in ALLOWED_START_EXTRAS]
+
+
+async def set_user_start_extras(session: AsyncSession, user_id: int, keys: list[str]) -> bool:
+    """`keys` — Pro shortcut kalitlar ro'yxati (tartibi muhim).
+
+    Dubliklar olib tashlanadi, noto'g'ri kalitlar filterlanadi,
+    `MAX_START_EXTRAS` dan ortig'i qirqiladi. User topilmasa False.
+    """
+    user = await session.get(User, user_id)
+    if not user:
+        return False
+    clean: list[str] = []
+    seen: set[str] = set()
+    for k in keys or []:
+        if not isinstance(k, str):
+            continue
+        if k not in ALLOWED_START_EXTRAS or k in seen:
+            continue
+        clean.append(k)
+        seen.add(k)
+        if len(clean) >= MAX_START_EXTRAS:
+            break
+    user.start_extras = clean
+    await session.commit()
+    return True
+
+
+async def toggle_user_start_extra(session: AsyncSession, user_id: int, key: str) -> tuple[bool, list[str]]:
+    """Shortcut kalitini qo'shadi/olib tashlaydi (toggle).
+
+    Return: (ok, yangi ro'yxat). `ok=False` — user topilmadi yoki kalit noto'g'ri
+    yoki limitga yetib qolgan edi.
+    """
+    if key not in ALLOWED_START_EXTRAS:
+        return False, []
+    current = await get_user_start_extras(session, user_id)
+    if key in current:
+        current.remove(key)
+    else:
+        if len(current) >= MAX_START_EXTRAS:
+            return False, current
+        current.append(key)
+    ok = await set_user_start_extras(session, user_id, current)
+    return ok, current
+
+
 # ═══════════════════════════════════════════════════════════
 #  CHANNELS
 # ═══════════════════════════════════════════════════════════
