@@ -44,9 +44,52 @@ from states.admin_states import (
     BroadcastState,
     EditAnime,
 )
+from utils.broadcast import send_with_retry
 from utils.genre_picker import genre_picker_kb, genre_picker_text
 from utils.regions import is_valid_region, region_label, region_picker_kb
 from utils.security import esc, parse_admin_ids
+
+# Admin upload chegaralari (200k user scale'da bot diskini to'ldirib yoki
+# Telegram API timeout'ga uchramasligi uchun).
+#
+# MAX_POSTER_BYTES — Telegram'dan kelgan photo meta'sida file_size bor;
+# juda katta rasmni (masalan 20 MB) boshqa userlarga yuborish ham bot'ni
+# sekinlashtiradi. 10 MB amalda yetarlidan ko'p.
+#
+# MAX_TRAILER_BYTES — Telegram video upload limiti 2 GB, lekin bot uchun
+# 200 MB yetadi va 2 GB trailer 200k userga yuborilishi Telegram API'ni
+# soatlab band qiladi.
+#
+# MAX_TRAILER_DURATION_SEC — trailerlar odatda 2-3 daqiqa, lekin admin
+# noto'g'ri fayl yuborishi mumkin; 30 daqiqa cheki yetarlidan ko'p.
+MAX_POSTER_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_TRAILER_BYTES = 200 * 1024 * 1024  # 200 MB
+MAX_TRAILER_DURATION_SEC = 30 * 60  # 30 daqiqa
+
+
+def _poster_rejection_reason(photo_size) -> str | None:
+    """Photo o'lchami katta bo'lsa, rad etish sababini qaytaradi."""
+    size = getattr(photo_size, "file_size", None) or 0
+    if size > MAX_POSTER_BYTES:
+        mb = size / (1024 * 1024)
+        limit_mb = MAX_POSTER_BYTES / (1024 * 1024)
+        return f"❌ Rasm juda katta: {mb:.1f} MB (chegara {limit_mb:.0f} MB)."
+    return None
+
+
+def _trailer_rejection_reason(video) -> str | None:
+    """Video o'lchami/davomiyligi katta bo'lsa, rad etish sababini qaytaradi."""
+    size = getattr(video, "file_size", None) or 0
+    if size > MAX_TRAILER_BYTES:
+        mb = size / (1024 * 1024)
+        limit_mb = MAX_TRAILER_BYTES / (1024 * 1024)
+        return f"❌ Video juda katta: {mb:.1f} MB (chegara {limit_mb:.0f} MB)."
+    duration = getattr(video, "duration", None) or 0
+    if duration > MAX_TRAILER_DURATION_SEC:
+        mins = duration / 60
+        limit_mins = MAX_TRAILER_DURATION_SEC / 60
+        return f"❌ Video juda uzun: {mins:.1f} daqiqa (chegara {limit_mins:.0f} daqiqa)."
+    return None
 
 logger = logging.getLogger(__name__)
 
@@ -2267,6 +2310,9 @@ async def skip_poster(call: types.CallbackQuery, state: FSMContext):
 async def process_poster(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
         return
+    rejection = _poster_rejection_reason(msg.photo[-1])
+    if rejection:
+        return await msg.answer(rejection + "\nIltimos, kichikroq rasm yuboring.")
     await state.update_data(poster_file_id=msg.photo[-1].file_id)
     await state.set_state(AddAnime.waiting_inline_url)
     await msg.answer(
@@ -2311,6 +2357,9 @@ async def skip_trailer(call: types.CallbackQuery, state: FSMContext):
 async def process_trailer(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
         return
+    rejection = _trailer_rejection_reason(msg.video)
+    if rejection:
+        return await msg.answer(rejection + "\nIltimos, qisqaroq/kichikroq video yuboring.")
     await state.update_data(trailer_file_id=msg.video.file_id)
     await msg.answer("⏳ Saqlanmoqda...")
     await _save_anime(msg, state, msg.bot)
@@ -2789,10 +2838,16 @@ async def save_edit_value(msg: Message, state: FSMContext):
         elif field == "poster":
             if not msg.photo:
                 return await msg.answer("❌ Rasm yuboring!")
+            rejection = _poster_rejection_reason(msg.photo[-1])
+            if rejection:
+                return await msg.answer(rejection)
             anime.poster_file_id = msg.photo[-1].file_id
         elif field == "trailer":
             if not msg.video:
                 return await msg.answer("❌ Video yuboring!")
+            rejection = _trailer_rejection_reason(msg.video)
+            if rejection:
+                return await msg.answer(rejection)
             anime.trailer_file_id = msg.video.file_id
         elif field == "inline_url":
             url = msg.text.strip()
@@ -3616,17 +3671,26 @@ async def broadcast_to_users(msg: Message, state: FSMContext):
             parse_mode="HTML",
         )
 
-    success = failed = 0
+    # Broadcast — flood-wait va "user bloklagan" holatlarini alohida ushlaymiz.
+    # 200k userga yuborganda Telegram sekundiga ~30 xabar chegara qo'yadi;
+    # TelegramRetryAfter ni kutib qayta urinsak, 99%+ yetib boradi.
+    success = failed = blocked = 0
     for uid in user_ids:
-        try:
-            await msg.copy_to(chat_id=uid)
+        # Copy_to — forward belgisiz ko'chirish. Har bir user uchun alohida.
+        result = await send_with_retry(lambda u=uid: msg.copy_to(chat_id=u))
+        if result == "ok":
             success += 1
-            await asyncio.sleep(0.05)
-        except Exception:
+        elif result == "blocked":
+            blocked += 1
+        else:
             failed += 1
+        await asyncio.sleep(0.05)
     label = "🌍 Barcha" if region == "all" else f"📍 {region_label(region)}"
     await msg.answer(
-        f"✅ Yuborildi! (filter: <b>{esc(label)}</b>)\n👤 OK: {success}\n❌ Xato: {failed}",
+        f"✅ Yuborildi! (filter: <b>{esc(label)}</b>)\n"
+        f"👤 OK: {success}\n"
+        f"🚫 Bloklagan: {blocked}\n"
+        f"❌ Xato: {failed}",
         reply_markup=admin_main_kb,
         parse_mode="HTML",
     )
