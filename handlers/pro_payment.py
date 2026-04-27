@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -61,6 +62,31 @@ class AdminMsgState(StatesGroup):
     waiting_msg = State()
 
 
+# ── Admin DM FSM helper ─────────────────────────────────────
+# Admin kanal-postdagi tugmani bossa, `call.message` kanalga tegishli.
+# `state` ham (kanal_chat_id, admin_user_id) kaliti bilan saqlanadi.
+# Lekin admin keyin DM'ga (private chat) yozadi — u yerda chat_id
+# admin_user_id bo'ladi va FSM lookup mos kelmaydi (handler ishlamaydi).
+# Shu sababli FSM'ni admin DM'ga (chat_id=admin_user_id) ko'chiramiz.
+async def _admin_dm_state(state: FSMContext, admin_user_id: int) -> FSMContext:
+    """Admin'ning DM (private) chat'i uchun FSMContext qaytaradi.
+
+    Bu funksiyani channel post tugmasi callback'idan chaqiring; keyin
+    admin DM'da yozgan matn DB'dan o'qilganda FSM state mos keladi.
+    """
+    return FSMContext(
+        storage=state.storage,
+        key=StorageKey(
+            bot_id=state.key.bot_id,
+            chat_id=admin_user_id,
+            user_id=admin_user_id,
+            thread_id=None,
+            business_connection_id=None,
+            destiny=state.key.destiny,
+        ),
+    )
+
+
 # ── Admin tekshirish ────────────────────────────────────────
 async def _is_admin(user_id: int) -> bool:
     import os
@@ -94,21 +120,37 @@ async def _check_pro(user_id: int) -> bool:
 # ═══════════════════════════════════════════════════════════
 
 
-def _page1_text() -> str:
-    return (
-        "⚡️ <b>Kaworai Pro obunasini sotib olish orqali siz quyidagi "
-        "imkoniyatlarga ega bo'lasiz:</b>\n\n"
-        "✨ Kaworai'da premium darajadagi tajriba\n"
-        "🤖 Siz uchun maxsus AI tavsiyalar\n"
-        "😌 Kayfiyatingizga mos kontentlar\n"
-        "💎 Kam tanilgan, lekin zo'r — Hidden Gems\n"
-        "📈 Tez ommalashayotgan — Trending & Rising\n"
-        "▶️ Ko'rishni to'xtagan joyingizdan davom ettirish\n"
-        "🔒 Faqat Pro uchun maxsus kontentlar\n"
-        "🚀 Kaworai'dan maksimal zavq oling va vaqtni bekorga sarflamang\n"
-        "💖 Kaworai'ni qo'llab-quvvatlang va Pro imkoniyatlarni oching\n\n"
-        "👇 Agar sotib olishni istasangiz, pastdagi <b>Sotib olish</b> tugmasini bosing"
-    )
+_DEFAULT_PAGE1_TEXT = (
+    "⚡️ <b>Kaworai Pro obunasini sotib olish orqali siz quyidagi "
+    "imkoniyatlarga ega bo'lasiz:</b>\n\n"
+    "✨ Kaworai'da premium darajadagi tajriba\n"
+    "🤖 Siz uchun maxsus AI tavsiyalar\n"
+    "😌 Kayfiyatingizga mos kontentlar\n"
+    "💎 Kam tanilgan, lekin zo'r — Hidden Gems\n"
+    "📈 Tez ommalashayotgan — Trending & Rising\n"
+    "▶️ Ko'rishni to'xtagan joyingizdan davom ettirish\n"
+    "🔒 Faqat Pro uchun maxsus kontentlar\n"
+    "🚀 Kaworai'dan maksimal zavq oling va vaqtni bekorga sarflamang\n"
+    "💖 Kaworai'ni qo'llab-quvvatlang va Pro imkoniyatlarni oching\n\n"
+    "👇 Agar sotib olishni istasangiz, pastdagi <b>Sotib olish</b> tugmasini bosing"
+)
+
+
+async def _page1_text() -> str:
+    """Pro sahifa-1 matni — admin saqlagan "Pro yozuvi" mavjud bo'lsa, shundan
+    foydalanadi; aks holda default reklama matnini qaytaradi. Admin panelida
+    "📝 Pro yozuvi" tugmasi orqali matn DB.bot_settings.pro_ad_text ga
+    yoziladi va shu yerdan o'qiladi (ad_helpers keshlanadi).
+    """
+    try:
+        from utils.ad_helpers import get_pro_ad_text
+
+        custom = await get_pro_ad_text()
+        if custom:
+            return custom
+    except Exception:
+        logger.debug("_page1_text: pro_ad_text o'qishda xato, default ishlatildi", exc_info=True)
+    return _DEFAULT_PAGE1_TEXT
 
 
 def _page1_kb() -> InlineKeyboardMarkup:
@@ -270,16 +312,17 @@ async def pro_page1(call: CallbackQuery, state: FSMContext):
         # Pro menyuni shu yerda ko'rsatamiz — import yo'q
         return await _show_pro_active_menu(call)
 
+    page_text = await _page1_text()
     try:
         await call.message.edit_text(
-            text=_page1_text(),
+            text=page_text,
             reply_markup=_page1_kb(),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
     except Exception:
         await call.message.answer(
-            text=_page1_text(),
+            text=page_text,
             reply_markup=_page1_kb(),
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -335,9 +378,10 @@ async def _show_pro_active_menu(call: CallbackQuery):
 @pro_payment_router.callback_query(F.data == "pro_page1")
 async def back_to_page1(call: CallbackQuery, state: FSMContext):
     await state.clear()
+    page_text = await _page1_text()
     try:
         await call.message.edit_text(
-            text=_page1_text(),
+            text=page_text,
             reply_markup=_page1_kb(),
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -447,62 +491,98 @@ async def receipt_received(msg: Message, state: FSMContext):
     caption = _admin_caption(user_id, username, full_name, plan_key)
     admin_kb = _admin_kb(user_id, plan_key)
 
-    # Admin kanaliga yuborish
-    try:
-        if msg.photo:
-            await bot.send_photo(
-                chat_id=PAYMENT_CHANNEL_ID,
-                photo=msg.photo[-1].file_id,
-                caption=caption,
-                reply_markup=admin_kb,
-                parse_mode="HTML",
-            )
-        else:
-            await bot.send_document(
-                chat_id=PAYMENT_CHANNEL_ID,
-                document=msg.document.file_id,
-                caption=caption,
-                reply_markup=admin_kb,
-                parse_mode="HTML",
-            )
-        channel_ok = True
-    except Exception:
-        channel_ok = False
-        logger.exception(
-            "receipt_received: failed to forward receipt to PAYMENT_CHANNEL_ID=%s user=%s plan=%s",
-            PAYMENT_CHANNEL_ID,
-            user_id,
-            plan_key,
-        )
-        # Kanal ishlamasa — to'g'ridan-to'g'ri ADMIN_ID ga
+    # Chek HAM kanaliga, HAM admin DM ga yuboriladi.
+    # Foydalanuvchi shikoyati: "chek faqat kanalga ketyapti, botda ko'rinmaydi".
+    # MUHIM (Devin Review #42): admin_confirm_pro idempotent EMAS — har bosish
+    # `pro_until` ni 30*N kunga uzaytiradi. Shuning uchun tasdiqlash/rad etish
+    # tugmalarini FAQAT BITTA xabarda saqlaymiz:
+    #   - Kanal mavjud va ishladi -> tugmalar kanalda; admin DM nusxalari
+    #     "info-only" (tugmasiz, "kanal-postda tasdiqlang" eslatmasi bilan).
+    #   - Kanal yo'q yoki yuborib bo'lmadi -> birinchi javob bergan admin DM
+    #     ga tugmalar; qolganlariga info-only nusxa.
+    # Bu N ta admin x N marta Pro extension xavfini yo'q qiladi.
+    async def _send_to(
+        chat_id: int,
+        *,
+        kb: InlineKeyboardMarkup | None,
+        suffix: str = "",
+    ) -> bool:
+        cap = caption + suffix
         try:
             if msg.photo:
                 await bot.send_photo(
-                    chat_id=ADMIN_ID,
+                    chat_id=chat_id,
                     photo=msg.photo[-1].file_id,
-                    caption=caption,
-                    reply_markup=admin_kb,
+                    caption=cap,
+                    reply_markup=kb,
                     parse_mode="HTML",
                 )
             else:
                 await bot.send_document(
-                    chat_id=ADMIN_ID,
+                    chat_id=chat_id,
                     document=msg.document.file_id,
-                    caption=caption,
-                    reply_markup=admin_kb,
+                    caption=cap,
+                    reply_markup=kb,
                     parse_mode="HTML",
                 )
-            admin_ok = True
+            return True
         except Exception:
-            admin_ok = False
             logger.exception(
-                "receipt_received: fallback send to ADMIN_ID=%s also failed user=%s plan=%s",
-                ADMIN_ID,
+                "receipt_received: send failed chat_id=%s user=%s plan=%s",
+                chat_id,
                 user_id,
                 plan_key,
             )
+            return False
+
+    channel_ok = False
+    if PAYMENT_CHANNEL_ID:
+        channel_ok = await _send_to(PAYMENT_CHANNEL_ID, kb=admin_kb)
+
+    # Adminlar DM'iga ham yuboramiz — .env ADMIN_ID + DB'dagi adminlar.
+    admin_targets: set[int] = set()
+    import os
+
+    for raw in parse_admin_ids(os.getenv("ADMIN_ID", "")):
+        try:
+            admin_targets.add(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if ADMIN_ID:
+        try:
+            admin_targets.add(int(ADMIN_ID))
+        except (TypeError, ValueError):
+            pass
+    try:
+        async with AsyncSessionLocal() as session:
+            db_admins = await session.execute(select(Admin.telegram_id))
+            for tid in db_admins.scalars().all():
+                if tid:
+                    admin_targets.add(int(tid))
+    except Exception:
+        logger.exception("receipt_received: DB admin ro'yxatini olishda xato")
+
+    info_suffix = "\n\n📌 <i>Tasdiqlash uchun kanal-postdagi tugmalardan foydalaning.</i>"
+    fallback_info_suffix = "\n\n📌 <i>Bu nusxa — info uchun. Tugmalar boshqa admin DM'iga yuborildi.</i>"
+
+    admin_ok = False
+    if channel_ok:
+        # Kanal canonical — barcha admin DM nusxalari TUGMASIZ.
+        for aid in admin_targets:
+            if await _send_to(aid, kb=None, suffix=info_suffix):
+                admin_ok = True
     else:
-        admin_ok = True
+        # Kanal yo'q/ishlamadi — faqat birinchi javob bergan admin DM ga tugma,
+        # qolganlariga info-only nusxa.
+        kb_assigned = False
+        for aid in admin_targets:
+            if not kb_assigned:
+                if await _send_to(aid, kb=admin_kb):
+                    kb_assigned = True
+                    admin_ok = True
+            else:
+                if await _send_to(aid, kb=None, suffix=fallback_info_suffix):
+                    admin_ok = True
 
     if not channel_ok and not admin_ok:
         logger.error(
@@ -623,16 +703,39 @@ async def admin_reject_start(call: CallbackQuery, state: FSMContext):
     user_id = int(parts[0])
     plan_key = parts[1]
 
-    await state.update_data(reject_user_id=user_id, reject_plan=plan_key)
-    await state.set_state(AdminRejectState.waiting_reason)
+    # FSM — har doim admin DM'iga (chat_id=admin_user_id) saqlanadi.
+    # Aks holda admin tugmani kanal-postda bossa, javobni DM'da yozsa,
+    # FSM lookup chat_id mos kelmasligi sababli ishlamaydi.
+    admin_id = call.from_user.id
+    dm_state = await _admin_dm_state(state, admin_id)
+    await dm_state.update_data(reject_user_id=user_id, reject_plan=plan_key)
+    await dm_state.set_state(AdminRejectState.waiting_reason)
 
-    await call.message.answer(
+    prompt = (
         "❌ <b>Rad etish sababi:</b>\n\n"
+        f"User ID: <code>{user_id}</code>\n"
         "Sababni yozing (foydalanuvchiga yuboriladi).\n"
-        "Sabab yo'q bo'lsa — <b>yo'q</b> deb yozing.",
-        parse_mode="HTML",
+        "Sabab yo'q bo'lsa — <b>yo'q</b> deb yozing."
     )
-    await call.answer()
+    sent_to_dm = False
+    try:
+        await bot.send_message(admin_id, prompt, parse_mode="HTML")
+        sent_to_dm = True
+    except Exception:
+        logger.exception("admin_reject_start: DM yuborib bo'lmadi admin=%s", admin_id)
+
+    if not sent_to_dm:
+        # DM yopiq bo'lsa — kanal-postga ham fallback prompt qo'yamiz.
+        try:
+            await call.message.answer(
+                "⚠️ Avval botga ("
+                + (f"@{esc(call.from_user.username)}" if call.from_user.username else "private")
+                + ") <b>/start</b> deb yozing, so'ng sababni yuboring.",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+    await call.answer("✍️ Botga sabab yozing", show_alert=False)
 
 
 @pro_payment_router.message(AdminRejectState.waiting_reason)
@@ -681,14 +784,32 @@ async def admin_msg_start(call: CallbackQuery, state: FSMContext):
         return await call.answer("❌ Faqat adminlar!", show_alert=True)
 
     user_id = int(call.data.replace("pro_msg_", ""))
-    await state.update_data(msg_target_user=user_id)
-    await state.set_state(AdminMsgState.waiting_msg)
 
-    await call.message.answer(
-        f"✉️ <b>Foydalanuvchi ({user_id}) ga xabar yozing:</b>\n\nMatn, rasm, video — barchasi bo'lishi mumkin.",
-        parse_mode="HTML",
-    )
-    await call.answer()
+    # FSM — admin DM (private chat) kontekstida saqlaymiz, chunki admin
+    # tugmani kanal-postda bossa va javobni DM'da yozsa, kanal FSM key
+    # mos kelmaydi va xabar yuborilmaydi (foydalanuvchi shikoyati).
+    admin_id = call.from_user.id
+    dm_state = await _admin_dm_state(state, admin_id)
+    await dm_state.update_data(msg_target_user=user_id)
+    await dm_state.set_state(AdminMsgState.waiting_msg)
+
+    prompt = f"✉️ <b>Foydalanuvchi ({user_id}) ga xabar yozing:</b>\n\nMatn, rasm, video — barchasi bo'lishi mumkin."
+    sent_to_dm = False
+    try:
+        await bot.send_message(admin_id, prompt, parse_mode="HTML")
+        sent_to_dm = True
+    except Exception:
+        logger.exception("admin_msg_start: DM yuborib bo'lmadi admin=%s", admin_id)
+
+    if not sent_to_dm:
+        try:
+            await call.message.answer(
+                "⚠️ Avval botga <b>/start</b> deb yozing, so'ng xabarni shu yerda yuboring.",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+    await call.answer("✍️ Botga xabarni yozing", show_alert=False)
 
 
 @pro_payment_router.message(AdminMsgState.waiting_msg)
