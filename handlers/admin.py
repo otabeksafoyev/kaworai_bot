@@ -4692,7 +4692,9 @@ async def _post_episode_to_secret(bot: Bot, anime_id: int, episode: int, file_id
     return await bot.send_video(chat_id=SECRET_CHANNEL_ID, video=file_id, caption=caption)
 
 
-async def _save_episode_to_db(anime_id: int, episode: int, file_id: str) -> tuple[bool, str, int]:
+async def _save_episode_to_db(
+    anime_id: int, episode: int, file_id: str, is_filler: bool = False
+) -> tuple[bool, str, int]:
     """
     Bazaga qism yozadi. (ok, message, saved_episode) qaytaradi.
     Agar anime topilmasa — (False, "...", 0).
@@ -4700,6 +4702,9 @@ async def _save_episode_to_db(anime_id: int, episode: int, file_id: str) -> tupl
     Shu qism (anime_id, episode) allaqachon mavjud bo'lsa — file_id yangilanadi
     (upsert). Bu admin 15-24 qismlarni qo'shganidan keyin 1-14 ni qo'shsa ham
     haqiqiy 1-14 saqlanishini ta'minlaydi.
+
+    `is_filler=True` bo'lsa qism FILLER deb belgilanadi — user uchun video
+    o'rniga anime.filter_file_id rasm + "Keyingi qism" tugmasi ko'rsatiladi.
     """
     ep = int(episode)
     async with AsyncSessionLocal() as session:
@@ -4711,8 +4716,14 @@ async def _save_episode_to_db(anime_id: int, episode: int, file_id: str) -> tupl
         ).scalar_one_or_none()
         if existing is not None:
             existing.file_id = file_id
+            # Filler bayrog'ini faqat "tepaga" siljitamiz: agar admin filler
+            # bo'lmagan video bilan upsert qilsa, eski filler statusi saqlanadi.
+            # Bu xato (yangi yuklash filler-emas, lekin eski yozuv filler ekan
+            # holatda) holatlarda admin alohida `unmark filler` qilishi kerak.
+            if is_filler:
+                existing.is_filler = True
         else:
-            session.add(Series(anime_id=anime_id, episode=ep, file_id=file_id))
+            session.add(Series(anime_id=anime_id, episode=ep, file_id=file_id, is_filler=bool(is_filler)))
         await session.commit()
         return True, anime.title or str(anime_id), ep
 
@@ -4797,6 +4808,27 @@ def _detect_episode_from_caption(caption: str) -> int | None:
     return None
 
 
+# Filler — anime asosiy syujetiga aloqasi yo'q "to'ldiruvchi" qism.
+# Caption'da quyidagi belgilardan biri bo'lsa, qism filler deb belgilanadi:
+#   [FILLER], (FILLER), FILLER, FILER, ФИЛЛЕР, ФИЛЕР, filler-qism, и т.п.
+# Caseless qidiruv. Word-boundary `\b` lotin/kirill alfaviti uchun ham ishlaydi.
+_FILLER_PATTERNS = [
+    _re_ep.compile(r"\bfille?r\b", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bфилле?р\b", _re_ep.IGNORECASE),
+    _re_ep.compile(r"\bto[\W_]*ldiruvchi\b", _re_ep.IGNORECASE),
+]
+
+
+def _detect_filler_from_caption(caption: str) -> bool:
+    """Caption'da filler belgisi borligini aniqlaydi (lotin/kirill, [FILLER] va h.k.)."""
+    if not caption:
+        return False
+    for pat in _FILLER_PATTERNS:
+        if pat.search(caption):
+            return True
+    return False
+
+
 @admin_router.message(AddEpisodeState.waiting_bulk_videos)
 async def ep_bulk_collect(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -4810,6 +4842,7 @@ async def ep_bulk_collect(msg: Message, state: FSMContext):
     is_doc = bool(msg.document and not msg.video)
     caption = msg.caption or msg.text or ""
     detected = _detect_episode_from_caption(caption)
+    is_filler = _detect_filler_from_caption(caption)
     data = await state.get_data()
     items: list[dict] = list(data.get("ep_bulk_items") or [])
     items.append(
@@ -4818,16 +4851,23 @@ async def ep_bulk_collect(msg: Message, state: FSMContext):
             "is_doc": is_doc,
             "caption": caption,
             "episode": detected,
+            "is_filler": is_filler,
         }
     )
     await state.update_data(ep_bulk_items=items)
     total = len(items)
     ok = sum(1 for it in items if it.get("episode") is not None)
-    await msg.answer(
-        f"➕ Qabul qilindi. Jami: <b>{total}</b> ta. Aniqlangan qismlar: <b>{ok}</b>.\n"
-        + (f"(bu video: <b>{detected}-qism</b>)" if detected else "⚠️ Bu videoda qism raqami topilmadi."),
-        parse_mode="HTML",
-    )
+    fil = sum(1 for it in items if it.get("is_filler"))
+    parts_msg = [
+        f"➕ Qabul qilindi. Jami: <b>{total}</b> ta. Aniqlangan qismlar: <b>{ok}</b>.",
+    ]
+    if detected:
+        parts_msg.append(f"(bu video: <b>{detected}-qism</b>{' • 🎲 FILLER' if is_filler else ''})")
+    else:
+        parts_msg.append("⚠️ Bu videoda qism raqami topilmadi.")
+    if fil:
+        parts_msg.append(f"🎲 Filler qismlar: <b>{fil}</b> ta")
+    await msg.answer("\n".join(parts_msg), parse_mode="HTML")
 
 
 @admin_router.callback_query(F.data == "ep_bulk_cancel")
@@ -4973,7 +5013,9 @@ async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
             continue
         # 1) Bazaga yozish — asosiy manba
         try:
-            saved_ok, info, saved_ep = await _save_episode_to_db(anime_id, int(ep), it["file_id"])
+            saved_ok, info, saved_ep = await _save_episode_to_db(
+                anime_id, int(ep), it["file_id"], is_filler=bool(it.get("is_filler", False))
+            )
         except Exception as e:
             logger.exception("ep_bulk_commit: baza yozish xato")
             failed += 1
@@ -5009,6 +5051,7 @@ async def add_episode_from_channel(message: Message):
         return
     caption = (message.caption or message.text or "").strip()
     file_id = message.video.file_id if message.video else message.document.file_id
+    is_filler = _detect_filler_from_caption(caption)
     anime_id = episode = None
     for line in caption.split("\n"):
         ll = line.strip().lower()
@@ -5040,10 +5083,11 @@ async def add_episode_from_channel(message: Message):
         last_ep = r.scalar() or 0
         if episode <= last_ep:
             episode = last_ep + 1
-        session.add(Series(anime_id=anime_id, episode=episode, file_id=file_id))
+        session.add(Series(anime_id=anime_id, episode=episode, file_id=file_id, is_filler=is_filler))
         await session.commit()
     try:
-        await message.answer(f"✅ <b>{anime.title}</b> — {episode}-qism!", parse_mode="HTML")
+        filler_tag = " 🎲 (FILLER)" if is_filler else ""
+        await message.answer(f"✅ <b>{anime.title}</b> — {episode}-qism!{filler_tag}", parse_mode="HTML")
     except Exception:
         pass
     try:

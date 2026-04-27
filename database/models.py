@@ -112,6 +112,11 @@ class Series(Base):
     anime_id = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"))
     episode = Column(Integer, nullable=False)
     file_id = Column(String(300), nullable=False)
+    # Filler — anime asosiy syujetiga aloqasi yo'q "to'ldiruvchi" qism.
+    # Admin bulk upload'da caption'da `[FILLER]` belgisi bo'lsa avto-aniqlanadi.
+    # User filler qismni bossa: video o'rniga anime.filter_file_id ko'rsatiladi
+    # va "▶️ Keyingi qism" tugmasi bilan navbatdagi kanonik qismga o'tadi.
+    is_filler = Column(Boolean, default=False, nullable=False)
     anime = relationship("Anime", back_populates="episodes")
 
 

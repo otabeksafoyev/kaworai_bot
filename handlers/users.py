@@ -97,10 +97,12 @@ def _build_episode_keyboard(
     is_subscribed: bool,
     is_pro: bool,
     page: int = 0,
+    filler_eps: set[int] | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     total_eps = len(all_episodes)
     total_pages = max(1, (total_eps + GRID_SIZE - 1) // GRID_SIZE)
+    filler_set = filler_eps or set()
 
     start_i = page * GRID_SIZE
     end_i = min(start_i + GRID_SIZE, total_eps)
@@ -108,11 +110,14 @@ def _build_episode_keyboard(
 
     row_buttons = []
     for ep in page_eps:
-        # Faqat tanlangan (joriy) qism yashil (success).
-        # Boshqa qismlar — ko'k (primary). Shunda tanlanganligi aniq ko'rinadi.
+        # Tanlangan qism — yashil. Filler qism — sariq (warning). Qolgani — ko'k.
+        is_filler_btn = ep in filler_set
         if ep == current_ep:
-            label = f"✅ {ep}"
-            btn_style = "success"
+            label = f"✅ {ep}" if not is_filler_btn else f"🎲 {ep}"
+            btn_style = "success" if not is_filler_btn else "danger"
+        elif is_filler_btn:
+            label = f"🎲 {ep}"
+            btn_style = "danger"
         else:
             label = str(ep)
             btn_style = "primary"
@@ -260,6 +265,114 @@ async def _deliver_episode_video(
     except Exception as e:
         logger.error(f"episode fallback send: {e}")
         await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
+
+
+async def _load_episodes_and_filler(session, anime_id: int) -> tuple[list[int], set[int]]:
+    """Anime'ning barcha qismlari + filler raqamlari to'plamini qaytaradi.
+
+    Yagona joyda yuklash — har callback'da takror takror SELECT yozilmasin.
+    """
+    res = await session.execute(select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc()))
+    rows = list(res.scalars().all())
+    ep_nums = [e.episode for e in rows]
+    filler = {e.episode for e in rows if getattr(e, "is_filler", False)}
+    return ep_nums, filler
+
+
+def _next_after_filler(all_episodes: list[int], current: int, filler_eps: set[int]) -> int | None:
+    """Filler qismdan keyingi kanonik (non-filler) qism raqamini topadi.
+
+    Avval `current`'dan keyingi non-filler qism qidiriladi. Agar topilmasa
+    (qolganlari ham filler bo'lsa), shunchaki `current`'dan keyingi qaysi
+    qism bo'lsa shu qaytariladi. Hech qaysi qism qolmagan bo'lsa — None.
+    """
+    for n in all_episodes:
+        if n > current and n not in filler_eps:
+            return n
+    for n in all_episodes:
+        if n > current:
+            return n
+    return None
+
+
+async def _deliver_filler_episode(
+    call: types.CallbackQuery,
+    *,
+    anime: Anime,
+    episode: int,
+    next_episode: int | None,
+    page: int,
+    kb: InlineKeyboardMarkup,
+) -> None:
+    """Filler qismni yetkazish — video o'rniga anime.filter_file_id rasm/video.
+
+    Caption'da `🎲 FILLER` belgisi va "Keyingi qism" tugmasi (mavjud bo'lsa).
+    Video umuman yuborilmaydi — user filler ekanligini ko'radi va `▶️ Keyingi`
+    bilan kanonik qismga o'tadi.
+    """
+    type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
+    emoji = type_emoji.get(anime.content_type or "anime", "🎬")
+    caption = (
+        f"{emoji} <b>{anime.title}</b>\n"
+        f"🎲 <b>{episode}-qism</b> — FILLER\n\n"
+        "<i>Filler — anime asosiy syujetiga aloqasi yo'q to'ldiruvchi qism. "
+        "Asosiy voqealarni yo'qotmaslik uchun ▶️ Keyingi qism tugmasini bosing.</i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    if next_episode is not None:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"▶️ Keyingi qism ({next_episode})",
+                callback_data=f"ep_{anime.id}_{next_episode}_{page}",
+                style="success",
+            )
+        )
+    # Eski grid kb'ni ham qo'shamiz, shunda user istasa boshqa qismni tanlay oladi
+    for row in kb.inline_keyboard:
+        builder.row(*row)
+    final_kb = builder.as_markup()
+
+    f_type = getattr(anime, "filter_type", None)
+    f_file = getattr(anime, "filter_file_id", None)
+    f_url = getattr(anime, "filter_url", None)
+
+    sent = False
+    try:
+        if f_type == "photo" and f_file:
+            try:
+                await call.message.edit_media(
+                    media=InputMediaPhoto(media=f_file, caption=caption, parse_mode="HTML"),
+                    reply_markup=final_kb,
+                )
+                sent = True
+            except Exception:
+                await call.message.answer_photo(photo=f_file, caption=caption, parse_mode="HTML", reply_markup=final_kb)
+                sent = True
+        elif f_type == "video" and f_file:
+            try:
+                await call.message.edit_media(
+                    media=InputMediaVideo(media=f_file, caption=caption, parse_mode="HTML"),
+                    reply_markup=final_kb,
+                )
+                sent = True
+            except Exception:
+                await call.message.answer_video(video=f_file, caption=caption, parse_mode="HTML", reply_markup=final_kb)
+                sent = True
+        elif f_type == "link" and f_url:
+            await call.message.answer(
+                caption + f'\n\n🎨 <a href="{f_url}">Filter</a>',
+                parse_mode="HTML",
+                reply_markup=final_kb,
+                disable_web_page_preview=False,
+            )
+            sent = True
+    except Exception:
+        logger.exception("filler delivery failed")
+
+    if not sent:
+        # Filter o'rnatilmagan — matn xabar bilan baribir foydalanuvchini ogohlantiramiz.
+        await call.message.answer(caption, parse_mode="HTML", reply_markup=final_kb)
 
 
 async def _send_filter_media(call: types.CallbackQuery, anime: Anime) -> None:
@@ -765,7 +878,7 @@ async def watch_start(call: types.CallbackQuery):
         eps_res = await session.execute(
             select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
         )
-        episodes = eps_res.scalars().all()
+        episodes = list(eps_res.scalars().all())
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
         # Pro tanlagan UX rejimi (edit/send). Non-Pro har doim edit — silliq.
         ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
@@ -775,12 +888,23 @@ async def watch_start(call: types.CallbackQuery):
 
     first_ep = episodes[0]
     ep_numbers = [e.episode for e in episodes]
+    filler_eps = {e.episode for e in episodes if getattr(e, "is_filler", False)}
 
     caption = _build_episode_caption(anime, first_ep.episode, len(episodes))
-    kb = _build_episode_keyboard(anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0)
+    kb = _build_episode_keyboard(
+        anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0, filler_eps=filler_eps
+    )
 
-    await _deliver_episode_video(call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode)
-    await _send_filter_media(call, anime)
+    # Birinchi qism filler bo'lib qolgan kam uchraydigan holat — oddiy video
+    # yubormay, filter rasm + "Keyingi qism" tugmasini ko'rsatamiz.
+    if getattr(first_ep, "is_filler", False):
+        next_ep = _next_after_filler(ep_numbers, first_ep.episode, filler_eps)
+        await _deliver_filler_episode(call, anime=anime, episode=first_ep.episode, next_episode=next_ep, page=0, kb=kb)
+    else:
+        await _deliver_episode_video(
+            call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode
+        )
+        await _send_filter_media(call, anime)
 
     try:
         from database.queries import add_to_watch_history, record_view
@@ -841,19 +965,22 @@ async def episode_select(call: types.CallbackQuery):
         if not ep_obj:
             return await call.answer(f"❌ {episode}-qism topilmadi!", show_alert=True)
 
-        all_eps_res = await session.execute(
-            select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
-        )
-        all_episodes = [e.episode for e in all_eps_res.scalars().all()]
+        all_episodes, filler_eps = await _load_episodes_and_filler(session, anime_id)
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
         ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
 
     caption = _build_episode_caption(anime, episode, len(all_episodes))
-    kb = _build_episode_keyboard(anime_id, all_episodes, episode, subscribed, is_pro, page=page)
+    kb = _build_episode_keyboard(anime_id, all_episodes, episode, subscribed, is_pro, page=page, filler_eps=filler_eps)
 
     await call.answer()
 
-    await _deliver_episode_video(call, file_id=ep_obj.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode)
+    if getattr(ep_obj, "is_filler", False):
+        next_ep = _next_after_filler(all_episodes, episode, filler_eps)
+        await _deliver_filler_episode(call, anime=anime, episode=episode, next_episode=next_ep, page=page, kb=kb)
+    else:
+        await _deliver_episode_video(
+            call, file_id=ep_obj.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode
+        )
 
     try:
         from database.queries import add_to_watch_history, record_view
@@ -900,13 +1027,12 @@ async def episode_page_change(call: types.CallbackQuery):
         now = datetime.utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
-        all_eps_res = await session.execute(
-            select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
-        )
-        all_episodes = [e.episode for e in all_eps_res.scalars().all()]
+        all_episodes, filler_eps = await _load_episodes_and_filler(session, anime_id)
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
 
-    kb = _build_episode_keyboard(anime_id, all_episodes, current_ep, subscribed, is_pro, page=new_page)
+    kb = _build_episode_keyboard(
+        anime_id, all_episodes, current_ep, subscribed, is_pro, page=new_page, filler_eps=filler_eps
+    )
     await call.answer()
     try:
         await call.message.edit_reply_markup(reply_markup=kb)
@@ -1009,22 +1135,40 @@ async def episode_navigate(call: types.CallbackQuery):
             target_ep_num = ep_numbers[new_idx]
 
         subscribed = await is_subscribed_anime(session, target_anime.id, user_id)
+        _, target_filler_eps = await _load_episodes_and_filler(session, target_anime.id)
 
     new_page = new_idx // GRID_SIZE if not season_jump else 0
     caption = _build_episode_caption(target_anime, target_ep_num, len(target_ep_numbers))
     if season_jump:
         # Userga yangi fasl boshlanganini bildiramiz (caption ichida).
         caption = f"🎉 <b>Yangi fasl boshlanmoqda!</b>\n\n{caption}"
-    kb = _build_episode_keyboard(target_anime.id, target_ep_numbers, target_ep_num, subscribed, is_pro, page=new_page)
+    kb = _build_episode_keyboard(
+        target_anime.id,
+        target_ep_numbers,
+        target_ep_num,
+        subscribed,
+        is_pro,
+        page=new_page,
+        filler_eps=target_filler_eps,
+    )
 
     # Fasl o'tishi — eski fasl xabar qolishi mantiqsiz, shuning uchun
     # har doim yangi xabar yuboramiz (user o'zining rejimi qanday bo'lsa ham).
     delivery_mode = "send" if season_jump else ux_mode
     await call.answer("🎉 2-faslga o'tildi!" if season_jump else None, show_alert=season_jump)
 
-    await _deliver_episode_video(
-        call, file_id=target_ep_obj.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=delivery_mode
-    )
+    # Filler qismga ⬅️/➡️ tugmasi bilan o'tilgan bo'lsa ham, oddiy video
+    # yubormaymiz — anime'ning filter rasmi + "Keyingi qism" tugmasi.
+    # `episode_select`'dagi mantiq bilan bir xil.
+    if getattr(target_ep_obj, "is_filler", False):
+        next_ep = _next_after_filler(target_ep_numbers, target_ep_num, target_filler_eps)
+        await _deliver_filler_episode(
+            call, anime=target_anime, episode=target_ep_num, next_episode=next_ep, page=new_page, kb=kb
+        )
+    else:
+        await _deliver_episode_video(
+            call, file_id=target_ep_obj.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=delivery_mode
+        )
 
     try:
         from database.queries import add_to_watch_history, record_view
@@ -1078,7 +1222,7 @@ async def show_episodes_list(call: types.CallbackQuery):
         eps_res = await session.execute(
             select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
         )
-        episodes = eps_res.scalars().all()
+        episodes = list(eps_res.scalars().all())
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
         ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
 
@@ -1087,11 +1231,20 @@ async def show_episodes_list(call: types.CallbackQuery):
 
     first_ep = episodes[0]
     ep_numbers = [e.episode for e in episodes]
+    filler_eps = {e.episode for e in episodes if getattr(e, "is_filler", False)}
 
     caption = _build_episode_caption(anime, first_ep.episode, len(episodes))
-    kb = _build_episode_keyboard(anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0)
+    kb = _build_episode_keyboard(
+        anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0, filler_eps=filler_eps
+    )
 
-    await _deliver_episode_video(call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode)
+    if getattr(first_ep, "is_filler", False):
+        next_ep = _next_after_filler(ep_numbers, first_ep.episode, filler_eps)
+        await _deliver_filler_episode(call, anime=anime, episode=first_ep.episode, next_episode=next_ep, page=0, kb=kb)
+    else:
+        await _deliver_episode_video(
+            call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1120,10 +1273,7 @@ async def toggle_subscription(call: types.CallbackQuery):
         now = datetime.utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
-        all_eps_res = await session.execute(
-            select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
-        )
-        all_episodes = [e.episode for e in all_eps_res.scalars().all()]
+        all_episodes, filler_eps = await _load_episodes_and_filler(session, anime_id)
         new_subscribed = not already
 
     current_ep = 1
@@ -1138,7 +1288,9 @@ async def toggle_subscription(call: types.CallbackQuery):
 
     if all_episodes and anime:
         page = all_episodes.index(current_ep) // GRID_SIZE if current_ep in all_episodes else 0
-        kb = _build_episode_keyboard(anime_id, all_episodes, current_ep, new_subscribed, is_pro, page=page)
+        kb = _build_episode_keyboard(
+            anime_id, all_episodes, current_ep, new_subscribed, is_pro, page=page, filler_eps=filler_eps
+        )
         try:
             await call.message.edit_reply_markup(reply_markup=kb)
         except Exception:
