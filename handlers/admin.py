@@ -4806,15 +4806,17 @@ async def ep_single_got_video(msg: Message, state: FSMContext):
     to_ep = int(data["ep_to"])
     file_id = msg.video.file_id if msg.video else msg.document.file_id
     is_doc = bool(msg.document and not msg.video)
+    # Filler avto-aniqlash bazaga yozishdan AVVAL — atomar bitta yozuvga olamiz
+    # (Devin Review #43 BUG_0001 tavsiyasi).
+    single_caption = msg.caption or msg.text or ""
+    is_filler = _detect_filler_from_caption(single_caption)
     # 1) Bazaga yozamiz — bu asosiy manba, bot xatolariga qarshi ishonchli
-    ok, info, saved_ep = await _save_episode_to_db(anime_id, current, file_id)
+    ok, info, saved_ep = await _save_episode_to_db(anime_id, current, file_id, is_filler=is_filler)
     if not ok:
         return await msg.answer(f"❌ Bazaga yozib bo'lmadi: {info}")
     # 2) Maxfiy kanalga fayl jurnali sifatida yuboramiz (xatosi — bu yerda
     #    kritik emas, qism allaqachon bazada). Caption va filler tag ham
     #    yuboriladi — bot keyin kanaldan qayta o'qisa, hammasi joyida bo'ladi.
-    single_caption = msg.caption or msg.text or ""
-    is_filler = _detect_filler_from_caption(single_caption)
     try:
         await _post_episode_to_secret(
             msg.bot,
@@ -4827,18 +4829,6 @@ async def ep_single_got_video(msg: Message, state: FSMContext):
         )
     except Exception:
         logger.exception("ep_single: secret kanalga yuborib bo'lmadi (baza yozildi)")
-    if is_filler:
-        # Filler bayrog'ini bazaga ham qo'shamiz (single mode'da auto-detect emas edi).
-        try:
-            async with AsyncSessionLocal() as session:
-                ep_row = (
-                    await session.execute(select(Series).where(Series.anime_id == anime_id, Series.episode == saved_ep))
-                ).scalar_one_or_none()
-                if ep_row is not None and not ep_row.is_filler:
-                    ep_row.is_filler = True
-                    await session.commit()
-        except Exception:
-            logger.exception("ep_single: filler bayrog'ini bazada yangilab bo'lmadi")
     await msg.answer(f"✅ {saved_ep}-qism qo'shildi!{' 🎲' if is_filler else ''}")
     next_ep = current + 1
     if next_ep > to_ep:
