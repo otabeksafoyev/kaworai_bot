@@ -4678,18 +4678,81 @@ async def _ask_filter(msg_or_call, state: FSMContext, data: dict):
 # ─── Bot orqali: birma-bir video qabul ────────────────────────────────────
 
 
-async def _post_episode_to_secret(bot: Bot, anime_id: int, episode: int, file_id: str, is_document: bool):
+async def _post_episode_to_secret(
+    bot: Bot,
+    anime_id: int,
+    episode: int,
+    file_id: str,
+    is_document: bool,
+    *,
+    is_filler: bool = False,
+    original_caption: str | None = None,
+):
     """
-    Videoni maxfiy kanalga `ID: X\nQism: Y` caption bilan yuboradi — fayl
-    jurnali sifatida (keyinchalik kanal orqali qo'lda ham qo'shish mumkin
-    bo'lsin). Bazaga yozish esa shu yerda emas, `_save_episode_to_db` da
-    bajariladi: chunki bot o'z kanal postlarini har doim ham qayta
-    o'qiyolmaydi (`channel_post` handler ishlamay qolishi mumkin).
+    Videoni maxfiy kanalga to'liq caption bilan yuboradi — fayl jurnali sifatida.
+
+    Caption tarkibi:
+      ID: <anime_id>
+      Qism: <episode>
+      [FILLER]              # filler bo'lsa
+      <bo'sh qator>
+      <admin yuborgan original caption (max 700 belgi)>
+
+    Telegram caption uzunligi 1024 belgi bilan cheklanganligi uchun original
+    caption 700 belgiga truncatsiya qilinadi (ID/Qism/[FILLER] uchun joy qoladi).
+
+    Flood-wait (Telegram 429) ushlanadi — `TelegramRetryAfter.retry_after`
+    soniya kutib bir marta qayta urinadi. Bu bulk auto-add'da ko'p video
+    yuborilganda ba'zilari "tushib qolish"ini oldini oladi.
+
+    Bazaga yozish bu yerda emas — `_save_episode_to_db` da bajariladi (bot
+    har doim ham o'z kanal postlarini qayta o'qib bo'lmaydi).
     """
-    caption = f"ID: {anime_id}\nQism: {episode}"
-    if is_document:
-        return await bot.send_document(chat_id=SECRET_CHANNEL_ID, document=file_id, caption=caption)
-    return await bot.send_video(chat_id=SECRET_CHANNEL_ID, video=file_id, caption=caption)
+    from aiogram.exceptions import TelegramRetryAfter
+
+    parts = [f"ID: {anime_id}", f"Qism: {episode}"]
+    if is_filler:
+        parts.append("[FILLER]")
+    header = "\n".join(parts)
+    body = (original_caption or "").strip()
+    if body:
+        # Headerda paydo bo'lgan ID/Qism/[FILLER] qatorlarini qaytadan tushirib
+        # yubormaslik uchun shu prefiksli qatorlarni o'chirib tashlaymiz.
+        cleaned_lines: list[str] = []
+        for line in body.splitlines():
+            ll = line.strip().lower()
+            if ll.startswith(("id:", "qism:", "episode:", "part:")):
+                continue
+            if ll in ("[filler]", "(filler)", "filler"):
+                continue
+            cleaned_lines.append(line)
+        body_clean = "\n".join(cleaned_lines).strip()
+        if len(body_clean) > 700:
+            body_clean = body_clean[:697].rstrip() + "..."
+        if body_clean:
+            caption = f"{header}\n\n{body_clean}"
+        else:
+            caption = header
+    else:
+        caption = header
+
+    async def _do_send():
+        if is_document:
+            return await bot.send_document(chat_id=SECRET_CHANNEL_ID, document=file_id, caption=caption)
+        return await bot.send_video(chat_id=SECRET_CHANNEL_ID, video=file_id, caption=caption)
+
+    try:
+        return await _do_send()
+    except TelegramRetryAfter as e:
+        wait = min(int(e.retry_after) + 1, 60)
+        logger.warning(
+            "_post_episode_to_secret: flood-wait, retrying after %ss anime=%s ep=%s",
+            wait,
+            anime_id,
+            episode,
+        )
+        await asyncio.sleep(wait)
+        return await _do_send()
 
 
 async def _save_episode_to_db(
@@ -4743,17 +4806,30 @@ async def ep_single_got_video(msg: Message, state: FSMContext):
     to_ep = int(data["ep_to"])
     file_id = msg.video.file_id if msg.video else msg.document.file_id
     is_doc = bool(msg.document and not msg.video)
+    # Filler avto-aniqlash bazaga yozishdan AVVAL — atomar bitta yozuvga olamiz
+    # (Devin Review #43 BUG_0001 tavsiyasi).
+    single_caption = msg.caption or msg.text or ""
+    is_filler = _detect_filler_from_caption(single_caption)
     # 1) Bazaga yozamiz — bu asosiy manba, bot xatolariga qarshi ishonchli
-    ok, info, saved_ep = await _save_episode_to_db(anime_id, current, file_id)
+    ok, info, saved_ep = await _save_episode_to_db(anime_id, current, file_id, is_filler=is_filler)
     if not ok:
         return await msg.answer(f"❌ Bazaga yozib bo'lmadi: {info}")
     # 2) Maxfiy kanalga fayl jurnali sifatida yuboramiz (xatosi — bu yerda
-    #    kritik emas, qism allaqachon bazada).
+    #    kritik emas, qism allaqachon bazada). Caption va filler tag ham
+    #    yuboriladi — bot keyin kanaldan qayta o'qisa, hammasi joyida bo'ladi.
     try:
-        await _post_episode_to_secret(msg.bot, anime_id, saved_ep, file_id, is_document=is_doc)
+        await _post_episode_to_secret(
+            msg.bot,
+            anime_id,
+            saved_ep,
+            file_id,
+            is_document=is_doc,
+            is_filler=is_filler,
+            original_caption=single_caption,
+        )
     except Exception:
         logger.exception("ep_single: secret kanalga yuborib bo'lmadi (baza yozildi)")
-    await msg.answer(f"✅ {saved_ep}-qism qo'shildi!")
+    await msg.answer(f"✅ {saved_ep}-qism qo'shildi!{' 🎲' if is_filler else ''}")
     next_ep = current + 1
     if next_ep > to_ep:
         await _ask_filter(msg, state, data)
@@ -5004,8 +5080,12 @@ async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
     anime_id = int(data["ep_anime_id"])
     await call.answer("⏳ Yuborilyapti...")
     ok = failed = 0
+    secret_ok = 0
+    secret_failed = 0
     errs: list[str] = []
-    for it in items:
+    secret_errs: list[str] = []
+    total = len(items)
+    for idx, it in enumerate(items):
         ep = it.get("episode")
         if ep is None:
             failed += 1
@@ -5025,23 +5105,48 @@ async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
             failed += 1
             errs.append(info)
             continue
-        # 2) Maxfiy kanalga jurnal — xatoga tushsa, qism baribir bazada
+        # 2) Maxfiy kanalga jurnal — xatoga tushsa, qism baribir bazada.
+        # Filler tag + original caption ham yuboriladi (kanaldan qayta o'qisa
+        # to'liq ma'lumot saqlanadi). Telegram flood-wait `_post_episode_to_secret`
+        # ichida ushlanadi.
         try:
             await _post_episode_to_secret(
-                call.bot, anime_id, saved_ep, it["file_id"], is_document=bool(it.get("is_doc"))
+                call.bot,
+                anime_id,
+                saved_ep,
+                it["file_id"],
+                is_document=bool(it.get("is_doc")),
+                is_filler=bool(it.get("is_filler", False)),
+                original_caption=it.get("caption") or None,
             )
-        except Exception:
-            logger.exception("ep_bulk_commit: secret kanalga yuborib bo'lmadi (baza yozildi)")
+            secret_ok += 1
+        except Exception as e:
+            secret_failed += 1
+            secret_errs.append(str(e)[:120])
+            logger.exception(
+                "ep_bulk_commit: secret kanalga yuborib bo'lmadi anime=%s ep=%s (baza yozildi)",
+                anime_id,
+                saved_ep,
+            )
         ok += 1
+        # Telegram rate-limitidan saqlanish — bulk yuborishda kichik pauza.
+        # Oxirgi qismdan keyin kutmaymiz.
+        if idx < total - 1:
+            await asyncio.sleep(0.4)
+    summary = [
+        "🏁 <b>Bulk tayyor</b>",
+        f"✅ Bazaga qo'shildi: {ok}",
+        f"📤 Maxfiy kanalga: {secret_ok}/{ok}",
+    ]
     if failed:
-        txt = [
-            "🏁 <b>Bulk tayyor</b>",
-            f"✅ Bazaga qo'shildi: {ok}",
-            f"❌ Xato: {failed}",
-        ]
+        summary.append(f"❌ Bazaga xato: {failed}")
         for e in errs[:3]:
-            txt.append(f"  • {esc(e)}")
-        await call.message.answer("\n".join(txt), parse_mode="HTML")
+            summary.append(f"  • {esc(e)}")
+    if secret_failed:
+        summary.append(f"⚠️ Maxfiy kanal xato: {secret_failed} (qism bazada saqlandi)")
+        for e in secret_errs[:3]:
+            summary.append(f"  • {esc(e)}")
+    await call.message.answer("\n".join(summary), parse_mode="HTML")
     await _ask_filter(call, state, data)
 
 
