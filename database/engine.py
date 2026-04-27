@@ -229,6 +229,9 @@ MIGRATIONS = [
     "ALTER TABLE animes ADD COLUMN IF NOT EXISTS filter_file_id VARCHAR(300)",
     "ALTER TABLE animes ADD COLUMN IF NOT EXISTS filter_type VARCHAR(20)",
     "ALTER TABLE animes ADD COLUMN IF NOT EXISTS filter_url VARCHAR(500)",
+    # series jadvaliga filler bayrog'i — filler qism bo'lsa user uchun
+    # video o'rniga anime.filter_file_id rasm + "Keyingi qism" tugmasi.
+    "ALTER TABLE series ADD COLUMN IF NOT EXISTS is_filler BOOLEAN DEFAULT FALSE NOT NULL",
     # ad_banners jadvali — oddiy userlar uchun video ostida reklama
     """
     CREATE TABLE IF NOT EXISTS ad_banners (
