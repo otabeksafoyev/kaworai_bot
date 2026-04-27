@@ -491,25 +491,38 @@ async def receipt_received(msg: Message, state: FSMContext):
     caption = _admin_caption(user_id, username, full_name, plan_key)
     admin_kb = _admin_kb(user_id, plan_key)
 
-    # Chek HAM kanaliga, HAM admin DM ga yuboriladi (parallel).
+    # Chek HAM kanaliga, HAM admin DM ga yuboriladi.
     # Foydalanuvchi shikoyati: "chek faqat kanalga ketyapti, botda ko'rinmaydi".
-    # Endi kanal va har bir admin'ning DM'iga ham yuboriladi (best-effort).
-    async def _send_to(chat_id: int) -> bool:
+    # MUHIM (Devin Review #42): admin_confirm_pro idempotent EMAS — har bosish
+    # `pro_until` ni 30*N kunga uzaytiradi. Shuning uchun tasdiqlash/rad etish
+    # tugmalarini FAQAT BITTA xabarda saqlaymiz:
+    #   - Kanal mavjud va ishladi -> tugmalar kanalda; admin DM nusxalari
+    #     "info-only" (tugmasiz, "kanal-postda tasdiqlang" eslatmasi bilan).
+    #   - Kanal yo'q yoki yuborib bo'lmadi -> birinchi javob bergan admin DM
+    #     ga tugmalar; qolganlariga info-only nusxa.
+    # Bu N ta admin x N marta Pro extension xavfini yo'q qiladi.
+    async def _send_to(
+        chat_id: int,
+        *,
+        kb: InlineKeyboardMarkup | None,
+        suffix: str = "",
+    ) -> bool:
+        cap = caption + suffix
         try:
             if msg.photo:
                 await bot.send_photo(
                     chat_id=chat_id,
                     photo=msg.photo[-1].file_id,
-                    caption=caption,
-                    reply_markup=admin_kb,
+                    caption=cap,
+                    reply_markup=kb,
                     parse_mode="HTML",
                 )
             else:
                 await bot.send_document(
                     chat_id=chat_id,
                     document=msg.document.file_id,
-                    caption=caption,
-                    reply_markup=admin_kb,
+                    caption=cap,
+                    reply_markup=kb,
                     parse_mode="HTML",
                 )
             return True
@@ -524,7 +537,7 @@ async def receipt_received(msg: Message, state: FSMContext):
 
     channel_ok = False
     if PAYMENT_CHANNEL_ID:
-        channel_ok = await _send_to(PAYMENT_CHANNEL_ID)
+        channel_ok = await _send_to(PAYMENT_CHANNEL_ID, kb=admin_kb)
 
     # Adminlar DM'iga ham yuboramiz — .env ADMIN_ID + DB'dagi adminlar.
     admin_targets: set[int] = set()
@@ -549,10 +562,27 @@ async def receipt_received(msg: Message, state: FSMContext):
     except Exception:
         logger.exception("receipt_received: DB admin ro'yxatini olishda xato")
 
+    info_suffix = "\n\n📌 <i>Tasdiqlash uchun kanal-postdagi tugmalardan foydalaning.</i>"
+    fallback_info_suffix = "\n\n📌 <i>Bu nusxa — info uchun. Tugmalar boshqa admin DM'iga yuborildi.</i>"
+
     admin_ok = False
-    for aid in admin_targets:
-        if await _send_to(aid):
-            admin_ok = True
+    if channel_ok:
+        # Kanal canonical — barcha admin DM nusxalari TUGMASIZ.
+        for aid in admin_targets:
+            if await _send_to(aid, kb=None, suffix=info_suffix):
+                admin_ok = True
+    else:
+        # Kanal yo'q/ishlamadi — faqat birinchi javob bergan admin DM ga tugma,
+        # qolganlariga info-only nusxa.
+        kb_assigned = False
+        for aid in admin_targets:
+            if not kb_assigned:
+                if await _send_to(aid, kb=admin_kb):
+                    kb_assigned = True
+                    admin_ok = True
+            else:
+                if await _send_to(aid, kb=None, suffix=fallback_info_suffix):
+                    admin_ok = True
 
     if not channel_ok and not admin_ok:
         logger.error(
