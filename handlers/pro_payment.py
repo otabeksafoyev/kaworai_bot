@@ -698,7 +698,8 @@ async def admin_reject_start(call: CallbackQuery, state: FSMContext):
         # DM yopiq bo'lsa — kanal-postga ham fallback prompt qo'yamiz.
         try:
             await call.message.answer(
-                "⚠️ Avval botga (" + (f"@{esc(call.from_user.username)}" if call.from_user.username else "private")
+                "⚠️ Avval botga ("
+                + (f"@{esc(call.from_user.username)}" if call.from_user.username else "private")
                 + ") <b>/start</b> deb yozing, so'ng sababni yuboring.",
                 parse_mode="HTML",
             )
@@ -762,10 +763,7 @@ async def admin_msg_start(call: CallbackQuery, state: FSMContext):
     await dm_state.update_data(msg_target_user=user_id)
     await dm_state.set_state(AdminMsgState.waiting_msg)
 
-    prompt = (
-        f"✉️ <b>Foydalanuvchi ({user_id}) ga xabar yozing:</b>\n\n"
-        "Matn, rasm, video — barchasi bo'lishi mumkin."
-    )
+    prompt = f"✉️ <b>Foydalanuvchi ({user_id}) ga xabar yozing:</b>\n\nMatn, rasm, video — barchasi bo'lishi mumkin."
     sent_to_dm = False
     try:
         await bot.send_message(admin_id, prompt, parse_mode="HTML")
