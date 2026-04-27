@@ -5013,7 +5013,9 @@ async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
             continue
         # 1) Bazaga yozish — asosiy manba
         try:
-            saved_ok, info, saved_ep = await _save_episode_to_db(anime_id, int(ep), it["file_id"])
+            saved_ok, info, saved_ep = await _save_episode_to_db(
+                anime_id, int(ep), it["file_id"], is_filler=bool(it.get("is_filler", False))
+            )
         except Exception as e:
             logger.exception("ep_bulk_commit: baza yozish xato")
             failed += 1

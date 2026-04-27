@@ -279,6 +279,22 @@ async def _load_episodes_and_filler(session, anime_id: int) -> tuple[list[int], 
     return ep_nums, filler
 
 
+def _next_after_filler(all_episodes: list[int], current: int, filler_eps: set[int]) -> int | None:
+    """Filler qismdan keyingi kanonik (non-filler) qism raqamini topadi.
+
+    Avval `current`'dan keyingi non-filler qism qidiriladi. Agar topilmasa
+    (qolganlari ham filler bo'lsa), shunchaki `current`'dan keyingi qaysi
+    qism bo'lsa shu qaytariladi. Hech qaysi qism qolmagan bo'lsa — None.
+    """
+    for n in all_episodes:
+        if n > current and n not in filler_eps:
+            return n
+    for n in all_episodes:
+        if n > current:
+            return n
+    return None
+
+
 async def _deliver_filler_episode(
     call: types.CallbackQuery,
     *,
@@ -879,8 +895,16 @@ async def watch_start(call: types.CallbackQuery):
         anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0, filler_eps=filler_eps
     )
 
-    await _deliver_episode_video(call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode)
-    await _send_filter_media(call, anime)
+    # Birinchi qism filler bo'lib qolgan kam uchraydigan holat — oddiy video
+    # yubormay, filter rasm + "Keyingi qism" tugmasini ko'rsatamiz.
+    if getattr(first_ep, "is_filler", False):
+        next_ep = _next_after_filler(ep_numbers, first_ep.episode, filler_eps)
+        await _deliver_filler_episode(call, anime=anime, episode=first_ep.episode, next_episode=next_ep, page=0, kb=kb)
+    else:
+        await _deliver_episode_video(
+            call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode
+        )
+        await _send_filter_media(call, anime)
 
     try:
         from database.queries import add_to_watch_history, record_view
@@ -951,18 +975,7 @@ async def episode_select(call: types.CallbackQuery):
     await call.answer()
 
     if getattr(ep_obj, "is_filler", False):
-        # Filler qism: video o'rniga ogohlantirish + "Keyingi qism" tugmasi
-        next_ep: int | None = None
-        for n in all_episodes:
-            if n > episode and n not in filler_eps:
-                next_ep = n
-                break
-        if next_ep is None:
-            # Faqat filler qolgan bo'lsa — oddiy keyingisini taklif qilamiz
-            for n in all_episodes:
-                if n > episode:
-                    next_ep = n
-                    break
+        next_ep = _next_after_filler(all_episodes, episode, filler_eps)
         await _deliver_filler_episode(call, anime=anime, episode=episode, next_episode=next_ep, page=page, kb=kb)
     else:
         await _deliver_episode_video(
@@ -1144,9 +1157,18 @@ async def episode_navigate(call: types.CallbackQuery):
     delivery_mode = "send" if season_jump else ux_mode
     await call.answer("🎉 2-faslga o'tildi!" if season_jump else None, show_alert=season_jump)
 
-    await _deliver_episode_video(
-        call, file_id=target_ep_obj.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=delivery_mode
-    )
+    # Filler qismga ⬅️/➡️ tugmasi bilan o'tilgan bo'lsa ham, oddiy video
+    # yubormaymiz — anime'ning filter rasmi + "Keyingi qism" tugmasi.
+    # `episode_select`'dagi mantiq bilan bir xil.
+    if getattr(target_ep_obj, "is_filler", False):
+        next_ep = _next_after_filler(target_ep_numbers, target_ep_num, target_filler_eps)
+        await _deliver_filler_episode(
+            call, anime=target_anime, episode=target_ep_num, next_episode=next_ep, page=new_page, kb=kb
+        )
+    else:
+        await _deliver_episode_video(
+            call, file_id=target_ep_obj.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=delivery_mode
+        )
 
     try:
         from database.queries import add_to_watch_history, record_view
@@ -1216,7 +1238,13 @@ async def show_episodes_list(call: types.CallbackQuery):
         anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0, filler_eps=filler_eps
     )
 
-    await _deliver_episode_video(call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode)
+    if getattr(first_ep, "is_filler", False):
+        next_ep = _next_after_filler(ep_numbers, first_ep.episode, filler_eps)
+        await _deliver_filler_episode(call, anime=anime, episode=first_ep.episode, next_episode=next_ep, page=0, kb=kb)
+    else:
+        await _deliver_episode_video(
+            call, file_id=first_ep.file_id, caption=caption, kb=kb, is_pro=is_pro, ux_mode=ux_mode
+        )
 
 
 # ═══════════════════════════════════════════════════════════
