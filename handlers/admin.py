@@ -103,8 +103,60 @@ admin_router = Router()
 # xatolarga sabab bo'lishi mumkin.
 ADMINS = parse_admin_ids(os.getenv("ADMIN_ID", ""))
 SECRET_CHANNEL_ID = config.SECRET_CHANNEL_ID
+# Tur bo'yicha alohida maxfiy kanallar — auto-add'da kontent turiga qarab
+# kerakli kanalga yuborish uchun. Agar tegishli kanal 0/yo'q bo'lsa,
+# `SECRET_CHANNEL_ID` ga fallback bo'ladi (`_resolve_secret_channel`).
+SECRET_ANIME_CHANNEL_ID = getattr(config, "SECRET_ANIME_CHANNEL_ID", 0) or 0
+SECRET_DORAMA_CHANNEL_ID = getattr(config, "SECRET_DORAMA_CHANNEL_ID", 0) or 0
+SECRET_SERIAL_CHANNEL_ID = getattr(config, "SECRET_SERIAL_CHANNEL_ID", 0) or 0
+SECRET_KINO_CHANNEL_ID = getattr(config, "SECRET_KINO_CHANNEL_ID", 0) or 0
 NEWS_CHANNEL_ID = config.NEWS_CHANNEL_ID
 PREVIEW_CHANNEL_ID = getattr(config, "PREVIEW_CHANNEL_ID", 0) or 0
+
+
+# `Anime.content_type` qiymatlari → atlas-mapping. Bot kontent qo'shishda
+# `anime`, `dorama`, `serial`, `movie` (kino) qabul qiladi. Boshqa har qanday
+# turdagi yozuvlar uchun (yoki content_type=None) — fallback ishlaydi.
+def _resolve_secret_channel(content_type: str | None) -> int:
+    """
+    Anime turiga qarab maxfiy kanal ID qaytaradi.
+
+    Tartib: tur bo'yicha aniq kanal → `SECRET_CHANNEL_ID` (fallback).
+    0 qaytarmaydi (chunki bunday holda send_*  xatoga tushadi); agar hech
+    biri sozlanmagan bo'lsa 0 qaytaradi (caller ko'rib qoladi).
+    """
+    ct = (content_type or "").strip().lower()
+    by_type = {
+        "anime": SECRET_ANIME_CHANNEL_ID,
+        "dorama": SECRET_DORAMA_CHANNEL_ID,
+        "serial": SECRET_SERIAL_CHANNEL_ID,
+        "movie": SECRET_KINO_CHANNEL_ID,
+        "kino": SECRET_KINO_CHANNEL_ID,  # eski yozuvlar bo'lishi mumkin
+    }
+    chan = by_type.get(ct, 0) or 0
+    if chan:
+        return chan
+    return SECRET_CHANNEL_ID or 0
+
+
+# `add_episode_from_channel` filtri uchun — sozlangan barcha maxfiy
+# kanallar to'plami (0'dan boshqa qiymatlar). Bot bu kanallarning
+# birortasiga post qo'yilsa, avto-add ishga tushadi.
+def _all_secret_channel_ids() -> set[int]:
+    ids: set[int] = set()
+    for cid in (
+        SECRET_CHANNEL_ID,
+        SECRET_ANIME_CHANNEL_ID,
+        SECRET_DORAMA_CHANNEL_ID,
+        SECRET_SERIAL_CHANNEL_ID,
+        SECRET_KINO_CHANNEL_ID,
+    ):
+        if cid:
+            ids.add(int(cid))
+    return ids
+
+
+_SECRET_CHANNEL_IDS = _all_secret_channel_ids()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
 
 # Admin pastki reply-keyboard tugmalari.
@@ -4687,9 +4739,15 @@ async def _post_episode_to_secret(
     *,
     is_filler: bool = False,
     original_caption: str | None = None,
+    content_type: str | None = None,
 ):
     """
     Videoni maxfiy kanalga to'liq caption bilan yuboradi — fayl jurnali sifatida.
+
+    `content_type` — anime/dorama/serial/movie. Mos kanal `_resolve_secret_channel`
+    orqali aniqlanadi (env'da ALOHIDA `SECRET_*_CHANNEL_ID` sozlangan bo'lsa
+    o'sha kanalga, aks holda `SECRET_CHANNEL_ID` fallback'ga). Agar hech qanday
+    maxfiy kanal sozlanmagan bo'lsa — `RuntimeError` ko'tariladi.
 
     Caption tarkibi:
       ID: <anime_id>
@@ -4736,10 +4794,16 @@ async def _post_episode_to_secret(
     else:
         caption = header
 
+    target_channel = _resolve_secret_channel(content_type)
+    if not target_channel:
+        raise RuntimeError(
+            "Maxfiy kanal sozlanmagan: SECRET_CHANNEL_ID yoki SECRET_*_CHANNEL_ID lardan birini .env ga qo'ying"
+        )
+
     async def _do_send():
         if is_document:
-            return await bot.send_document(chat_id=SECRET_CHANNEL_ID, document=file_id, caption=caption)
-        return await bot.send_video(chat_id=SECRET_CHANNEL_ID, video=file_id, caption=caption)
+            return await bot.send_document(chat_id=target_channel, document=file_id, caption=caption)
+        return await bot.send_video(chat_id=target_channel, video=file_id, caption=caption)
 
     try:
         return await _do_send()
@@ -4757,10 +4821,10 @@ async def _post_episode_to_secret(
 
 async def _save_episode_to_db(
     anime_id: int, episode: int, file_id: str, is_filler: bool = False
-) -> tuple[bool, str, int]:
+) -> tuple[bool, str, int, str | None]:
     """
-    Bazaga qism yozadi. (ok, message, saved_episode) qaytaradi.
-    Agar anime topilmasa — (False, "...", 0).
+    Bazaga qism yozadi. (ok, message, saved_episode, content_type) qaytaradi.
+    Agar anime topilmasa — (False, "...", 0, None).
     Qism raqami AYNAN kiritilganiday saqlanadi — max+1 ga siljitilmaydi.
     Shu qism (anime_id, episode) allaqachon mavjud bo'lsa — file_id yangilanadi
     (upsert). Bu admin 15-24 qismlarni qo'shganidan keyin 1-14 ni qo'shsa ham
@@ -4768,12 +4832,15 @@ async def _save_episode_to_db(
 
     `is_filler=True` bo'lsa qism FILLER deb belgilanadi — user uchun video
     o'rniga anime.filter_file_id rasm + "Keyingi qism" tugmasi ko'rsatiladi.
+
+    Qaytariladigan `content_type` — `_post_episode_to_secret` ga uzatish
+    uchun (anime/dorama/serial/movie kanalini aniqlash uchun).
     """
     ep = int(episode)
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return False, f"Anime ID {anime_id} topilmadi", 0
+            return False, f"Anime ID {anime_id} topilmadi", 0, None
         existing = (
             await session.execute(select(Series).where(Series.anime_id == anime_id, Series.episode == ep))
         ).scalar_one_or_none()
@@ -4788,7 +4855,7 @@ async def _save_episode_to_db(
         else:
             session.add(Series(anime_id=anime_id, episode=ep, file_id=file_id, is_filler=bool(is_filler)))
         await session.commit()
-        return True, anime.title or str(anime_id), ep
+        return True, anime.title or str(anime_id), ep, anime.content_type
 
 
 @admin_router.message(AddEpisodeState.waiting_single_video)
@@ -4811,12 +4878,14 @@ async def ep_single_got_video(msg: Message, state: FSMContext):
     single_caption = msg.caption or msg.text or ""
     is_filler = _detect_filler_from_caption(single_caption)
     # 1) Bazaga yozamiz — bu asosiy manba, bot xatolariga qarshi ishonchli
-    ok, info, saved_ep = await _save_episode_to_db(anime_id, current, file_id, is_filler=is_filler)
+    ok, info, saved_ep, content_type = await _save_episode_to_db(anime_id, current, file_id, is_filler=is_filler)
     if not ok:
         return await msg.answer(f"❌ Bazaga yozib bo'lmadi: {info}")
     # 2) Maxfiy kanalga fayl jurnali sifatida yuboramiz (xatosi — bu yerda
     #    kritik emas, qism allaqachon bazada). Caption va filler tag ham
     #    yuboriladi — bot keyin kanaldan qayta o'qisa, hammasi joyida bo'ladi.
+    # Tur (anime/dorama/serial/movie) bo'yicha mos kanal `_resolve_secret_channel`
+    # da tanlanadi.
     try:
         await _post_episode_to_secret(
             msg.bot,
@@ -4826,6 +4895,7 @@ async def ep_single_got_video(msg: Message, state: FSMContext):
             is_document=is_doc,
             is_filler=is_filler,
             original_caption=single_caption,
+            content_type=content_type,
         )
     except Exception:
         logger.exception("ep_single: secret kanalga yuborib bo'lmadi (baza yozildi)")
@@ -5057,14 +5127,14 @@ async def _ep_bulk_show_preview(msg: Message, state: FSMContext):
             logger.exception("ep_bulk preview yuborib bo'lmadi")
     where = "preview kanalga" if PREVIEW_CHANNEL_ID else "shu chatga"
     lines.append(f"📤 {posted}/{len(items_sorted)} ta video {where} yuborildi — ko'rib chiqing.")
+    # "Tasdiqlash" va "Bekor" tugmalari bir qatorda — admin bitta qarashda
+    # ko'rib bosadi (foydalanuvchi so'rovi bo'yicha).
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(
-                    text="✅ Tasdiqlash — maxfiy kanalga yuborish", callback_data="ep_bulk_commit", style="success"
-                )
+                InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="ep_bulk_commit", style="success"),
+                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="ep_bulk_cancel", style="danger"),
             ],
-            [InlineKeyboardButton(text="❌ Bekor", callback_data="ep_bulk_cancel", style="danger")],
         ]
     )
     await state.set_state(AddEpisodeState.waiting_bulk_confirm)
@@ -5093,7 +5163,7 @@ async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
             continue
         # 1) Bazaga yozish — asosiy manba
         try:
-            saved_ok, info, saved_ep = await _save_episode_to_db(
+            saved_ok, info, saved_ep, content_type = await _save_episode_to_db(
                 anime_id, int(ep), it["file_id"], is_filler=bool(it.get("is_filler", False))
             )
         except Exception as e:
@@ -5108,7 +5178,8 @@ async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
         # 2) Maxfiy kanalga jurnal — xatoga tushsa, qism baribir bazada.
         # Filler tag + original caption ham yuboriladi (kanaldan qayta o'qisa
         # to'liq ma'lumot saqlanadi). Telegram flood-wait `_post_episode_to_secret`
-        # ichida ushlanadi.
+        # ichida ushlanadi. Tur bo'yicha (anime/dorama/serial/movie) mos
+        # kanalga yuboriladi.
         try:
             await _post_episode_to_secret(
                 call.bot,
@@ -5118,6 +5189,7 @@ async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
                 is_document=bool(it.get("is_doc")),
                 is_filler=bool(it.get("is_filler", False)),
                 original_caption=it.get("caption") or None,
+                content_type=content_type,
             )
             secret_ok += 1
         except Exception as e:
@@ -5150,7 +5222,7 @@ async def ep_bulk_commit(call: types.CallbackQuery, state: FSMContext):
     await _ask_filter(call, state, data)
 
 
-@admin_router.channel_post(F.chat.id == SECRET_CHANNEL_ID)
+@admin_router.channel_post(F.chat.id.in_(_SECRET_CHANNEL_IDS))
 async def add_episode_from_channel(message: Message):
     if not (message.video or message.document):
         return

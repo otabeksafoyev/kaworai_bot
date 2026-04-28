@@ -27,6 +27,13 @@ DATABASE_URL = env.str("DATABASE_URL")
 REDIS_URL = env.str("REDIS_URL")
 NEWS_CHANNEL_ID = env.int("NEWS_CHANNEL_ID")
 SECRET_CHANNEL_ID = env.int("SECRET_CHANNEL_ID")
+# Tur bo'yicha alohida maxfiy kanallar — auto-add'da kontent turiga qarab
+# kerakli kanalga yuborish uchun. Agar tegishli kanal 0 bo'lsa,
+# `SECRET_CHANNEL_ID` ga fallback bo'ladi.
+SECRET_ANIME_CHANNEL_ID = env.int("SECRET_ANIME_CHANNEL_ID", 0)
+SECRET_DORAMA_CHANNEL_ID = env.int("SECRET_DORAMA_CHANNEL_ID", 0)
+SECRET_SERIAL_CHANNEL_ID = env.int("SECRET_SERIAL_CHANNEL_ID", 0)
+SECRET_KINO_CHANNEL_ID = env.int("SECRET_KINO_CHANNEL_ID", 0)
 # Bot orqali qism qo'shishda preview/stage kanal (admin ko'rib tasdiqlash uchun).
 # Agar 0 bo'lsa — preview bot DM'ida yuboriladi.
 PREVIEW_CHANNEL_ID = env.int("PREVIEW_CHANNEL_ID", 0)

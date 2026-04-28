@@ -20,6 +20,12 @@ class Settings(BaseSettings):
 
     # ── Kanallar ─────────────────────────────────────────────
     SECRET_CHANNEL_ID: int = 0
+    # Tur bo'yicha alohida maxfiy kanallar (anime/dorama/serial/kino).
+    # 0 bo'lsa SECRET_CHANNEL_ID ga fallback.
+    SECRET_ANIME_CHANNEL_ID: int = 0
+    SECRET_DORAMA_CHANNEL_ID: int = 0
+    SECRET_SERIAL_CHANNEL_ID: int = 0
+    SECRET_KINO_CHANNEL_ID: int = 0
     NEWS_CHANNEL_ID: int = 0
     PREVIEW_CHANNEL_ID: int = 0
     # Kunlik ZIP zaxira yuboriladigan kanal. 0 bo'lsa — kunlik zaxira o'chiq.
