@@ -648,6 +648,16 @@ partner_main_kb = ReplyKeyboardMarkup(
 
 cancel_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="🚫 Bekor qilish")]], resize_keyboard=True)
 
+# Bulk auto-add preview qadamida ishlatiladi: "✅ Tasdiqlash" tugmasi
+# pastdagi "🚫 Bekor qilish" yonida (bir qatorda) chiqadi — admin so'roviga
+# ko'ra. Inline tugma o'rniga reply keyboard ishlatiladi.
+bulk_confirm_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="✅ Tasdiqlash"), KeyboardButton(text="🚫 Bekor qilish")],
+    ],
+    resize_keyboard=True,
+)
+
 ADD_STATUS_KB = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="📡 Davom etmoqda", callback_data="addstatus_ongoing", style="success")],
@@ -5027,6 +5037,99 @@ async def ep_bulk_cancel(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+@admin_router.message(AddEpisodeState.waiting_bulk_confirm)
+async def ep_bulk_confirm_via_reply(msg: Message, state: FSMContext):
+    """Reply keyboard'dan «✅ Tasdiqlash» yoki «🚫 Bekor qilish» bosilganda.
+
+    Inline tugma o'rniga reply keyboard ishlatiladi (admin so'roviga ko'ra —
+    Tasdiqlash pastdagi Bekor qilish yonida bo'lishi kerak).
+    """
+    if not await is_admin(msg.from_user.id):
+        return
+    text = (msg.text or "").strip()
+    if text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("❌ Bekor qilindi.", reply_markup=admin_main_kb)
+    if text != "✅ Tasdiqlash":
+        # Boshqa matn — shunchaki eslatma; tasdiqlashni kutyapmiz.
+        return await msg.answer(
+            "Pastdagi <b>✅ Tasdiqlash</b> yoki <b>🚫 Bekor qilish</b> tugmasini bosing.",
+            parse_mode="HTML",
+            reply_markup=bulk_confirm_kb,
+        )
+    # ===== TASDIQLASH (commit) =====
+    data = await state.get_data()
+    items: list[dict] = list(data.get("ep_bulk_items") or [])
+    if not items:
+        await state.clear()
+        return await msg.answer("Videolar yuborilmagan!", reply_markup=admin_main_kb)
+    anime_id = int(data["ep_anime_id"])
+    await msg.answer("⏳ Yuborilyapti...", reply_markup=admin_main_kb)
+    ok = failed = 0
+    secret_ok = 0
+    secret_failed = 0
+    errs: list[str] = []
+    secret_errs: list[str] = []
+    total = len(items)
+    for idx, it in enumerate(items):
+        ep = it.get("episode")
+        if ep is None:
+            failed += 1
+            errs.append("episode=None")
+            continue
+        try:
+            saved_ok, info, saved_ep, content_type = await _save_episode_to_db(
+                anime_id, int(ep), it["file_id"], is_filler=bool(it.get("is_filler", False))
+            )
+        except Exception as e:
+            logger.exception("ep_bulk_commit(reply): baza yozish xato")
+            failed += 1
+            errs.append(str(e)[:120])
+            continue
+        if not saved_ok:
+            failed += 1
+            errs.append(info)
+            continue
+        try:
+            await _post_episode_to_secret(
+                msg.bot,
+                anime_id,
+                saved_ep,
+                it["file_id"],
+                is_document=bool(it.get("is_doc")),
+                is_filler=bool(it.get("is_filler", False)),
+                original_caption=it.get("caption") or None,
+                content_type=content_type,
+            )
+            secret_ok += 1
+        except Exception as e:
+            secret_failed += 1
+            secret_errs.append(str(e)[:120])
+            logger.exception(
+                "ep_bulk_commit(reply): secret kanalga yuborib bo'lmadi anime=%s ep=%s (baza yozildi)",
+                anime_id,
+                saved_ep,
+            )
+        ok += 1
+        if idx < total - 1:
+            await asyncio.sleep(0.4)
+    summary = [
+        "🏁 <b>Bulk tayyor</b>",
+        f"✅ Bazaga qo'shildi: {ok}",
+        f"📤 Maxfiy kanalga: {secret_ok}/{ok}",
+    ]
+    if failed:
+        summary.append(f"❌ Bazaga xato: {failed}")
+        for e in errs[:3]:
+            summary.append(f"  • {esc(e)}")
+    if secret_failed:
+        summary.append(f"⚠️ Maxfiy kanal xato: {secret_failed} (qism bazada saqlandi)")
+        for e in secret_errs[:3]:
+            summary.append(f"  • {esc(e)}")
+    await msg.answer("\n".join(summary), parse_mode="HTML")
+    await _ask_filter(msg, state, data)
+
+
 @admin_router.callback_query(F.data == "ep_bulk_done")
 async def ep_bulk_done(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id):
@@ -5127,18 +5230,13 @@ async def _ep_bulk_show_preview(msg: Message, state: FSMContext):
             logger.exception("ep_bulk preview yuborib bo'lmadi")
     where = "preview kanalga" if PREVIEW_CHANNEL_ID else "shu chatga"
     lines.append(f"📤 {posted}/{len(items_sorted)} ta video {where} yuborildi — ko'rib chiqing.")
-    # "Tasdiqlash" va "Bekor" tugmalari bir qatorda — admin bitta qarashda
-    # ko'rib bosadi (foydalanuvchi so'rovi bo'yicha).
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="ep_bulk_commit", style="success"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="ep_bulk_cancel", style="danger"),
-            ],
-        ]
-    )
+    lines.append("")
+    lines.append("Pastdagi <b>✅ Tasdiqlash</b> tugmasini bosing yoki <b>🚫 Bekor qilish</b> bilan to'xtating.")
+    # "✅ Tasdiqlash" tugmasi pastdagi reply keyboard'da "🚫 Bekor qilish"
+    # yonida (bir qatorda) chiqadi — admin so'roviga ko'ra. Inline tugmalar
+    # olib tashlandi.
     await state.set_state(AddEpisodeState.waiting_bulk_confirm)
-    await msg.answer("\n".join(lines), parse_mode="HTML", reply_markup=kb)
+    await msg.answer("\n".join(lines), parse_mode="HTML", reply_markup=bulk_confirm_kb)
 
 
 @admin_router.callback_query(F.data == "ep_bulk_commit")
