@@ -2561,54 +2561,72 @@ async def process_poster(msg: Message, state: FSMContext):
     if rejection:
         return await msg.answer(rejection + "\nIltimos, kichikroq rasm yuboring.")
 
-    # Rasm nisbatini tekshirish
     ratio = _get_aspect_ratio(photo)
     poster_file_id = photo.file_id
-
-    # Portret yoki kvadrat (0.4 ≤ ratio ≤ 1.05) → inline search uchun ideal
-    # Landscape (ratio > 1.05) → 16:9 va shunga o'xshashlar → URL qo'lda so'raladi
+    w, h = photo.width, photo.height
     IS_PORTRAIT = ratio <= 1.05
 
     await state.update_data(poster_file_id=poster_file_id)
 
     if IS_PORTRAIT:
-        # Avtomatik URL olish
-        await msg.answer("⏳ URL avtomatik olinmoqda...", parse_mode="HTML")
-        auto_url = await _get_telegram_file_url(msg.bot, poster_file_id)
+        # Portret/kvadrat — ImgBB ga avtomatik yuklaymiz
+        wait_msg = await msg.answer("⏳ ImgBB ga yuklanmoqda...", parse_mode="HTML")
 
-        if auto_url:
-            await state.update_data(inline_thumbnail_url=auto_url)
+        imgbb_url = None
+        try:
+            from utils.imgbb import upload_telegram_photo_to_imgbb
+            imgbb_api_key = getattr(config, "IMGBB_API_KEY", "") or ""
+            if imgbb_api_key:
+                anime_data = await state.get_data()
+                anime_title = anime_data.get("title", "poster")
+                imgbb_url = await upload_telegram_photo_to_imgbb(
+                    msg.bot, poster_file_id, imgbb_api_key, name=anime_title
+                )
+        except Exception as e:
+            logger.warning("ImgBB upload xato: %s", e)
+
+        # ImgBB ishlamasa — Telegram CDN fallback
+        if not imgbb_url:
+            logger.info("ImgBB ishlamadi, Telegram CDN fallback")
+            imgbb_url = await _get_telegram_file_url(msg.bot, poster_file_id)
+
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
+
+        if imgbb_url:
+            await state.update_data(inline_thumbnail_url=imgbb_url)
             await state.set_state(AddAnime.waiting_trailer)
-            w, h = photo.width, photo.height
+            source = "ImgBB ✅ (doimiy)" if "ibb.co" in (imgbb_url or "") else "Telegram CDN ⚠️"
             await msg.answer(
                 f"✅ <b>Poster qabul qilindi!</b>\n\n"
-                f"📐 O'lcham: <b>{w}×{h}</b> (nisbat: {ratio:.2f}) — portret ✅\n"
-                f"🔗 URL avtomatik olindi\n\n"
+                f"📐 O'lcham: <b>{w}×{h}</b>  •  Nisbat: {ratio:.2f} — portret ✅\n"
+                f"🔗 URL: {source}\n\n"
                 f"🎬 <b>Treyler videosini yuboring:</b>",
                 parse_mode="HTML",
                 reply_markup=_skip_kb("skip_trailer"),
             )
         else:
-            # URL olishda xato — qo'lda so'raymiz
             await state.set_state(AddAnime.waiting_inline_url)
             await msg.answer(
-                f"⚠️ URL avtomatik olinmadi.\n\n"
-                f"🖼 <b>Inline thumbnail URL</b> ni qo'lda kiriting\n"
+                f"⚠️ <b>URL avtomatik olinmadi.</b>\n\n"
+                f"Inline thumbnail URL ni qo'lda kiriting:\n"
                 f"<i>https:// bilan boshlanadigan rasm URL</i>",
                 parse_mode="HTML",
                 reply_markup=_skip_kb("skip_inline_url"),
             )
     else:
-        # Landscape rasm — URL qo'lda so'raladi
-        w, h = photo.width, photo.height
+        # Landscape (16:9 va h.k.) — faqat poster saqlanadi, URL qo'lda so'raladi
         await state.set_state(AddAnime.waiting_inline_url)
         await msg.answer(
             f"⚠️ <b>Landscape rasm aniqlandi</b>\n\n"
-            f"📐 O'lcham: <b>{w}×{h}</b> (nisbat: {ratio:.2f})\n\n"
+            f"📐 O'lcham: <b>{w}×{h}</b>  •  Nisbat: {ratio:.2f}\n\n"
+            f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
             f"Bu rasm inline qidiruvda <b>xunuk ko'rinadi</b> 😕\n"
-            f"Poster faqat rasm sifatida saqlandi.\n\n"
-            f"Inline qidiruv uchun alohida <b>portret/kvadrat</b> rasm URL kiriting:\n"
-            f"<i>(Google Images, MyAnimeList, AniList dan olsa bo'ladi)</i>",
+            f"Poster saqlandı, lekin inline uchun alohida\n"
+            f"<b>portret yoki kvadrat</b> rasm URL kiriting:\n\n"
+            f"<i>Masalan: MyAnimeList, AniList, Google dan</i>",
             parse_mode="HTML",
             reply_markup=_skip_kb("skip_inline_url"),
         )
@@ -3136,28 +3154,43 @@ async def save_edit_value(msg: Message, state: FSMContext):
                 return await msg.answer(rejection)
             anime.poster_file_id = photo.file_id
 
-            # Rasm nisbatini tekshirish — portret bo'lsa URL avtomatik olamiz
             ratio = _get_aspect_ratio(photo)
+            w, h = photo.width, photo.height
+
             if ratio <= 1.05:
-                auto_url = await _get_telegram_file_url(msg.bot, photo.file_id)
-                if auto_url:
-                    anime.inline_thumbnail_url = auto_url
-                    await session.commit()
-                    w, h = photo.width, photo.height
-                    return await msg.answer(
-                        f"✅ <b>Poster yangilandi!</b>\n"
-                        f"📐 {w}×{h} (portret) — URL avtomatik olindi ✅",
-                        parse_mode="HTML",
-                        reply_markup=admin_main_kb,
-                    )
+                # Portret — ImgBB ga yuklaymiz
+                imgbb_url = None
+                try:
+                    from utils.imgbb import upload_telegram_photo_to_imgbb
+                    imgbb_api_key = getattr(config, "IMGBB_API_KEY", "") or ""
+                    if imgbb_api_key:
+                        imgbb_url = await upload_telegram_photo_to_imgbb(
+                            msg.bot, photo.file_id, imgbb_api_key, name=anime.title or "poster"
+                        )
+                except Exception as e:
+                    logger.warning("ImgBB edit upload xato: %s", e)
+
+                if not imgbb_url:
+                    imgbb_url = await _get_telegram_file_url(msg.bot, photo.file_id)
+
+                if imgbb_url:
+                    anime.inline_thumbnail_url = imgbb_url
+                await session.commit()
+                source = "ImgBB ✅" if imgbb_url and "ibb.co" in imgbb_url else "Telegram CDN ⚠️"
+                return await msg.answer(
+                    f"✅ <b>Poster yangilandi!</b>\n"
+                    f"📐 {w}×{h} (portret) — URL: {source}",
+                    parse_mode="HTML",
+                    reply_markup=admin_main_kb,
+                )
             else:
                 # Landscape — URL alohida so'raymiz
                 await session.commit()
-                w, h = photo.width, photo.height
                 await state.update_data(edit_anime_id=data.get("edit_anime_id"), edit_field="inline_url")
                 return await msg.answer(
                     f"⚠️ <b>Landscape rasm ({w}×{h})</b>\n\n"
-                    f"Poster saqlandi. Inline qidiruv uchun alohida portret URL kiriting:",
+                    f"Poster saqlandi. Inline qidiruv uchun\n"
+                    f"alohida portret URL kiriting:",
                     parse_mode="HTML",
                     reply_markup=cancel_kb,
                 )
