@@ -12,7 +12,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database.engine import AsyncSessionLocal
 from database.models import Anime, User
-from utils.pro_utils import is_pro_active
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +63,16 @@ async def safe_edit(call: types.CallbackQuery, text: str, reply_markup=None):
 
 
 async def check_pro(user_id: int) -> bool:
-    """Pro tekshiruvi — markaziy utils/pro_utils.py ishlatiladi."""
-    return await is_pro_active(user_id)
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user or not user.is_pro:
+            return False
+        if user.pro_until and user.pro_until < datetime.utcnow():
+            user.is_pro = False
+            user.pro_until = None
+            await session.commit()
+            return False
+        return True
 
 
 # ═══════════════════════════════════════════════════════════
@@ -169,27 +176,11 @@ async def pro_recommend(call: types.CallbackQuery):
 
     try:
         from utils.recommendation import build_identity_label, get_or_create_taste_profile, get_recommendations
-        from utils.redis_pro import get_cached_recommendations, invalidate_user_cache, set_cached_recommendations
 
-        user_id = call.from_user.id
-
-        # Redis keshdan o'qish
-        recs = await get_cached_recommendations(user_id)
-        identity = "🎌 Anime muxlisi"
-
-        if recs is None:
-            # Keshda yo'q — DB dan olib, keshga yozamiz
-            async with AsyncSessionLocal() as session:
-                recs = await get_recommendations(session, user_id, limit=8, is_pro=True)
-                profile = await get_or_create_taste_profile(session, user_id)
-                identity = build_identity_label(profile)
-            # ID lardan iborat ro'yxatni keshga yozamiz (5 daqiqa)
-            await set_cached_recommendations(user_id, recs)
-        else:
-            # Keshdan keldi — faqat identity uchun profil olamiz
-            async with AsyncSessionLocal() as session:
-                profile = await get_or_create_taste_profile(session, user_id)
-                identity = build_identity_label(profile)
+        async with AsyncSessionLocal() as session:
+            recs = await get_recommendations(session, call.from_user.id, limit=8, is_pro=True)
+            profile = await get_or_create_taste_profile(session, call.from_user.id)
+            identity = build_identity_label(profile)
     except Exception:
         recs = []
         identity = "🎌 Anime muxlisi"
@@ -406,13 +397,9 @@ async def pro_trending(call: types.CallbackQuery):
         return await call.answer("🔒 Pro kerak!", show_alert=True)
     try:
         from utils.recommendation import get_trending
-        from utils.redis_pro import get_cached_trending, set_cached_trending
 
-        items = await get_cached_trending()
-        if items is None:
-            async with AsyncSessionLocal() as session:
-                items = await get_trending(session, limit=6, is_pro=True)
-            await set_cached_trending(items)
+        async with AsyncSessionLocal() as session:
+            items = await get_trending(session, limit=6, is_pro=True)
     except Exception:
         items = []
     await _show_list(call, items, "🔥 <b>Trending — Bu hafta eng ko'p ko'rilganlar</b>")
@@ -424,13 +411,9 @@ async def pro_top(call: types.CallbackQuery):
         return await call.answer("🔒 Pro kerak!", show_alert=True)
     try:
         from utils.recommendation import get_top_rated
-        from utils.redis_pro import get_cached_top, set_cached_top
 
-        items = await get_cached_top()
-        if items is None:
-            async with AsyncSessionLocal() as session:
-                items = await get_top_rated(session, limit=6, is_pro=True)
-            await set_cached_top(items)
+        async with AsyncSessionLocal() as session:
+            items = await get_top_rated(session, limit=6, is_pro=True)
     except Exception:
         items = []
     await _show_list(call, items, "⭐ <b>Top Reyting — Eng yuqori baholangan</b>")
@@ -442,13 +425,9 @@ async def pro_rising(call: types.CallbackQuery):
         return await call.answer("🔒 Pro kerak!", show_alert=True)
     try:
         from utils.recommendation import get_rising
-        from utils.redis_pro import get_cached_rising, set_cached_rising
 
-        items = await get_cached_rising()
-        if items is None:
-            async with AsyncSessionLocal() as session:
-                items = await get_rising(session, limit=6, is_pro=True)
-            await set_cached_rising(items)
+        async with AsyncSessionLocal() as session:
+            items = await get_rising(session, limit=6, is_pro=True)
     except Exception:
         items = []
     await _show_list(call, items, "📈 <b>Rising — Tez o'sayotgan kontentlar</b>")
@@ -460,13 +439,9 @@ async def pro_hidden_gems(call: types.CallbackQuery):
         return await call.answer("🔒 Pro kerak!", show_alert=True)
     try:
         from utils.recommendation import get_hidden_gems
-        from utils.redis_pro import get_cached_hidden, set_cached_hidden
 
-        items = await get_cached_hidden()
-        if items is None:
-            async with AsyncSessionLocal() as session:
-                items = await get_hidden_gems(session, limit=6)
-            await set_cached_hidden(items)
+        async with AsyncSessionLocal() as session:
+            items = await get_hidden_gems(session, limit=6)
     except Exception:
         items = []
     await _show_list(call, items, "💎 <b>Hidden Gems — Kam mashhur, lekin oltin!</b>")

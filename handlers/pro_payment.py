@@ -101,7 +101,18 @@ async def _is_admin(user_id: int) -> bool:
         return r.scalar_one_or_none() is not None
 
 
-from utils.pro_utils import is_pro_active as _check_pro
+# ── Pro tekshirish ──────────────────────────────────────────
+async def _check_pro(user_id: int) -> bool:
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user or not user.is_pro:
+            return False
+        if user.pro_until and user.pro_until < datetime.utcnow():
+            user.is_pro = False
+            user.pro_until = None
+            await session.commit()
+            return False
+        return True
 
 
 # ═══════════════════════════════════════════════════════════

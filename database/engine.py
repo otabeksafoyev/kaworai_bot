@@ -255,18 +255,6 @@ MIGRATIONS = [
         updated_at      TIMESTAMP DEFAULT NOW()
     )
     """,
-    # watchlist jadvali — "Keyinroq ko'rish" ro'yxati
-    """
-    CREATE TABLE IF NOT EXISTS watchlist (
-        id       SERIAL PRIMARY KEY,
-        user_id  BIGINT  NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
-        anime_id INTEGER NOT NULL REFERENCES animes(id) ON DELETE CASCADE,
-        added_at TIMESTAMP DEFAULT NOW(),
-        UNIQUE (user_id, anime_id)
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS ix_watchlist_user ON watchlist(user_id)",
-    "CREATE INDEX IF NOT EXISTS ix_watchlist_anime ON watchlist(anime_id)",
 ]
 
 

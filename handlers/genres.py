@@ -1,13 +1,12 @@
 import json
+from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from sqlalchemy import cast, select
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import select
 
 from database.engine import AsyncSessionLocal
-from database.models import Anime
-from utils.pro_utils import is_pro_active
+from database.models import Anime, User
 
 genre_router = Router()
 
@@ -114,8 +113,16 @@ def parse_genres(raw_genres) -> list:
 
 
 async def _is_pro(user_id: int) -> bool:
-    """Pro tekshiruvi — markaziy utils/pro_utils.py ishlatiladi."""
-    return await is_pro_active(user_id)
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user or not user.is_pro:
+            return False
+        if user.pro_until and user.pro_until < datetime.utcnow():
+            user.is_pro = False
+            user.pro_until = None
+            await session.commit()
+            return False
+        return True
 
 
 def genres_keyboard(page: int = 0) -> InlineKeyboardMarkup:
@@ -195,50 +202,24 @@ def anime_list_keyboard(animes: list, genre_key: str, from_page: int, page: int 
 
 async def get_animes_by_genre(genre_key: str, is_pro: bool = False) -> list:
     """
-    Genre bo'yicha animalarni qaytaradi — DB darajasida JSONB filter.
-    Barcha animeni RAM ga yuklamaydi, to'g'ridan-to'g'ri PostgreSQL da qidiradi.
+    Genre bo'yicha animalarni qaytaradi.
     is_pro=False bo'lsa — pro-locked animelar CHIQMAYDI.
     """
-    # genre_key (o'zbekcha) va uning barcha alias'larini to'playmiz
-    search_keys = {genre_key.lower()}
-    for alias, canonical in GENRE_ALIASES.items():
-        if canonical == genre_key:
-            search_keys.add(alias.lower())
-    # GENRES label'larini ham qo'shamiz ("⚔️ Action" → "action")
-    label = GENRES.get(genre_key, "")
-    if label:
-        # "⚔️ Action" → "Action" va "action"
-        label_clean = label.split(" ", 1)[-1] if " " in label else label
-        search_keys.add(label_clean.lower())
-        search_keys.add(label_clean)
-
     async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Anime))
+        all_animes = result.scalars().all()
+
         matched = []
-        for key in search_keys:
-            # PostgreSQL JSONB @> operatori — RAM ga yüklamasdan DB'da filter
-            stmt = select(Anime).where(
-                cast(Anime.genres, JSONB).contains([key])
-            )
-            if not is_pro:
-                stmt = stmt.where(Anime.is_pro_locked == False)
-            result = await session.execute(stmt)
-            for anime in result.scalars().all():
-                if anime.id not in {a.id for a in matched}:
+        for anime in all_animes:
+            # ── Pro-locked filter ──
+            if anime.is_pro_locked and not is_pro:
+                continue
+
+            genres_list = parse_genres(anime.genres)
+            for g in genres_list:
+                if normalize_genre(g) == genre_key:
                     matched.append(anime)
-
-        # Agar JSONB qidiruv natija bermasa — Python darajasida fallback
-        if not matched:
-            stmt = select(Anime)
-            if not is_pro:
-                stmt = stmt.where(Anime.is_pro_locked == False)
-            result = await session.execute(stmt)
-            for anime in result.scalars().all():
-                genres_list = parse_genres(anime.genres)
-                for g in genres_list:
-                    if normalize_genre(g) == genre_key:
-                        matched.append(anime)
-                        break
-
+                    break
         return matched
 
 
