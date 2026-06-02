@@ -220,7 +220,7 @@ async def get_animes_by_genre(genre_key: str, is_pro: bool = False) -> list:
                 cast(Anime.genres, JSONB).contains([key])
             )
             if not is_pro:
-                stmt = stmt.where(Anime.is_pro_locked == False)
+                stmt = stmt.where(Anime.is_pro_locked.is_(False))
             result = await session.execute(stmt)
             for anime in result.scalars().all():
                 if anime.id not in {a.id for a in matched}:
@@ -230,7 +230,7 @@ async def get_animes_by_genre(genre_key: str, is_pro: bool = False) -> list:
         if not matched:
             stmt = select(Anime)
             if not is_pro:
-                stmt = stmt.where(Anime.is_pro_locked == False)
+                stmt = stmt.where(Anime.is_pro_locked.is_(False))
             result = await session.execute(stmt)
             for anime in result.scalars().all():
                 genres_list = parse_genres(anime.genres)

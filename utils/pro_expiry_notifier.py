@@ -38,8 +38,8 @@ async def check_and_notify_pro_expiry(bot) -> None:
         expired_result = await session.execute(
             select(User).where(
                 and_(
-                    User.is_pro == True,
-                    User.pro_until != None,
+                    User.is_pro.is_(True),
+                    User.pro_until.isnot(None),
                     User.pro_until < now,
                 )
             )
@@ -70,8 +70,8 @@ async def check_and_notify_pro_expiry(bot) -> None:
         three_day_result = await session.execute(
             select(User).where(
                 and_(
-                    User.is_pro == True,
-                    User.pro_until != None,
+                    User.is_pro.is_(True),
+                    User.pro_until.isnot(None),
                     User.pro_until > now,
                     User.pro_until <= three_days_later,
                     User.pro_until > one_day_later,  # 1 kunliklarni exclude
@@ -104,8 +104,8 @@ async def check_and_notify_pro_expiry(bot) -> None:
         one_day_result = await session.execute(
             select(User).where(
                 and_(
-                    User.is_pro == True,
-                    User.pro_until != None,
+                    User.is_pro.is_(True),
+                    User.pro_until.isnot(None),
                     User.pro_until > now,
                     User.pro_until <= one_day_later,
                 )

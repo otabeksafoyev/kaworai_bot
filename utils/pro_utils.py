@@ -6,8 +6,6 @@ va boshqa fayllarda pro tekshiruvi alohida yozilgan edi (copy-paste).
 Endi faqat shu fayldan import qilinadi.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 
 
