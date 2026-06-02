@@ -267,6 +267,9 @@ MIGRATIONS = [
     """,
     "CREATE INDEX IF NOT EXISTS ix_watchlist_user ON watchlist(user_id)",
     "CREATE INDEX IF NOT EXISTS ix_watchlist_anime ON watchlist(anime_id)",
+    # Qism video thumbnail uchun — kunduzgi va kechki rasm
+    "ALTER TABLE animes ADD COLUMN IF NOT EXISTS thumbnail_day_file_id VARCHAR(300)",
+    "ALTER TABLE animes ADD COLUMN IF NOT EXISTS thumbnail_night_file_id VARCHAR(300)",
 ]
 
 

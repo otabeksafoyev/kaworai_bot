@@ -298,46 +298,62 @@ async def _send_or_edit_video(
     caption: str,
     kb: InlineKeyboardMarkup,
     is_pro: bool,
+    anime=None,
+    episode: int = 1,
 ) -> None:
     """
-    Pro user   → edit_media (xabar o'zgarmaydi, videolar to'planadi)
-    Oddiy user → avvalgi o'chirilmaydi, faqat video o'zgaradi (edit_media)
-                 Agar xabar video bo'lsa edit ishlaydi, bo'lmasa yangi yuboradi.
-
-    MUHIM: Oddiy user uchun protect_content=True (yuklab olish, forward blok).
-    Oddiy userlar uchun video ostida reklama ko'rsatiladi.
+    Video yuborish yoki tahrirlash.
+    anime va episode berilsa — thumbnail avtomatik generatsiya qilinadi
+    (poster + qism raqami doira ichida, vaqtga qarab kunduzgi/kechki).
     """
+    # Thumbnail generatsiya
+    thumb = None
+    if anime is not None:
+        try:
+            from utils.thumbnail_gen import generate_episode_thumbnail
+            thumb = await generate_episode_thumbnail(
+                bot=call.bot,
+                anime_id=anime.id,
+                episode=episode,
+                thumbnail_day_file_id=getattr(anime, "thumbnail_day_file_id", None),
+                thumbnail_night_file_id=getattr(anime, "thumbnail_night_file_id", None),
+                poster_file_id=getattr(anime, "poster_file_id", None),
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("thumbnail generatsiya xato: %s", e)
+
     if not is_pro:
         from utils.ad_helpers import get_ad_text
-
         ad = await get_ad_text()
         if ad:
             caption += ad
+
     if is_pro:
-        # Pro: edit_media — xabar saqlanib qoladi
         try:
             await call.message.edit_media(
-                InputMediaVideo(media=ep_file_id, caption=caption, parse_mode="HTML"), reply_markup=kb
+                InputMediaVideo(media=ep_file_id, caption=caption, parse_mode="HTML"),
+                reply_markup=kb,
             )
             return
         except Exception:
             pass
-        # edit ishlamasa (masalan, dastlabki rasm xabari) — yangi yuborish
-        await call.message.answer_video(video=ep_file_id, caption=caption, reply_markup=kb, parse_mode="HTML")
-    else:
-        # Oddiy user: edit_media orqali VIDEO O'ZGARADI, xabar o'chмайди
-        # Agar avvalgi xabar video bo'lsa → edit ishlaydi
-        # Agar rasm/matn bo'lsa → yangi video yuboriladi (protect_content)
-        try:
-            await call.message.edit_media(
-                InputMediaVideo(media=ep_file_id, caption=caption, parse_mode="HTML"), reply_markup=kb
-            )
-            return
-        except Exception:
-            pass
-        # edit ishlamadi (masalan, poster rasm edi) — yangi protect_content video
         await call.message.answer_video(
-            video=ep_file_id, caption=caption, reply_markup=kb, parse_mode="HTML", protect_content=True
+            video=ep_file_id, caption=caption, reply_markup=kb,
+            parse_mode="HTML", thumbnail=thumb,
+        )
+    else:
+        try:
+            await call.message.edit_media(
+                InputMediaVideo(media=ep_file_id, caption=caption, parse_mode="HTML"),
+                reply_markup=kb,
+            )
+            return
+        except Exception:
+            pass
+        await call.message.answer_video(
+            video=ep_file_id, caption=caption, reply_markup=kb,
+            parse_mode="HTML", protect_content=True, thumbnail=thumb,
         )
 
 
@@ -426,7 +442,7 @@ async def watch_start(call: CallbackQuery):
         await add_to_watch_history(session, user_id, anime_id, ep.episode)
         await record_view(session, anime_id, user_id)
 
-    await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro)
+    await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro, anime=anime, episode=ep.episode)
     await call.answer()
 
 
@@ -475,7 +491,7 @@ async def show_episode(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         await add_to_watch_history(session, user_id, anime_id, episode, is_completed=(episode == max_ep))
 
-    await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro)
+    await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro, anime=anime, episode=episode)
     await call.answer()
 
     from utils.sleep_reminder import record_episode_view

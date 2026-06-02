@@ -6648,3 +6648,147 @@ async def exit_admin(msg: Message, state: FSMContext):
 
     # 🔥 SHU YERGA QO‘SHASAN
     mark_admin_inactive(msg.from_user.id)
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  THUMBNAIL BOSHQARUV — kunduzgi/kechgi rasmlar
+# ═══════════════════════════════════════════════════════════
+
+
+@admin_router.callback_query(F.data.startswith("set_thumb_"))
+async def set_thumbnail_start(call: types.CallbackQuery, state: FSMContext):
+    """Anime uchun thumbnail rasmlarni o'rnatish — edit paneldan chaqiriladi."""
+    if not await is_admin(call.from_user.id):
+        return
+    anime_id = int(call.data.replace("set_thumb_", ""))
+    await state.set_state(AddAnime.waiting_thumbnail_day)
+    await state.update_data(thumb_anime_id=anime_id)
+    await call.message.answer(
+        "☀️ <b>Kunduzgi thumbnail rasm</b>\n\n"
+        "Bu rasm <b>05:00 — 22:00</b> oralig'ida qism thumbnail sifatida ishlatiladi.\n\n"
+        "📐 Tavsiya: <b>portret yoki kvadrat</b> rasm (320×320 dan katta)\n\n"
+        "Rasmni yuboring 👇",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_thumb_day"),
+    )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "skip_thumb_day", AddAnime.waiting_thumbnail_day)
+async def skip_thumb_day(call: types.CallbackQuery, state: FSMContext):
+    """Kunduzgi thumbnail o'tkazib yuborildi."""
+    await state.set_state(AddAnime.waiting_thumbnail_night)
+    await call.message.answer(
+        "🌙 <b>Kechki thumbnail rasm</b>\n\n"
+        "Bu rasm <b>22:00 — 05:00</b> oralig'ida ishlatiladi.\n\n"
+        "Rasmni yuboring 👇",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_thumb_night"),
+    )
+    await call.answer()
+
+
+@admin_router.message(AddAnime.waiting_thumbnail_day, F.photo)
+async def process_thumb_day(msg: Message, state: FSMContext):
+    """Kunduzgi thumbnail qabul qilindi."""
+    if not await is_admin(msg.from_user.id):
+        return
+    photo = msg.photo[-1]
+    rejection = _poster_rejection_reason(photo)
+    if rejection:
+        return await msg.answer(rejection)
+
+    await state.update_data(thumb_day_file_id=photo.file_id)
+    await state.set_state(AddAnime.waiting_thumbnail_night)
+    await msg.answer(
+        "✅ <b>Kunduzgi rasm saqlandi!</b>\n\n"
+        "🌙 <b>Kechki thumbnail rasm</b>\n"
+        "<b>22:00 — 05:00</b> oralig'ida ishlatiladi.\n\n"
+        "Rasmni yuboring 👇",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_thumb_night"),
+    )
+
+
+@admin_router.callback_query(F.data == "skip_thumb_night", AddAnime.waiting_thumbnail_night)
+async def skip_thumb_night(call: types.CallbackQuery, state: FSMContext):
+    """Kechki thumbnail o'tkazib yuborildi — saqlaymiz."""
+    await _save_thumbnails(call.message, state)
+    await call.answer()
+
+
+@admin_router.message(AddAnime.waiting_thumbnail_night, F.photo)
+async def process_thumb_night(msg: Message, state: FSMContext):
+    """Kechki thumbnail qabul qilindi."""
+    if not await is_admin(msg.from_user.id):
+        return
+    photo = msg.photo[-1]
+    rejection = _poster_rejection_reason(photo)
+    if rejection:
+        return await msg.answer(rejection)
+
+    await state.update_data(thumb_night_file_id=photo.file_id)
+    await _save_thumbnails(msg, state)
+
+
+async def _save_thumbnails(msg_or_msg: Message, state: FSMContext):
+    """Thumbnail rasmlarni DB ga saqlaydi."""
+    data = await state.get_data()
+    anime_id = data.get("thumb_anime_id")
+    day_id = data.get("thumb_day_file_id")
+    night_id = data.get("thumb_night_file_id")
+    await state.clear()
+
+    if not anime_id:
+        await msg_or_msg.answer("❌ Anime ID topilmadi!", reply_markup=admin_main_kb)
+        return
+
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+        if not anime:
+            await msg_or_msg.answer("❌ Anime topilmadi!", reply_markup=admin_main_kb)
+            return
+
+        if day_id:
+            anime.thumbnail_day_file_id = day_id
+        if night_id:
+            anime.thumbnail_night_file_id = night_id
+        await session.commit()
+
+    parts = []
+    if day_id:
+        parts.append("☀️ Kunduzgi rasm")
+    if night_id:
+        parts.append("🌙 Kechki rasm")
+
+    saved = " va ".join(parts) if parts else "hech narsa"
+
+    await msg_or_msg.answer(
+        f"✅ <b>Thumbnail saqlandi!</b>\n\n"
+        f"🎬 Anime: <b>#{anime_id}</b>\n"
+        f"💾 Saqlangan: {saved}\n\n"
+        f"<i>Endi yangi qismlar yuborilganda thumbnail avtomatik qo'shiladi.</i>",
+        parse_mode="HTML",
+        reply_markup=admin_main_kb,
+    )
+
+
+@admin_router.callback_query(F.data.startswith("ef_set_thumb_"))
+async def ef_set_thumbnail(call: types.CallbackQuery, state: FSMContext):
+    """Kontent boshqaruvdagi edit panel orqali thumbnail o'rnatish."""
+    if not await is_admin(call.from_user.id):
+        return
+    anime_id = int(call.data.replace("ef_set_thumb_", ""))
+    await state.set_state(AddAnime.waiting_thumbnail_day)
+    await state.update_data(thumb_anime_id=anime_id)
+    await call.message.answer(
+        "🖼 <b>Thumbnail rasmlar</b>\n\n"
+        "☀️ <b>1. Kunduzgi rasm</b> (05:00–22:00)\n"
+        "🌙 <b>2. Kechki rasm</b> (22:00–05:00)\n\n"
+        "Avval kunduzgi rasmni yuboring 👇\n"
+        "<i>O'tkazib yuborish uchun tugmani bosing</i>",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_thumb_day"),
+    )
+    await call.answer()
