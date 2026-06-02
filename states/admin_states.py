@@ -80,6 +80,12 @@ class BroadcastState(StatesGroup):
     waiting_users_region = State()
 
 
+# 🔹 Kanalga post — caption + media + kanal tanlash oqimi
+class PostToChannelState(StatesGroup):
+    # Admin o'zi yozgan caption ni kutish
+    waiting_custom_caption = State()
+
+
 # 🔹 Baza zaxira (export/import) — filterli versiya
 class BackupState(StatesGroup):
     waiting_restore_file = State()
