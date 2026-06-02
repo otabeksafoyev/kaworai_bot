@@ -217,7 +217,8 @@ async def _show_rec_item(call: types.CallbackQuery, recs: list, idx: int, identi
     )
 
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="▶️ Ko'rish", callback_data=f"watch_{item['id']}", style="success"))
+    # anime_info_ → to'liq kartochka + barcha qismlar ro'yxati
+    kb.row(InlineKeyboardButton(text="📋 Ko'rish (barcha qismlar)", callback_data=f"anime_info_{item['id']}", style="success"))
     if idx + 1 < len(recs):
         kb.row(
             InlineKeyboardButton(
@@ -328,7 +329,7 @@ async def _show_mood_item(call, recs, idx, mood, label):
     )
 
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="▶️ Ko'rish", callback_data=f"watch_{item['id']}", style="success"))
+    kb.row(InlineKeyboardButton(text="📋 Ko'rish (barcha qismlar)", callback_data=f"anime_info_{item['id']}", style="success"))
     if idx + 1 < len(recs):
         kb.row(
             InlineKeyboardButton(
@@ -396,7 +397,7 @@ async def _show_list(call: types.CallbackQuery, items: list, title: str, back_cb
         else:
             kb.row(
                 InlineKeyboardButton(
-                    text=f"▶️ {item['title'][:28]}", callback_data=f"watch_{item['id']}", style="success"
+                    text=f"📋 {item['title'][:28]}", callback_data=f"anime_info_{item['id']}", style="success"
                 )
             )
 
@@ -539,7 +540,7 @@ async def pro_smart_continue(call: types.CallbackQuery):
         text += f"🎬 <b>{item['title']}</b> — {ep}-qismdan\n"
         kb.row(
             InlineKeyboardButton(
-                text=f"▶️ {item['title'][:22]} — {ep}-qism", callback_data=f"watch_{item['id']}", style="success"
+                text=f"📋 {item['title'][:22]} — {ep}-qismdan", callback_data=f"anime_info_{item['id']}", style="success"
             )
         )
 
