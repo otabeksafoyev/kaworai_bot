@@ -3694,13 +3694,22 @@ async def bc_media_type_selected(call: types.CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, data["bc_anime_id"])
     auto_cap = _build_post_caption(anime) if anime else ""
+    short_cap = _build_short_caption(anime) if anime else ""
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Shu caption", callback_data="bccap_auto", style="success")],
+            [InlineKeyboardButton(text="📋 To'liq ma'lumot", callback_data="bccap_auto", style="success")],
+            [InlineKeyboardButton(text="📝 Qisqa ma'lumot", callback_data="bccap_short", style="success")],
             [InlineKeyboardButton(text="✏️ O'zim yozaman", callback_data="bccap_custom", style="primary")],
         ]
     )
-    await call.message.answer(f"📝 <b>Caption preview:</b>\n\n{auto_cap}", reply_markup=kb, parse_mode="HTML")
+    preview = auto_cap[:600] + ("…" if len(auto_cap) > 600 else "")
+    await call.message.answer(
+        f"📝 <b>Caption turini tanlang:</b>\n\n"
+        f"<b>To'liq preview:</b>\n<blockquote>{preview}</blockquote>\n\n"
+        f"<b>Qisqa preview:</b>\n<blockquote>{short_cap}</blockquote>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
     await call.answer()
 
 
@@ -3711,6 +3720,17 @@ async def bc_caption_auto(call: types.CallbackQuery, state: FSMContext):
         anime = await session.get(Anime, data["bc_anime_id"])
     if anime:
         await state.update_data(bc_caption=_build_post_caption(anime))
+    await _bc_ask_extra_btn(call.message, state)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "bccap_short", BroadcastState.waiting_anime_post_caption)
+async def bc_caption_short(call: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, data["bc_anime_id"])
+    if anime:
+        await state.update_data(bc_caption=_build_short_caption(anime))
     await _bc_ask_extra_btn(call.message, state)
     await call.answer()
 
