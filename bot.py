@@ -17,12 +17,14 @@ from handlers.inline import inline_router
 from handlers.pro_payment import pro_payment_router
 from handlers.users import user_router
 from handlers.users_pro import pro_user_router
+from handlers.watchlist import watchlist_router
 from loader import bot, dp
 from middlewares.subscription import SubscriptionMiddleware
 from middlewares.throttling import ThrottlingMiddleware
 from utils.daily_backup import daily_backup_loop
 from utils.healthcheck import start_healthcheck_server
 from utils.logging_setup import setup_logging
+from utils.pro_expiry_notifier import pro_expiry_loop
 from utils.reengagement import reengagement_loop, reengagement_router
 from utils.sentry_init import init_sentry
 
@@ -59,6 +61,11 @@ async def on_startup():
     # uzoq vaqt faol bo'lmagan userlarga yumshoq eslatma yuboradi.
     _BACKGROUND_TASKS.add(asyncio.create_task(reengagement_loop(bot)))
     logging.info("Re-engagement scheduler ishga tushirildi")
+
+    # Pro obuna tugash eslatmasi scheduler — har 12 soatda
+    # Pro muddati tugayotgan/tugagan userlarga xabar yuboradi.
+    _BACKGROUND_TASKS.add(asyncio.create_task(pro_expiry_loop(bot)))
+    logging.info("Pro expiry notifier scheduler ishga tushirildi")
 
     # Health-check HTTP serveri (Railway/K8s probe uchun). HEALTHCHECK_PORT=0
     # bo'lsa ishga tushmaydi — lokal dev'da muammo yo'q. Runner'ga modul
@@ -172,6 +179,7 @@ async def main():
     dp.include_router(pro_user_router)
     dp.include_router(user_router)
     dp.include_router(callback_router)
+    dp.include_router(watchlist_router)
     dp.include_router(inline_router)
     dp.include_router(genre_router)
     dp.include_router(reengagement_router)

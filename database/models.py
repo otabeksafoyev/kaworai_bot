@@ -177,6 +177,21 @@ class AnimeSubscription(Base):
     __table_args__ = (UniqueConstraint("anime_id", "user_id", name="uq_anime_user_sub"),)
 
 
+class Watchlist(Base):
+    """User "Keyinroq ko'rish" ro'yxati — animeni bookmarkga qo'shadi."""
+
+    __tablename__ = "watchlist"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"), nullable=False)
+    anime_id = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"), nullable=False)
+    added_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User")
+    anime = relationship("Anime")
+
+    __table_args__ = (UniqueConstraint("user_id", "anime_id", name="uq_watchlist_user_anime"),)
+
+
 class RelatedContent(Base):
     __tablename__ = "related_content"
     id = Column(Integer, primary_key=True, autoincrement=True)
