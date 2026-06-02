@@ -26,6 +26,9 @@ class AddAnime(StatesGroup):
     waiting_poster = State()
     waiting_inline_url = State()
     waiting_trailer = State()
+    # Thumbnail rasmlar — kunduzgi va kechgi
+    waiting_thumbnail_day = State()
+    waiting_thumbnail_night = State()
 
 
 # 🔹 Kanal qo‘shish

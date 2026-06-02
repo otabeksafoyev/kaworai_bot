@@ -8,3 +8,7 @@ environs==11.0.0
 cachetools==5.5.0
 # Sentry — ixtiyoriy xato monitoringi. SENTRY_DSN env var bo'lmasa no-op.
 sentry-sdk==2.18.0
+# Pillow — qism thumbnail generatsiyasi uchun (poster + qism raqami)
+Pillow==10.4.0
+# aiohttp — ImgBB va boshqa HTTP so'rovlar uchun
+aiohttp==3.10.5

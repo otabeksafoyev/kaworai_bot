@@ -93,6 +93,13 @@ class Anime(Base):
     filter_file_id = Column(String(300), nullable=True)
     filter_type = Column(String(20), nullable=True)  # "photo", "video", "link"
     filter_url = Column(String(500), nullable=True)
+    # Qism video thumbnail rasmlari — Pillow bilan generatsiya qilinadi.
+    # thumbnail_day_file_id   — kunduzgi rasm (05:00-22:00)
+    # thumbnail_night_file_id — kechki rasm  (22:00-05:00)
+    # Admin anime qo'shganda yoki keyinchalik o'zgartira oladi.
+    # NULL bo'lsa — oddiy poster ishlatiladi.
+    thumbnail_day_file_id = Column(String(300), nullable=True)
+    thumbnail_night_file_id = Column(String(300), nullable=True)
     # Migration orqali qo'shiladi (migration_v2.py)
     # added_by_id, added_by_username, added_at
 
