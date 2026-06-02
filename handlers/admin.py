@@ -561,34 +561,60 @@ def _build_post_caption(anime: Anime) -> str:
 
 def _build_short_caption(anime: Anime) -> str:
     """
-    Anime uchun QISQA post caption.
-    Faqat eng muhim ma'lumotlar: nom, tur, janr, reyting, qism soni, tavsif (200 belgi).
+    Anime uchun CHIROYLI QISQA post caption.
+    Estetik, emojilar bilan ajratilgan, blockquote tavsif.
     """
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
+    type_label = {"anime": "Anime", "movie": "Kino", "serial": "Serial", "dorama": "Dorama"}
     emoji = type_emoji.get(anime.content_type or "anime", "🎬")
+    label = type_label.get(anime.content_type or "anime", "Kontent")
 
-    genres_str = ", ".join((anime.genres or [])[:3]) or "—"
+    # Sarlavha
+    year_str = f" <i>({anime.year})</i>" if anime.year else ""
+    title = f"{emoji} <b>{esc(anime.title)}</b>{year_str}"
 
-    lines: list[str] = []
-    title_line = f"{emoji} <b>{anime.title}</b>"
-    if anime.year:
-        title_line += f" ({anime.year})"
-    lines.append(title_line)
-    lines.append(f"🎭 {genres_str}")
+    # Janrlar — max 3 ta, hashtag shaklida
+    genres = anime.genres or []
+    genre_tags = "  ".join(
+        f"<code>{g}</code>" for g in genres[:3]
+    ) if genres else ""
 
-    meta: list[str] = []
+    # Meta — reyting, qism soni, davomiylik
+    meta_parts: list[str] = []
     if anime.rating is not None:
-        meta.append(f"⭐ {float(anime.rating):.1f}")
+        stars = "⭐" * min(int(float(anime.rating) / 2), 5)
+        meta_parts.append(f"{stars} <b>{float(anime.rating):.1f}</b>")
     if anime.episodes_count:
-        meta.append(f"🎞 {anime.episodes_count} qism")
-    if meta:
-        lines.append("  ".join(meta))
+        meta_parts.append(f"🎞 <b>{anime.episodes_count}</b> qism")
+    elif anime.total_episodes:
+        meta_parts.append(f"🎞 <b>{anime.total_episodes}</b> qism")
+    if anime.duration:
+        meta_parts.append(f"⏱ {anime.duration} daq")
 
+    status_map = {
+        "completed": "✅ Tugagan",
+        "ongoing": "📡 Davom etmoqda",
+        "announced": "📢 Tez kunda",
+    }
+    status_str = status_map.get(anime.status or "", "")
+
+    # Tavsif — blockquote ichida
     desc = (anime.description or "").strip()
+    if len(desc) > 300:
+        desc = desc[:300].rstrip() + "…"
+
+    # Yig'ish
+    lines: list[str] = []
+    lines.append(title)
+    lines.append(f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")
+    lines.append(f"🏷 {label}  •  {genre_tags}" if genre_tags else f"🏷 {label}")
+    if meta_parts:
+        lines.append("  ".join(meta_parts))
+    if status_str:
+        lines.append(status_str)
     if desc:
-        if len(desc) > 200:
-            desc = desc[:200].rstrip() + "…"
-        lines.append(f"\n{desc}")
+        lines.append(f"\n🖊 <b>Tavsif:</b>")
+        lines.append(f"<blockquote>{desc}</blockquote>")
 
     return "\n".join(lines)
 
