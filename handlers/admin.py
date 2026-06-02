@@ -2524,20 +2524,94 @@ async def skip_poster(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+def _get_aspect_ratio(photo) -> float:
+    """Rasmning en/bo'y nisbatini qaytaradi. width/height."""
+    w = getattr(photo, "width", 0) or 0
+    h = getattr(photo, "height", 0) or 0
+    if not h:
+        return 1.0
+    return w / h
+
+
+async def _get_telegram_file_url(bot, file_id: str) -> str | None:
+    """
+    Telegram CDN URL ni oladi.
+    Format: https://api.telegram.org/file/bot{TOKEN}/{file_path}
+    """
+    try:
+        file = await bot.get_file(file_id)
+        if not file.file_path:
+            return None
+        token = bot.token
+        return f"https://api.telegram.org/file/bot{token}/{file.file_path}"
+    except Exception as e:
+        logger.warning("_get_telegram_file_url xato: %s", e)
+        return None
+
+
 @admin_router.message(AddAnime.waiting_poster, F.photo)
 async def process_poster(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
         return
-    rejection = _poster_rejection_reason(msg.photo[-1])
+
+    photo = msg.photo[-1]
+
+    # Hajm tekshiruvi
+    rejection = _poster_rejection_reason(photo)
     if rejection:
         return await msg.answer(rejection + "\nIltimos, kichikroq rasm yuboring.")
-    await state.update_data(poster_file_id=msg.photo[-1].file_id)
-    await state.set_state(AddAnime.waiting_inline_url)
-    await msg.answer(
-        "🖼 <b>Inline thumbnail URL</b>:\n<i>https:// bilan boshlanadigan rasm URL</i>",
-        parse_mode="HTML",
-        reply_markup=_skip_kb("skip_inline_url"),
-    )
+
+    # Rasm nisbatini tekshirish
+    ratio = _get_aspect_ratio(photo)
+    poster_file_id = photo.file_id
+
+    # Portret yoki kvadrat (0.4 ≤ ratio ≤ 1.05) → inline search uchun ideal
+    # Landscape (ratio > 1.05) → 16:9 va shunga o'xshashlar → URL qo'lda so'raladi
+    IS_PORTRAIT = ratio <= 1.05
+
+    await state.update_data(poster_file_id=poster_file_id)
+
+    if IS_PORTRAIT:
+        # Avtomatik URL olish
+        await msg.answer("⏳ URL avtomatik olinmoqda...", parse_mode="HTML")
+        auto_url = await _get_telegram_file_url(msg.bot, poster_file_id)
+
+        if auto_url:
+            await state.update_data(inline_thumbnail_url=auto_url)
+            await state.set_state(AddAnime.waiting_trailer)
+            w, h = photo.width, photo.height
+            await msg.answer(
+                f"✅ <b>Poster qabul qilindi!</b>\n\n"
+                f"📐 O'lcham: <b>{w}×{h}</b> (nisbat: {ratio:.2f}) — portret ✅\n"
+                f"🔗 URL avtomatik olindi\n\n"
+                f"🎬 <b>Treyler videosini yuboring:</b>",
+                parse_mode="HTML",
+                reply_markup=_skip_kb("skip_trailer"),
+            )
+        else:
+            # URL olishda xato — qo'lda so'raymiz
+            await state.set_state(AddAnime.waiting_inline_url)
+            await msg.answer(
+                f"⚠️ URL avtomatik olinmadi.\n\n"
+                f"🖼 <b>Inline thumbnail URL</b> ni qo'lda kiriting\n"
+                f"<i>https:// bilan boshlanadigan rasm URL</i>",
+                parse_mode="HTML",
+                reply_markup=_skip_kb("skip_inline_url"),
+            )
+    else:
+        # Landscape rasm — URL qo'lda so'raladi
+        w, h = photo.width, photo.height
+        await state.set_state(AddAnime.waiting_inline_url)
+        await msg.answer(
+            f"⚠️ <b>Landscape rasm aniqlandi</b>\n\n"
+            f"📐 O'lcham: <b>{w}×{h}</b> (nisbat: {ratio:.2f})\n\n"
+            f"Bu rasm inline qidiruvda <b>xunuk ko'rinadi</b> 😕\n"
+            f"Poster faqat rasm sifatida saqlandi.\n\n"
+            f"Inline qidiruv uchun alohida <b>portret/kvadrat</b> rasm URL kiriting:\n"
+            f"<i>(Google Images, MyAnimeList, AniList dan olsa bo'ladi)</i>",
+            parse_mode="HTML",
+            reply_markup=_skip_kb("skip_inline_url"),
+        )
 
 
 @admin_router.callback_query(F.data == "skip_inline_url", AddAnime.waiting_inline_url)
@@ -3056,10 +3130,37 @@ async def save_edit_value(msg: Message, state: FSMContext):
         elif field == "poster":
             if not msg.photo:
                 return await msg.answer("❌ Rasm yuboring!")
-            rejection = _poster_rejection_reason(msg.photo[-1])
+            photo = msg.photo[-1]
+            rejection = _poster_rejection_reason(photo)
             if rejection:
                 return await msg.answer(rejection)
-            anime.poster_file_id = msg.photo[-1].file_id
+            anime.poster_file_id = photo.file_id
+
+            # Rasm nisbatini tekshirish — portret bo'lsa URL avtomatik olamiz
+            ratio = _get_aspect_ratio(photo)
+            if ratio <= 1.05:
+                auto_url = await _get_telegram_file_url(msg.bot, photo.file_id)
+                if auto_url:
+                    anime.inline_thumbnail_url = auto_url
+                    await session.commit()
+                    w, h = photo.width, photo.height
+                    return await msg.answer(
+                        f"✅ <b>Poster yangilandi!</b>\n"
+                        f"📐 {w}×{h} (portret) — URL avtomatik olindi ✅",
+                        parse_mode="HTML",
+                        reply_markup=admin_main_kb,
+                    )
+            else:
+                # Landscape — URL alohida so'raymiz
+                await session.commit()
+                w, h = photo.width, photo.height
+                await state.update_data(edit_anime_id=data.get("edit_anime_id"), edit_field="inline_url")
+                return await msg.answer(
+                    f"⚠️ <b>Landscape rasm ({w}×{h})</b>\n\n"
+                    f"Poster saqlandi. Inline qidiruv uchun alohida portret URL kiriting:",
+                    parse_mode="HTML",
+                    reply_markup=cancel_kb,
+                )
         elif field == "trailer":
             if not msg.video:
                 return await msg.answer("❌ Video yuboring!")
