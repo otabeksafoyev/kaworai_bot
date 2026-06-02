@@ -189,7 +189,7 @@ def _build_episode_keyboard(
 def _build_episode_caption(anime: Anime, episode: int, total_eps: int) -> str:
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
     emoji = type_emoji.get(anime.content_type or "anime", "🎬")
-    caption = f"{emoji} <b>{anime.title}</b>\n▶ {episode}-qism  |  🎞 Jami: {total_eps} qism"
+    caption = f"▶️ <b>{anime.title}</b>  •  {episode}-qism\n🎞 Jami: {total_eps} qism"
     filter_url = getattr(anime, "filter_url", None)
     if filter_url:
         caption += f'\n\n🎨 <a href="{filter_url}">Filter</a>'
@@ -455,13 +455,14 @@ async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id
     desc_short = (anime.description or "")[:200]
 
     caption = (
-        f"{emoji} <b>{anime.title}</b>" + (f" ({anime.year})" if anime.year else "") + lock_str + "\n"
+        f"{emoji} <b>{anime.title}</b>" + (f" <i>({anime.year})</i>" if anime.year else "") + lock_str + "\n"
+        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
         f"🎭 {genres_text}\n"
         + (f"🏷 {tags_text}\n" if tags_text else "")
-        + f"⭐ {anime.rating:.1f} ({anime.rating_count} ovoz)\n"
+        + f"⭐ <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
         + (f"📊 {status_str}\n" if status_str else "")
-        + f"🆔 Kod: <code>{anime.id}</code>\n\n"
-        + (f'📖 "{desc_short}..."' if desc_short else "")
+        + f"🆔 <code>{anime.id}</code>\n\n"
+        + (f"📖 <i>{desc_short}...</i>" if desc_short else "")
     )
 
     kb_rows = []
@@ -573,13 +574,14 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
     share_url = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}%3Fstart%3Danime_{anime_id}"
 
     caption = (
-        f"{emoji} <b>{anime.title}</b>" + (f" ({anime.year})" if anime.year else "") + lock_str + "\n\n"
+        f"{emoji} <b>{anime.title}</b>" + (f" <i>({anime.year})</i>" if anime.year else "") + lock_str + "\n"
+        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
         f"🎭 {genres_text}\n"
         + (f"🏷 {tags_text}\n" if tags_text else "")
-        + f"⭐ {anime.rating:.1f} ({anime.rating_count} ovoz)\n"
+        + f"⭐ <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
         + (f"📊 {status_str}\n" if status_str else "")
-        + f"🆔 Kod: <code>{anime.id}</code>\n\n"
-        f"📖 {(anime.description or '')[:300]}"
+        + f"🆔 <code>{anime.id}</code>\n\n"
+        f"📖 <blockquote>{(anime.description or '')[:300]}</blockquote>"
     )
 
     kb_rows = []
@@ -736,7 +738,7 @@ async def send_main_menu(target, delete_prev: bool = False):
     else:
         msg = target
         user_id = target.from_user.id if target.from_user else 0
-    caption = "🎌 <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
+    caption = "🎌 <b>Kaworai</b> — Anime & Dorama\n\n✨ <i>Sevimli kontentingizni toping</i>"
     extras = await _get_user_start_extras(user_id) if user_id else []
     kb = get_main_menu_keyboard(extras)
     try:
@@ -785,8 +787,13 @@ async def _continue_after_start(
     not_subbed = await check_subscription(message.bot, user_id, channels)
     if not_subbed:
         kb = get_sub_keyboard(not_subbed)
-        text = "⚠️ <b>Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:</b>\n\n" + "\n".join(
-            f"• {ch.channel_name}" for ch in not_subbed
+        text = (
+            "📢 <b>Kanalga obuna bo'ling</b>\n\n"
+            "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+            "Botdan foydalanish uchun quyidagi\n"
+            "kanallarga obuna bo'lishingiz kerak:\n\n"
+            + "\n".join(f"  • <b>{ch.channel_name}</b>" for ch in not_subbed)
+            + "\n\n✅ Obuna bo'lgach, <b>Tekshirish</b> tugmasini bosing"
         )
         if edit:
             try:

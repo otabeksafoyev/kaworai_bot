@@ -27,18 +27,21 @@ async def check_subscription_handler(call: CallbackQuery, session_maker: async_s
             continue
 
     if not_subscribed:
-        # Hali ham obuna bo'lmagan kanallar bor
         text = (
-            "❌ <b>Siz hali barcha kanallarga obuna bo'lmagansiz!</b>\n\n"
-            "Quyidagi kanallarga obuna bo'lib, qayta tekshiring:"
+            "📢 <b>Kanalga obuna bo'ling</b>\n\n"
+            "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+            "Quyidagi kanallarga hali obuna\nbo'lmagansiz:\n\n"
+            + "\n".join(f"  • <b>{p.channel_name}</b>" for p in not_subscribed)
+            + "\n\n✅ Obuna bo'lib, qayta tekshiring 👇"
         )
         kb = get_subscription_keyboard(not_subscribed)
-        await call.message.edit_text(text, reply_markup=kb)
+        await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
         await call.answer("❌ Hali obuna bo'lmagansiz!", show_alert=True)
     else:
-        # Hammaga obuna bo'ldi!
         await call.message.delete()
         await call.message.answer(
-            "✅ <b>Rahmat! Endi botdan to'liq foydalanishingiz mumkin.</b>\n\n🎌 /start — boshiga qaytish"
+            "✅ <b>Rahmat! Obuna tasdiqlandi.</b>\n\n"
+            "🎌 /start — botni boshlash",
+            parse_mode="HTML",
         )
         await call.answer("✅ Obuna tasdiqlandi!", show_alert=True)

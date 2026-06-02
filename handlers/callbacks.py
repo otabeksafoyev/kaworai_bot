@@ -53,13 +53,14 @@ def _anime_caption(anime: Anime) -> str:
     status_str = status_map.get(getattr(anime, "status", "") or "", "")
 
     return (
-        f"{emoji} <b>{anime.title}</b>" + (f" ({anime.year})" if anime.year else "") + lock_str + "\n\n"
+        f"{emoji} <b>{anime.title}</b>" + (f" <i>({anime.year})</i>" if anime.year else "") + lock_str + "\n"
+        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
         f"🎭 {genres_text}\n"
         + (f"🏷 {tags_text}\n" if tags_text else "")
-        + f"⭐ {anime.rating:.1f} ({anime.rating_count} ovoz)\n"
+        + f"⭐ <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
         + (f"📊 {status_str}\n" if status_str else "")
-        + f"🆔 Kod: <code>{anime.id}</code>\n\n"
-        f"📖 {(anime.description or '')[:300]}"
+        + f"🆔 <code>{anime.id}</code>\n\n"
+        f"📖 <blockquote>{(anime.description or '')[:300]}</blockquote>"
     )
 
 
@@ -419,7 +420,7 @@ async def watch_start(call: CallbackQuery):
     user_rated = user_rating is not None
 
     kb = _player_kb(anime_id, ep.episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
-    caption = f"🎬 <b>{anime.title}</b>\n▶️ {ep.episode}-qism  |  📺 Jami: {total} qism"
+    caption = f"▶️ <b>{anime.title}</b>\n🎞 {ep.episode}-qism  •  Jami: {total} qism"
 
     async with AsyncSessionLocal() as session:
         await add_to_watch_history(session, user_id, anime_id, ep.episode)
@@ -469,7 +470,7 @@ async def show_episode(call: CallbackQuery):
     user_rated = user_rating is not None
 
     kb = _player_kb(anime_id, episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
-    caption = f"🎬 <b>{anime.title}</b>\n▶️ {episode}-qism  |  📺 Jami: {total} qism"
+    caption = f"▶️ <b>{anime.title}</b>\n🎞 {episode}-qism  •  Jami: {total} qism"
 
     async with AsyncSessionLocal() as session:
         await add_to_watch_history(session, user_id, anime_id, episode, is_completed=(episode == max_ep))
@@ -520,10 +521,11 @@ async def show_episodes_list(call: CallbackQuery):
 
     kb = _episodes_kb(anime_id, episodes, page)
     text = (
-        f"🎬 <b>{anime.title}</b>\n"
-        f"📺 Jami {total} qism"
-        + (f"  |  📄 {page + 1}/{total_pages}-sahifa" if total_pages > 1 else "")
-        + "\n\nQaysi qismdan tomosha qilmoqchisiz?"
+        f"🎞 <b>{anime.title}</b>\n"
+        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        f"📋 Jami {total} qism"
+        + (f"  •  📄 {page + 1}/{total_pages}" if total_pages > 1 else "")
+        + "\n\n<i>Qaysi qismdan boshlashni tanlang 👇</i>"
     )
 
     try:
@@ -665,8 +667,13 @@ async def rate_anime(call: CallbackQuery):
         rows.append(row)
     rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data=f"ep_{anime_id}_cancel", style="danger")])
 
-    await call.message.answer(
-        "⭐ <b>Baho bering (1-10):</b>", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="HTML"
+    await call.message.edit_text(
+        f"⭐ <b>Baho bering</b>\n\n"
+        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        f"<i>1 — yomon, 10 — zo'r</i>\n\n"
+        f"Quyidagi raqamlardan birini tanlang 👇",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        parse_mode="HTML",
     )
     await call.answer()
 
@@ -686,9 +693,11 @@ async def save_score(call: CallbackQuery):
 
     await call.message.edit_text(
         f"✅ <b>Baho qabul qilindi!</b>\n\n"
-        f"🎬 <b>{anime.title if anime else anime_id}</b>\n"
+        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        f"🎬 <b>{anime.title if anime else anime_id}</b>\n\n"
         f"⭐ Sizning bahoyingiz: <b>{score}/10</b>\n"
-        f"📊 O'rtacha: <b>{new_avg}/10</b>",
+        f"📊 O'rtacha baho: <b>{new_avg}/10</b>\n\n"
+        f"<i>Rahmat! Fikringiz boshqalarga yordam beradi 🙏</i>",
         parse_mode="HTML",
     )
     await call.answer(f"⭐ {score}/10 — Rahmat!", show_alert=True)
@@ -715,7 +724,7 @@ async def back_to_main(call: CallbackQuery):
     extras = await _get_user_start_extras(call.from_user.id)
     await call.message.answer_photo(
         photo=PHOTO_URL,
-        caption="🎌 <b>Kaworai Anime Bot</b>",
+        caption="🎌 <b>Kaworai</b> — Anime & Dorama\n\n✨ <i>Sevimli kontentingizni toping</i>",
         reply_markup=get_main_menu_keyboard(extras),
         parse_mode="HTML",
     )

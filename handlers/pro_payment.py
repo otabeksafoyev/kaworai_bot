@@ -110,18 +110,18 @@ from utils.pro_utils import is_pro_active as _check_pro
 
 
 _DEFAULT_PAGE1_TEXT = (
-    "⚡️ <b>Kaworai Pro obunasini sotib olish orqali siz quyidagi "
-    "imkoniyatlarga ega bo'lasiz:</b>\n\n"
-    "✨ Kaworai'da premium darajadagi tajriba\n"
-    "🤖 Siz uchun maxsus AI tavsiyalar\n"
-    "😌 Kayfiyatingizga mos kontentlar\n"
-    "💎 Kam tanilgan, lekin zo'r — Hidden Gems\n"
-    "📈 Tez ommalashayotgan — Trending & Rising\n"
-    "▶️ Ko'rishni to'xtagan joyingizdan davom ettirish\n"
-    "🔒 Faqat Pro uchun maxsus kontentlar\n"
-    "🚀 Kaworai'dan maksimal zavq oling va vaqtni bekorga sarflamang\n"
-    "💖 Kaworai'ni qo'llab-quvvatlang va Pro imkoniyatlarni oching\n\n"
-    "👇 Agar sotib olishni istasangiz, pastdagi <b>Sotib olish</b> tugmasini bosing"
+    "⚡ <b>Kaworai Pro</b>\n"
+    "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
+    "Pro obuna bilan siz quyidagilarga ega bo'lasiz:\n\n"
+    "🤖 <b>AI tavsiyalar</b> — faqat siz uchun\n"
+    "😌 <b>Kayfiyat filtri</b> — hissiyotingizga mos\n"
+    "💎 <b>Hidden Gems</b> — kam tanilgan, lekin zo'r\n"
+    "🔥 <b>Trending & Rising</b> — tez ommalashayotganlar\n"
+    "▶️ <b>Smart Continue</b> — qolgan joydan davom\n"
+    "🔒 <b>Maxsus kontentlar</b> — faqat Pro uchun\n\n"
+    "💖 <i>Kaworai'ni qo'llab-quvvatlang va\n"
+    "premium tajribadan bahramand bo'ling!</i>\n\n"
+    "👇 Boshlash uchun <b>Sotib olish</b> tugmasini bosing"
 )
 
 
@@ -154,16 +154,15 @@ def _page1_kb() -> InlineKeyboardMarkup:
 
 def _page2_text() -> str:
     return (
-        "⚡️ <b>Kaworai Pro narxlari</b>\n\n"
-        "Kaworai Pro bilan premium imkoniyatlarni oching:\n\n"
-        "❤️ <b>1 oylik Pro:</b>\n• 9.000 so'm\n\n"
-        "🔥 <b>2 oylik Pro:</b>\n• 16.000 so'm (-11% tejang)\n\n"
-        "❤️‍🔥 <b>3 oylik Pro:</b>\n• 21.000 so'm (-22% tejang)\n\n"
-        "⚡ <b>6 oylik Pro:</b>\n• 39.000 so'm (-28% tejang)\n\n"
-        "🌙 <b>1 yillik Pro:</b>\n• 69.000 so'm (-40% tejang)\n\n"
-        "💎 <i>Ko'proq ol — kamroq to'la!</i>\n"
-        "🚀 Qancha uzoq muddat olsangiz, shuncha foyda siz tomonda\n\n"
-        "👇 Pastdagi tugmani bosib, muddatni tanlang"
+        "💎 <b>Kaworai Pro narxlari</b>\n"
+        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
+        "❤️  <b>1 oylik</b>  —  9.000 so'm\n"
+        "🔥  <b>2 oylik</b>  —  16.000 so'm  <i>(-11%)</i>\n"
+        "❤️‍🔥  <b>3 oylik</b>  —  21.000 so'm  <i>(-22%)</i>\n"
+        "⚡  <b>6 oylik</b>  —  39.000 so'm  <i>(-28%)</i>\n"
+        "🌙  <b>1 yillik</b>  —  69.000 so'm  <i>(-40%)</i>\n\n"
+        "<blockquote>Ko'proq ol — kamroq to'la!\nQancha uzoq muddat — shuncha tejaysiz.</blockquote>\n\n"
+        "👇 Muddatni tanlang"
     )
 
 
@@ -195,19 +194,16 @@ def _page3_text(plan_key: str) -> str:
         else "📩 Savollar bormi?\n👉 Adminga murojaat qiling"
     )
     return (
-        "💳 <b>Kaworai Pro obunasini faollashtirish</b>\n\n"
-        "Kaworai Pro olish uchun quyidagi bosqichlarni bajaring:\n\n"
-        "1️⃣ <b>To'lovni amalga oshiring</b>\n"
-        f"💰 {plan['label']} narxi: <b>{plan['price']} so'm</b>\n"
+        f"💳 <b>To'lov ma'lumotlari</b>\n"
+        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
+        f"📦 Tanlangan: <b>{plan['label']}</b>\n"
+        f"💰 To'lov summasi: <b>{plan['price']} so'm</b>\n\n"
         f"{card_line}{owner_line}\n"
-        "2️⃣ <b>Chekni yuboring</b>\n"
-        "📸 To'lov qilganingizdan so'ng, chek (skrinshot)ni "
-        "pastdagi tugma orqali yuboring\n\n"
-        "3️⃣ <b>Faollashtirish</b>\n"
-        "✅ Adminlar tasdiqlaganidan keyin sizga Kaworai Pro avtomatik yoqiladi\n\n"
-        "❗️ <b>Muhim:</b>\n"
-        "• To'lovni faqat yuqoridagi karta raqamiga yuboring\n"
-        "• Chek aniq va tushunarli bo'lishi kerak\n\n"
+        f"<b>Qadamlar:</b>\n"
+        f"1️⃣ Yuqoridagi kartaga to'lovni o'tkazing\n"
+        f"2️⃣ Chek skrinshotini yuboring\n"
+        f"3️⃣ Admin tasdiqlasa Pro avtomatik yoqiladi\n\n"
+        f"<blockquote>⚠️ Soxta cheklar uchun javobgarlik belgilangan!</blockquote>\n\n"
         f"{admin_line}"
     )
 
@@ -229,14 +225,11 @@ def _page3_kb(plan_key: str) -> InlineKeyboardMarkup:
 
 def _page4_text() -> str:
     return (
-        "📸 <b>Chekni yuborish</b>\n\n"
-        "To'lovni tasdiqlash uchun <b>chek rasmini</b> yoki "
-        "<b>skrinshotini</b> yuboring\n\n"
-        "⚠️ <b>DIQQAT:</b>\n"
-        "Soxta cheklar uchun <b>Jinoyat kodeksining 168-moddasiga</b> binoan "
-        "ma'muriy va jinoiy javobgarlik belgilangan.\n\n"
-        '<a href="https://lex.uz/docs/-111453">📜 Jinoyat kodeksining 168-moddasi (rasmiy)</a>\n\n'
-        "👇 Chek rasmini <b>shu chatga</b> yuboring"
+        "📸 <b>Chek yuborish</b>\n"
+        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
+        "To'lov chekini <b>rasm</b> yoki <b>skrinshot</b> shaklida\n"
+        "shu chatga yuboring 👇\n\n"
+        '<blockquote>⚠️ Soxta cheklar uchun <a href="https://lex.uz/docs/-111453">JK 168-modda</a> bo\'yicha javobgarlik belgilangan.</blockquote>'
     )
 
 
@@ -583,11 +576,12 @@ async def receipt_received(msg: Message, state: FSMContext):
 
     admin_line = f"\n\n📩 Savollar uchun: @{esc(ADMIN_USERNAME)}" if ADMIN_USERNAME else ""
     await msg.answer(
-        "✅ <b>Chek qabul qilindi!</b>\n\n"
+        "✅ <b>Chek qabul qilindi!</b>\n"
+        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
         f"📦 Muddat: <b>{plan['label']}</b>\n"
         f"💰 Summa: <b>{plan['price']} so'm</b>\n\n"
-        "⏳ Adminlar tekshirib, tez orada Pro'ni yoqib berishadi.\n"
-        "Odatda <b>5–30 daqiqa</b> ichida aktivlanadi." + admin_line,
+        "<i>Admin tekshirib, tez orada Pro'ni yoqadi.\n"
+        "Odatda <b>5–30 daqiqa</b> ichida aktivlanadi.</i>" + admin_line,
         parse_mode="HTML",
     )
 
@@ -635,11 +629,12 @@ async def admin_confirm_pro(call: CallbackQuery):
         await bot.send_message(
             chat_id=user_id,
             text=(
-                "🎉 <b>Tabriklaymiz! Kaworai Pro faollashtirildi!</b>\n\n"
+                "🎉 <b>Kaworai Pro faollashtirildi!</b>\n"
+                "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
                 f"📦 Muddat: <b>{plan['label']}</b>\n"
                 f"📅 Tugash sanasi: <b>{until_str}</b>\n\n"
-                "⚡ Endi barcha Pro imkoniyatlardan foydalanishingiz mumkin!\n"
-                "👉 /start → <b>🟢 Kaworai Pro</b> tugmasini bosing"
+                "⚡ Barcha Pro imkoniyatlar endi sizniki!\n\n"
+                "👉 /start → <b>⚡ Kaworai Pro</b>"
             ),
             parse_mode="HTML",
         )

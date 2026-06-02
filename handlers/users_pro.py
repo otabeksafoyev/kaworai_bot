@@ -91,6 +91,7 @@ def format_card(item: dict) -> str:
     year = f" ({item['year']})" if item.get("year") else ""
 
     lines = [f"{emoji} <b>{item['title']}</b>{year}"]
+    lines.append("╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")
     if genres != "—":
         lines.append(f"🎭 {genres}")
     if tags != "—":
@@ -150,7 +151,7 @@ async def show_pro_main_menu(call: types.CallbackQuery):
         ]
     )
 
-    text = f"⚡ <b>Kaworai Pro</b>\n\n✅ Siz Pro foydalanuvchisiz!{until_str}\n\nNima qilmoqchisiz?"
+    text = f"⚡ <b>Kaworai Pro</b>\n╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n✅ Siz Pro foydalanuvchisiz!{until_str}\n\n<i>Quyidan kerakli bo'limni tanlang 👇</i>"
     await safe_edit(call, text, kb)
     await call.answer()
 
@@ -281,7 +282,11 @@ async def pro_mood_menu(call: types.CallbackQuery):
     kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="kawaii_pass", style="primary"))
 
     await safe_edit(
-        call, "😌 <b>Hozirgi kayfiyatingiz?</b>\n\nKayfiyatingizga mos kontentlarni topib beraman!", kb.as_markup()
+        call,
+        "😌 <b>Kayfiyatingiz qanday?</b>\n\n"
+        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        "<i>Kayfiyatingizga mos kontentlarni\ntopib beraman 🎯</i>",
+        kb.as_markup(),
     )
     await call.answer()
 
@@ -591,13 +596,14 @@ async def pro_taste_profile(call: types.CallbackQuery):
     )
 
     text = (
-        f"👤 <b>Sizning Did Profilingiz</b>\n\n"
+        f"👤 <b>Sizning Did Profilingiz</b>\n"
+        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
         f"🎯 <b>{identity}</b>\n\n"
         f"🎭 <b>Sevimli janrlar:</b>\n{g_text}\n\n"
         f"🏷 <b>Sevimli teglar:</b>\n{t_text}\n\n"
         f"😌 <b>Sevimli mood:</b> {m_text}\n"
         f"📁 <b>Sevimli tur:</b> {fav_type}\n\n"
-        f"<i>Ko'rgan kontentlaringiz asosida yig'iladi.</i>"
+        f"<blockquote>Ko'rgan kontentlaringiz asosida avtomatik yig'iladi.</blockquote>"
     )
     await safe_edit(call, text, kb)
     await call.answer()
@@ -706,12 +712,12 @@ async def pro_settings(call: types.CallbackQuery):
         mode = await get_user_ux_mode(session, call.from_user.id)
 
     text = (
-        "⚙️ <b>Pro sozlamalar</b>\n\n"
-        "🎬 <b>Qism ko'rish rejimi:</b>\n"
-        "Bosganda qanday ko'rinsin — bitta xabar tahrirlansin yoki "
-        "har safar yangi xabar kelsin?\n\n"
+        "⚙️ <b>Pro sozlamalar</b>\n"
+        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        "🎬 <b>Ko'rish rejimi:</b>\n"
+        "<i>Xabar yangilansinmi yoki yangi kelsinmi?</i>\n\n"
         "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>") + "\n\n"
-        "🎨 <b>Bosh menyu tuzatish</b> — /start menyusiga Pro shortcut tugmalar qo'shing."
+        "🎨 <b>Bosh menyu</b> — Pro tugmalarni sozlang"
     )
     await safe_edit(call, text, _settings_root_kb(mode))
     await call.answer()
@@ -736,12 +742,12 @@ async def pro_ux_set(call: types.CallbackQuery):
         return await call.answer("❌ Saqlanmadi", show_alert=True)
 
     text = (
-        "⚙️ <b>Pro sozlamalar</b>\n\n"
-        "🎬 <b>Qism ko'rish rejimi:</b>\n"
-        "Bosganda qanday ko'rinsin — bitta xabar tahrirlansin yoki "
-        "har safar yangi xabar kelsin?\n\n"
+        "⚙️ <b>Pro sozlamalar</b>\n"
+        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        "🎬 <b>Ko'rish rejimi:</b>\n"
+        "<i>Xabar yangilansinmi yoki yangi kelsinmi?</i>\n\n"
         "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>") + "\n\n"
-        "🎨 <b>Bosh menyu tuzatish</b> — /start menyusiga Pro shortcut tugmalar qo'shing."
+        "🎨 <b>Bosh menyu</b> — Pro tugmalarni sozlang"
     )
     await safe_edit(call, text, _settings_root_kb(mode))
     await call.answer("✅ Saqlandi", show_alert=False)
@@ -759,10 +765,11 @@ async def pro_start_menu_edit(call: types.CallbackQuery):
         selected = await get_user_start_extras(session, call.from_user.id)
 
     text = (
-        "🎨 <b>Bosh menyu tuzatish</b>\n\n"
-        "/start menyusiga Pro shortcut'lar qo'shib, istalgan Pro bo'limni "
-        "bir bosishda ochiladigan qiling. Tanlov tartibi = menyudagi tartib.\n\n"
-        f"Chegara: <b>{MAX_START_EXTRAS}</b> ta. Tozalash uchun qayta bosing."
+        "🎨 <b>Bosh menyu sozlash</b>\n"
+        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        "<i>/start da tez-tez ishlatadigan\n"
+        "bo'limlarni qo'shing.</i>\n\n"
+        f"Chegara: <b>{MAX_START_EXTRAS}</b> ta tugma"
     )
     await safe_edit(call, text, _start_menu_edit_kb(selected))
     await call.answer()
