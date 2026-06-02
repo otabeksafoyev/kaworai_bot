@@ -46,3 +46,8 @@ PAYMENT_CHANNEL_ID = env.int("PAYMENT_CHANNEL_ID", 0)
 CARD_NUMBER = env.str("CARD_NUMBER", "")
 CARD_OWNER = env.str("CARD_OWNER", "")
 ADMIN_USERNAME = env.str("ADMIN_USERNAME", "")
+
+# ImgBB — poster rasmlarini doimiy hostingga yuklash uchun API key.
+# https://api.imgbb.com dan olinadi (bepul, doimiy).
+# Bo'sh bo'lsa — ImgBB o'chiqlari, Telegram CDN fallback ishlatiladi.
+IMGBB_API_KEY = env.str("IMGBB_API_KEY", "")
