@@ -27,10 +27,13 @@ from database.queries import (
     count_owner_animes,
     get_all_channels,
     get_all_partners,
+    get_news_channel_groups,
     get_news_channels,
+    get_news_channels_by_group,
     is_partner,
     remove_channel,
     remove_partner,
+    set_channel_news_group,
     toggle_channel,
 )
 from handlers.genres import GENRES, normalize_genre
@@ -671,20 +674,49 @@ def _media_pick_kb(anime_id: int, has_poster: bool, has_trailer: bool) -> Inline
     return kb.as_markup()
 
 
-def _channel_pick_kb(anime_id: int, media_type: str, channels: list) -> InlineKeyboardMarkup:
-    """Kanal tanlash klaviaturasi."""
+def _channel_pick_kb(anime_id: int, media_type: str, channels: list, groups: list[str] | None = None) -> InlineKeyboardMarkup:
+    """
+    Kanal tanlash klaviaturasi.
+    Guruhlar mavjud bo'lsa — avval guruhlar, keyin alohida kanallar + Barcha.
+    Guruh yo'q bo'lsa — oddiy kanal ro'yxati.
+    """
     kb = InlineKeyboardBuilder()
-    for ch in channels:
+
+    if groups:
+        # Guruhlar bo'yicha tugmalar
+        for g in groups:
+            kb.row(InlineKeyboardButton(
+                text=f"📂 {g}",
+                callback_data=f"postfin_{media_type}_grp_{g[:25]}_{anime_id}",
+                style="success",
+            ))
+        # Guruhsiz kanallar ham bo'lsa
+        for ch in channels:
+            if not ch.news_group:
+                kb.row(InlineKeyboardButton(
+                    text=f"📢 {ch.channel_name}",
+                    callback_data=f"postfin_{media_type}_{ch.id}_{anime_id}",
+                    style="primary",
+                ))
         kb.row(InlineKeyboardButton(
-            text=f"📢 {ch.channel_name}",
-            callback_data=f"postfin_{media_type}_{ch.id}_{anime_id}",
-            style="success",
+            text="📢 Barcha kanallarga",
+            callback_data=f"postfin_{media_type}_all_{anime_id}",
+            style="primary",
         ))
-    kb.row(InlineKeyboardButton(
-        text="📢 Barcha kanallarga",
-        callback_data=f"postfin_{media_type}_all_{anime_id}",
-        style="primary",
-    ))
+    else:
+        # Guruhsiz — oddiy kanal ro'yxati
+        for ch in channels:
+            kb.row(InlineKeyboardButton(
+                text=f"📢 {ch.channel_name}",
+                callback_data=f"postfin_{media_type}_{ch.id}_{anime_id}",
+                style="success",
+            ))
+        kb.row(InlineKeyboardButton(
+            text="📢 Barcha kanallarga",
+            callback_data=f"postfin_{media_type}_all_{anime_id}",
+            style="primary",
+        ))
+
     kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
     return kb.as_markup()
 
@@ -3490,21 +3522,24 @@ async def postmedia_chosen(call: types.CallbackQuery):
 
     async with AsyncSessionLocal() as session:
         channels = await get_news_channels(session)
+        groups = await get_news_channel_groups(session)
     if not channels:
         return await call.answer("⚠️ News kanallar yo'q!", show_alert=True)
 
+    # Faqat 1 guruh bo'lsa va guruhsiz kanal yo'q bo'lsa — guruh ko'rsatmaylik
+    show_groups = len(groups) > 0
     media_label = {"poster": "🖼 Poster", "trailer": "🎬 Treyler", "text": "📝 Faqat matn"}
     try:
         await call.message.edit_text(
             f"✅ <b>{media_label.get(media_type, 'Media')} tanlandi</b>\n\n"
             f"3️⃣ <b>Qaysi kanalga</b> yuboramiz?",
-            reply_markup=_channel_pick_kb(anime_id, media_type, channels),
+            reply_markup=_channel_pick_kb(anime_id, media_type, channels, groups if show_groups else None),
             parse_mode="HTML",
         )
     except Exception:
         await call.message.answer(
             f"3️⃣ <b>Qaysi kanalga?</b>",
-            reply_markup=_channel_pick_kb(anime_id, media_type, channels),
+            reply_markup=_channel_pick_kb(anime_id, media_type, channels, groups if show_groups else None),
             parse_mode="HTML",
         )
     await call.answer()
@@ -3513,8 +3548,9 @@ async def postmedia_chosen(call: types.CallbackQuery):
 @admin_router.callback_query(F.data.startswith("postfin_"))
 async def postfin_send(call: types.CallbackQuery):
     """
-    3-qadam: Kanal tanlandi — post yuboriladi.
+    3-qadam: Kanal yoki guruh tanlandi — post yuboriladi.
       postfin_{media_type}_{ch_id_or_all}_{anime_id}
+      postfin_{media_type}_grp_{group_name}_{anime_id}  ← GURUH
     """
     if not await is_admin(call.from_user.id):
         return
@@ -3522,6 +3558,61 @@ async def postfin_send(call: types.CallbackQuery):
     raw = call.data.replace("postfin_", "")
     parts = raw.split("_")
     media_type = parts[0]
+    # Guruh tanlovi: postfin_poster_grp_Dorama_190
+    if len(parts) >= 4 and parts[1] == "grp":
+        # group_name va anime_id ni ajratamiz
+        # format: {media_type}_grp_{group_name}_{anime_id}
+        # group_name ichida _ bo'lishi mumkin, shuning uchun oxiridan olamiz
+        anime_id = int(parts[-1])
+        group_name = "_".join(parts[2:-1])
+
+        async with AsyncSessionLocal() as session:
+            anime = await session.get(Anime, anime_id)
+            channels = await get_news_channels_by_group(session, group_name)
+        if not anime:
+            return await call.answer("❌ Topilmadi!", show_alert=True)
+        if not channels:
+            return await call.answer(f"⚠️ '{group_name}' guruhida kanal yo'q!", show_alert=True)
+
+        caption = _post_caption_cache.pop((call.from_user.id, anime_id), None) or _build_post_caption(anime)
+        watch_kb = _watch_kb(anime.id)
+        sent = 0
+        errors: list[str] = []
+
+        for ch in channels:
+            try:
+                if media_type == "poster" and anime.poster_file_id:
+                    await call.bot.send_photo(
+                        ch.channel_id, anime.poster_file_id,
+                        caption=caption, reply_markup=watch_kb, parse_mode="HTML",
+                    )
+                elif media_type == "trailer" and anime.trailer_file_id:
+                    await call.bot.send_video(
+                        ch.channel_id, anime.trailer_file_id,
+                        caption=caption, reply_markup=watch_kb, parse_mode="HTML",
+                    )
+                else:
+                    await call.bot.send_message(
+                        ch.channel_id, caption,
+                        reply_markup=watch_kb, parse_mode="HTML",
+                    )
+                sent += 1
+            except Exception as e:
+                errors.append(f"⚠️ {ch.channel_name}: {e}")
+
+        result = (
+            f"✅ <b>'{group_name}' guruhidagi {sent} ta kanalga yuborildi!</b>"
+        )
+        if errors:
+            result += "\n\n" + "\n".join(errors)
+        try:
+            await call.message.edit_text(result, parse_mode="HTML")
+        except Exception:
+            await call.message.answer(result, parse_mode="HTML")
+        await call.message.answer("Panel:", reply_markup=admin_main_kb)
+        return await call.answer("✅ Yuborildi!")
+
+    # Oddiy kanal yoki "all"
     ch_target = parts[1]
     anime_id = int(parts[2])
 
@@ -6791,4 +6882,242 @@ async def ef_set_thumbnail(call: types.CallbackQuery, state: FSMContext):
         parse_mode="HTML",
         reply_markup=_skip_kb("skip_thumb_day"),
     )
+    await call.answer()
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  NEWS KANAL GURUH BOSHQARUVI
+# ═══════════════════════════════════════════════════════════
+
+
+def _news_group_kb(groups: list[str], channel_id: int) -> InlineKeyboardMarkup:
+    """Mavjud guruhlar + yangi guruh qo'shish tugmalari."""
+    kb = InlineKeyboardBuilder()
+    for g in groups:
+        kb.row(InlineKeyboardButton(
+            text=f"📂 {g}",
+            callback_data=f"chgrp_set_{channel_id}_{g[:30]}",
+            style="success",
+        ))
+    kb.row(InlineKeyboardButton(
+        text="➕ Yangi guruh nomi",
+        callback_data=f"chgrp_new_{channel_id}",
+        style="primary",
+    ))
+    kb.row(InlineKeyboardButton(
+        text="🗑 Guruhsiz (Umumiy)",
+        callback_data=f"chgrp_set_{channel_id}_Umumiy",
+        style="primary",
+    ))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="channels_menu", style="danger"))
+    return kb.as_markup()
+
+
+@admin_router.callback_query(F.data.startswith("chgrp_pick_"))
+async def chgrp_pick(call: types.CallbackQuery, state: FSMContext):
+    """News kanal uchun guruh tanlash menyusi."""
+    if not await is_admin(call.from_user.id):
+        return
+    channel_id = int(call.data.replace("chgrp_pick_", ""))
+
+    async with AsyncSessionLocal() as session:
+        ch = await session.get(SubscriptionChannel, channel_id)
+        groups = await get_news_channel_groups(session)
+
+    if not ch:
+        return await call.answer("❌ Kanal topilmadi!", show_alert=True)
+
+    current = ch.news_group or "Umumiy"
+    try:
+        await call.message.edit_text(
+            f"📂 <b>Guruh tanlash</b>\n\n"
+            f"📢 Kanal: <b>{esc(ch.channel_name)}</b>\n"
+            f"📁 Hozirgi guruh: <b>{current}</b>\n\n"
+            f"Guruhni tanlang yoki yangi nom kiriting:",
+            reply_markup=_news_group_kb(groups, channel_id),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            f"📂 Guruh tanlash — <b>{esc(ch.channel_name)}</b>",
+            reply_markup=_news_group_kb(groups, channel_id),
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data.startswith("chgrp_set_"))
+async def chgrp_set(call: types.CallbackQuery):
+    """Mavjud guruhdan birini tanlash."""
+    if not await is_admin(call.from_user.id):
+        return
+    # chgrp_set_{channel_id}_{group_name}
+    raw = call.data.replace("chgrp_set_", "")
+    parts = raw.split("_", 1)
+    channel_id = int(parts[0])
+    group_name = parts[1] if len(parts) > 1 else "Umumiy"
+
+    async with AsyncSessionLocal() as session:
+        ok = await set_channel_news_group(session, channel_id, group_name)
+        ch = await session.get(SubscriptionChannel, channel_id)
+
+    if not ok:
+        return await call.answer("❌ Saqlanmadi!", show_alert=True)
+
+    ch_name = ch.channel_name if ch else str(channel_id)
+    display = group_name if group_name != "Umumiy" else "Guruhsiz (Umumiy)"
+
+    try:
+        await call.message.edit_text(
+            f"✅ <b>Guruh belgilandi!</b>\n\n"
+            f"📢 <b>{esc(ch_name)}</b>\n"
+            f"📁 Guruh: <b>{display}</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+    await call.answer("✅ Saqlandi!")
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+
+
+@admin_router.callback_query(F.data.startswith("chgrp_new_"))
+async def chgrp_new_start(call: types.CallbackQuery, state: FSMContext):
+    """Yangi guruh nomi kiritish."""
+    if not await is_admin(call.from_user.id):
+        return
+    channel_id = int(call.data.replace("chgrp_new_", ""))
+    await state.set_state(AddChannel.waiting_news_group)
+    await state.update_data(grp_channel_id=channel_id)
+    await call.message.answer(
+        "✏️ <b>Yangi guruh nomini kiriting:</b>\n\n"
+        "<i>Masalan: Dorama, Anime, Kino, Serial</i>\n"
+        "Max 60 ta belgi",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@admin_router.message(AddChannel.waiting_news_group)
+async def chgrp_new_received(msg: Message, state: FSMContext):
+    """Yangi guruh nomini qabul qilish va saqlash."""
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+
+    group_name = (msg.text or "").strip()
+    if not group_name:
+        return await msg.answer("❌ Guruh nomi bo'sh bo'lmasin!")
+    if len(group_name) > 60:
+        return await msg.answer("❌ Guruh nomi 60 ta belgidan oshmasin!")
+
+    data = await state.get_data()
+    channel_id = data.get("grp_channel_id")
+    await state.clear()
+
+    async with AsyncSessionLocal() as session:
+        ok = await set_channel_news_group(session, channel_id, group_name)
+        ch = await session.get(SubscriptionChannel, channel_id)
+
+    ch_name = ch.channel_name if ch else str(channel_id)
+    if ok:
+        await msg.answer(
+            f"✅ <b>Guruh saqlandi!</b>\n\n"
+            f"📢 <b>{esc(ch_name)}</b>\n"
+            f"📁 Guruh: <b>{group_name}</b>",
+            parse_mode="HTML",
+            reply_markup=admin_main_kb,
+        )
+    else:
+        await msg.answer("❌ Kanal topilmadi!", reply_markup=admin_main_kb)
+
+
+@admin_router.callback_query(F.data.startswith("chgrp_set_group_"))
+async def chgrp_set_by_name(call: types.CallbackQuery, state: FSMContext):
+    """Kanal tanlash — guruh nomi orqali."""
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(AddChannel.waiting_set_group_channel_id)
+    group_name = call.data.replace("chgrp_set_group_", "")
+    await state.update_data(set_group_name=group_name)
+
+    async with AsyncSessionLocal() as session:
+        channels = await get_news_channels(session)
+
+    if not channels:
+        await state.clear()
+        return await call.answer("⚠️ News kanallar yo'q!", show_alert=True)
+
+    kb = InlineKeyboardBuilder()
+    for ch in channels:
+        current = ch.news_group or "Umumiy"
+        kb.row(InlineKeyboardButton(
+            text=f"📢 {ch.channel_name} [{current}]",
+            callback_data=f"chgrp_pick_{ch.id}",
+            style="success",
+        ))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="channels_menu", style="danger"))
+
+    try:
+        await call.message.edit_text(
+            f"📂 <b>News kanallarni guruhlab boshqarish</b>\n\n"
+            f"Kanalga bosing → guruhini o'zgartiring:",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            "📂 News kanal tanlang:",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "channels_news_groups")
+async def channels_news_groups_menu(call: types.CallbackQuery):
+    """News kanallarni guruhlar bo'yicha boshqarish menyusi."""
+    if not await is_admin(call.from_user.id):
+        return
+
+    async with AsyncSessionLocal() as session:
+        channels = await get_news_channels(session)
+        groups = await get_news_channel_groups(session)
+
+    if not channels:
+        return await call.answer("⚠️ News kanallar yo'q!", show_alert=True)
+
+    # Guruhlar bo'yicha ko'rsatish
+    lines = ["📂 <b>News kanallar guruhlari</b>\n"]
+    by_group: dict[str, list] = {}
+    for ch in channels:
+        g = ch.news_group or "Umumiy"
+        by_group.setdefault(g, []).append(ch)
+
+    for g, chs in sorted(by_group.items()):
+        lines.append(f"<b>{g}</b> ({len(chs)} ta):")
+        for ch in chs:
+            lines.append(f"  • {esc(ch.channel_name)}")
+        lines.append("")
+
+    kb = InlineKeyboardBuilder()
+    for ch in channels:
+        kb.row(InlineKeyboardButton(
+            text=f"✏️ {ch.channel_name}",
+            callback_data=f"chgrp_pick_{ch.id}",
+            style="primary",
+        ))
+    kb.row(InlineKeyboardButton(text="🔙 Orqaga", callback_data="channels_menu", style="primary"))
+
+    try:
+        await call.message.edit_text(
+            "\n".join(lines),
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer("\n".join(lines), reply_markup=kb.as_markup(), parse_mode="HTML")
     await call.answer()
