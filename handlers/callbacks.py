@@ -802,10 +802,10 @@ async def watch_anime(call: CallbackQuery):
     user_rated = user_rating is not None
 
     kb = _player_kb(anime_id, ep.episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
-    caption = f"🎬 <b>{anime.title}</b>\n▶️ {ep.episode}-qism  |  📺 Jami: {total} qism"
+    caption = f"▶️ <b>{anime.title}</b>\n🎞 {ep.episode}-qism  •  Jami: {total} qism"
 
     async with AsyncSessionLocal() as session:
         await add_to_watch_history(session, user_id, anime_id, ep.episode)
 
-    await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro)
+    await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro, anime=anime, episode=ep.episode)
     await call.answer()
