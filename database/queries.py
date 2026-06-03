@@ -786,6 +786,54 @@ async def set_bot_setting(session: AsyncSession, key: str, value: str) -> None:
 # ═══════════════════════════════════════════════════════════
 
 
+# ═══════════════════════════════════════════════════════════
+#  GLOBAL THUMBNAIL — bot uchun umumiy qism rasmlari
+# ═══════════════════════════════════════════════════════════
+
+THUMB_DAY_KEY = "thumbnail_day_file_id"
+THUMB_NIGHT_KEY = "thumbnail_night_file_id"
+
+
+async def get_global_thumbnail(session: AsyncSession) -> dict:
+    """
+    Global thumbnail rasmlarini qaytaradi.
+    Returns: {"day": file_id | None, "night": file_id | None}
+    """
+    day = await get_bot_setting(session, THUMB_DAY_KEY)
+    night = await get_bot_setting(session, THUMB_NIGHT_KEY)
+    return {"day": day, "night": night}
+
+
+async def set_global_thumbnail(
+    session: AsyncSession,
+    day_file_id: str | None = None,
+    night_file_id: str | None = None,
+) -> None:
+    """Global thumbnail rasmlarini saqlaydi. None bo'lsa o'zgartirmaydi."""
+    if day_file_id is not None:
+        await set_bot_setting(session, THUMB_DAY_KEY, day_file_id)
+    if night_file_id is not None:
+        await set_bot_setting(session, THUMB_NIGHT_KEY, night_file_id)
+
+
+async def delete_global_thumbnail(
+    session: AsyncSession,
+    which: str = "both",
+) -> None:
+    """
+    Global thumbnail o'chiradi.
+    which: "day" | "night" | "both"
+    """
+    keys = []
+    if which in ("day", "both"):
+        keys.append(THUMB_DAY_KEY)
+    if which in ("night", "both"):
+        keys.append(THUMB_NIGHT_KEY)
+    for key in keys:
+        await session.execute(delete(BotSetting).where(BotSetting.key == key))
+    await session.commit()
+
+
 async def set_anime_filter(
     session: AsyncSession,
     anime_id: int,
