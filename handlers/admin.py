@@ -7013,7 +7013,12 @@ async def chgrp_new_start(call: types.CallbackQuery, state: FSMContext):
 
 @admin_router.message(AddChannel.waiting_news_group)
 async def chgrp_new_received(msg: Message, state: FSMContext):
-    """Yangi guruh nomini qabul qilish va saqlash."""
+    """
+    Yangi guruh nomini qabul qilish.
+    Ikki xil holatda ishlatiladi:
+    1. Mavjud kanalga guruh belgilash: data['grp_channel_id'] bor
+    2. Yangi news kanal qo'shishda guruh: data['channel_name'] bor
+    """
     if not await is_admin(msg.from_user.id):
         return
     if msg.text == "🚫 Bekor qilish":
@@ -7027,8 +7032,22 @@ async def chgrp_new_received(msg: Message, state: FSMContext):
         return await msg.answer("❌ Guruh nomi 60 ta belgidan oshmasin!")
 
     data = await state.get_data()
+
+    # Holat 2: Yangi news kanal qo'shish oqimi
+    if data.get("channel_name") and data.get("channel_id"):
+        owner_id = await _get_owner_ctx(msg.from_user.id)
+        await state.clear()
+        await _finalize_add_channel_with_group(
+            msg=msg, data=data, group_name=group_name, owner_id=owner_id,
+        )
+        return
+
+    # Holat 1: Mavjud kanalga guruh belgilash
     channel_id = data.get("grp_channel_id")
     await state.clear()
+
+    if not channel_id:
+        return await msg.answer("❌ Kanal ID topilmadi!", reply_markup=admin_main_kb)
 
     async with AsyncSessionLocal() as session:
         ok = await set_channel_news_group(session, channel_id, group_name)
@@ -7150,6 +7169,8 @@ async def newsch_grp_pick(call: types.CallbackQuery, state: FSMContext):
     owner_id = await _get_owner_ctx(call.from_user.id)
 
     if raw == "new":
+        # State ni saqlab, faqat guruh nomini so'raymiz
+        await state.set_state(AddChannel.waiting_news_group)
         await call.message.answer(
             "✏️ <b>Yangi guruh nomini kiriting:</b>\n<i>Masalan: Dorama, Anime, Kino</i>",
             parse_mode="HTML",
@@ -7160,10 +7181,21 @@ async def newsch_grp_pick(call: types.CallbackQuery, state: FSMContext):
 
     group_name = None if raw == "skip" else raw
 
-    await state.clear()
+    # ⚠️ state.clear() KEYIN chaqiriladi — avval data ishlatiladi
+    if not data.get("channel_name") or not data.get("channel_url") or not data.get("channel_id"):
+        await state.clear()
+        await call.message.answer(
+            "❌ <b>Xato:</b> Kanal ma'lumotlari topilmadi.\n\n"
+            "Qaytadan kanal qo'shishni boshlang.",
+            parse_mode="HTML",
+            reply_markup=admin_main_kb,
+        )
+        return await call.answer()
+
     await _finalize_add_channel_with_group(
         msg=call.message, data=data, group_name=group_name, owner_id=owner_id,
     )
+    await state.clear()
     await call.answer()
 
 
