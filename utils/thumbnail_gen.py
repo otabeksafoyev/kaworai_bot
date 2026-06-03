@@ -126,34 +126,38 @@ def generate_thumbnail_sync(poster_bytes: bytes, episode: int) -> bytes | None:
     try:
         from PIL import Image
     except ImportError:
-        logger.error("thumbnail_gen: Pillow o'rnatilmagan!")
+        logger.error("thumbnail_gen: Pillow o'rnatilmagan — pip install Pillow")
         return None
 
     try:
         # Rasmni ochish
-        img = Image.open(io.BytesIO(poster_bytes)).convert("RGBA")
+        img = Image.open(io.BytesIO(poster_bytes)).convert("RGB")
+        logger.info("thumbnail_gen: rasm ochildi %sx%s ep=%s", img.width, img.height, episode)
 
         # Thumbnail o'lchamiga keltirish (nisbatni saqlagan holda)
         img.thumbnail(THUMB_SIZE, Image.LANCZOS)
 
         # Kvadrat canvas — bo'sh joylar qora bilan to'ldiriladi
-        canvas = Image.new("RGBA", THUMB_SIZE, (15, 15, 20, 255))
+        canvas = Image.new("RGB", THUMB_SIZE, (15, 15, 20))
         offset_x = (THUMB_SIZE[0] - img.width) // 2
         offset_y = (THUMB_SIZE[1] - img.height) // 2
-        canvas.paste(img, (offset_x, offset_y), mask=img if img.mode == "RGBA" else None)
+        canvas.paste(img, (offset_x, offset_y))
 
-        # Doira + raqam chizish
-        _draw_episode_circle(canvas, episode)
+        # Doira + raqam chizish (RGBA canvas ga convert)
+        canvas_rgba = canvas.convert("RGBA")
+        _draw_episode_circle(canvas_rgba, episode)
 
         # JPEG bytes ga aylantirish
-        canvas_rgb = canvas.convert("RGB")
+        canvas_rgb = canvas_rgba.convert("RGB")
         output = io.BytesIO()
         canvas_rgb.save(output, format="JPEG", quality=88, optimize=True)
         output.seek(0)
-        return output.getvalue()
+        result = output.getvalue()
+        logger.info("thumbnail_gen: OK, %d bytes, ep=%s", len(result), episode)
+        return result
 
     except Exception as e:
-        logger.exception("thumbnail_gen: generatsiya xatosi: %s", e)
+        logger.exception("thumbnail_gen: generatsiya xatosi ep=%s: %s", episode, e)
         return None
 
 
