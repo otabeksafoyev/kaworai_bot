@@ -255,6 +255,24 @@ MIGRATIONS = [
         updated_at      TIMESTAMP DEFAULT NOW()
     )
     """,
+    # watchlist jadvali — "Keyinroq ko'rish" ro'yxati
+    """
+    CREATE TABLE IF NOT EXISTS watchlist (
+        id       SERIAL PRIMARY KEY,
+        user_id  BIGINT  NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        anime_id INTEGER NOT NULL REFERENCES animes(id) ON DELETE CASCADE,
+        added_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (user_id, anime_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_watchlist_user ON watchlist(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_watchlist_anime ON watchlist(anime_id)",
+    # Qism video thumbnail uchun — kunduzgi va kechki rasm
+    "ALTER TABLE animes ADD COLUMN IF NOT EXISTS thumbnail_day_file_id VARCHAR(300)",
+    "ALTER TABLE animes ADD COLUMN IF NOT EXISTS thumbnail_night_file_id VARCHAR(300)",
+    # News kanallar guruhi — admin o'zi belgilaydi (masalan: "Dorama", "Anime")
+    "ALTER TABLE channels ADD COLUMN IF NOT EXISTS news_group VARCHAR(60)",
+    "CREATE INDEX IF NOT EXISTS ix_channels_news_group ON channels(news_group)",
 ]
 
 

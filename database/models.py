@@ -93,6 +93,13 @@ class Anime(Base):
     filter_file_id = Column(String(300), nullable=True)
     filter_type = Column(String(20), nullable=True)  # "photo", "video", "link"
     filter_url = Column(String(500), nullable=True)
+    # Qism video thumbnail rasmlari — Pillow bilan generatsiya qilinadi.
+    # thumbnail_day_file_id   — kunduzgi rasm (05:00-22:00)
+    # thumbnail_night_file_id — kechki rasm  (22:00-05:00)
+    # Admin anime qo'shganda yoki keyinchalik o'zgartira oladi.
+    # NULL bo'lsa — oddiy poster ishlatiladi.
+    thumbnail_day_file_id = Column(String(300), nullable=True)
+    thumbnail_night_file_id = Column(String(300), nullable=True)
     # Migration orqali qo'shiladi (migration_v2.py)
     # added_by_id, added_by_username, added_at
 
@@ -160,6 +167,10 @@ class SubscriptionChannel(Base):
     # qo'llaniladi). Hamkor telegram_id'si bo'lsa — bu kanal faqat shu
     # hamkor qo'shgan kontent ochilganida tekshiriladi.
     owner_id = Column(BigInteger, nullable=True, index=True)
+    # News kanallar guruhi — admin o'zi belgilaydi.
+    # Masalan: "Dorama", "Anime", "Kino", "Umumiy"
+    # NULL = guruhsiz (eski kanallar)
+    news_group = Column(String(60), nullable=True)
 
 
 class AnimeSubscription(Base):
@@ -175,6 +186,21 @@ class AnimeSubscription(Base):
     user = relationship("User", back_populates="subscriptions")
 
     __table_args__ = (UniqueConstraint("anime_id", "user_id", name="uq_anime_user_sub"),)
+
+
+class Watchlist(Base):
+    """User "Keyinroq ko'rish" ro'yxati — animeni bookmarkga qo'shadi."""
+
+    __tablename__ = "watchlist"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"), nullable=False)
+    anime_id = Column(Integer, ForeignKey("animes.id", ondelete="CASCADE"), nullable=False)
+    added_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User")
+    anime = relationship("Anime")
+
+    __table_args__ = (UniqueConstraint("user_id", "anime_id", name="uq_watchlist_user_anime"),)
 
 
 class RelatedContent(Base):

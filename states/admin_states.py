@@ -26,6 +26,9 @@ class AddAnime(StatesGroup):
     waiting_poster = State()
     waiting_inline_url = State()
     waiting_trailer = State()
+    # Thumbnail rasmlar — kunduzgi va kechgi
+    waiting_thumbnail_day = State()
+    waiting_thumbnail_night = State()
 
 
 # 🔹 Kanal qo‘shish
@@ -38,6 +41,11 @@ class AddChannel(StatesGroup):
     # keyin agar bitta bo'lsa — region tanlash.
     waiting_region_scope = State()
     waiting_region_pick = State()
+    # News kanal uchun: guruh nomi (masalan "Dorama", "Anime")
+    waiting_news_group = State()
+    # Mavjud news kanalga guruh belgilash
+    waiting_set_group_channel_id = State()
+    waiting_set_group_name = State()
 
 
 # 🔹 Anime tahrirlash
@@ -78,6 +86,12 @@ class BroadcastState(StatesGroup):
     waiting_ch_channel_pick = State()
     # Foydalanuvchilarga xabar yuborishda region filteri
     waiting_users_region = State()
+
+
+# 🔹 Kanalga post — caption + media + kanal tanlash oqimi
+class PostToChannelState(StatesGroup):
+    # Admin o'zi yozgan caption ni kutish
+    waiting_custom_caption = State()
 
 
 # 🔹 Baza zaxira (export/import) — filterli versiya

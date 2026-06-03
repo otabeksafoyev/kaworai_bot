@@ -198,6 +198,65 @@ async def get_news_channels(session: AsyncSession) -> list:
     return result.scalars().all()
 
 
+async def get_news_channel_groups(session: AsyncSession) -> list[str]:
+    """
+    Barcha news kanallar guruh nomlarini qaytaradi.
+    NULL guruhlar 'Umumiy' sifatida ko'rsatiladi.
+    Takrorlanmagan, tartiblangan ro'yxat.
+    """
+    result = await session.execute(
+        select(SubscriptionChannel.news_group)
+        .where(SubscriptionChannel.is_news == True, SubscriptionChannel.is_active == True)
+        .distinct()
+    )
+    groups = []
+    for row in result.scalars().all():
+        name = row if row else "Umumiy"
+        if name not in groups:
+            groups.append(name)
+    return sorted(groups)
+
+
+async def get_news_channels_by_group(session: AsyncSession, group_name: str) -> list:
+    """
+    Guruh nomiga mos news kanallarni qaytaradi.
+    group_name = 'Umumiy' bo'lsa — news_group IS NULL kanallar qaytariladi.
+    """
+    if group_name == "Umumiy":
+        result = await session.execute(
+            select(SubscriptionChannel).where(
+                SubscriptionChannel.is_news == True,
+                SubscriptionChannel.is_active == True,
+                SubscriptionChannel.news_group.is_(None),
+            )
+        )
+    else:
+        result = await session.execute(
+            select(SubscriptionChannel).where(
+                SubscriptionChannel.is_news == True,
+                SubscriptionChannel.is_active == True,
+                SubscriptionChannel.news_group == group_name,
+            )
+        )
+    return result.scalars().all()
+
+
+async def set_channel_news_group(
+    session: AsyncSession, channel_id: int, group_name: str | None
+) -> bool:
+    """
+    Kanal uchun news guruh nomini o'rnatadi.
+    group_name = None → guruhsiz (Umumiy).
+    channel_id — SubscriptionChannel.id (telegram_id emas!).
+    """
+    ch = await session.get(SubscriptionChannel, channel_id)
+    if not ch:
+        return False
+    ch.news_group = group_name if group_name != "Umumiy" else None
+    await session.commit()
+    return True
+
+
 async def add_channel(
     session: AsyncSession,
     channel_name: str,
@@ -743,3 +802,68 @@ async def set_anime_filter(
     anime.filter_url = filter_url
     await session.commit()
     return True
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  WATCHLIST — "Keyinroq ko'rish" ro'yxati
+# ═══════════════════════════════════════════════════════════
+
+
+async def add_to_watchlist(session: AsyncSession, user_id: int, anime_id: int) -> bool:
+    """Animeni watchlistga qo'shadi. Allaqachon bor bo'lsa False qaytaradi."""
+    from database.models import Watchlist
+
+    existing = await session.execute(
+        select(Watchlist).where(Watchlist.user_id == user_id, Watchlist.anime_id == anime_id)
+    )
+    if existing.scalar_one_or_none():
+        return False
+    session.add(Watchlist(user_id=user_id, anime_id=anime_id))
+    await session.commit()
+    return True
+
+
+async def remove_from_watchlist(session: AsyncSession, user_id: int, anime_id: int) -> bool:
+    """Animeni watchlistdan o'chiradi."""
+    from database.models import Watchlist
+
+    result = await session.execute(
+        delete(Watchlist).where(Watchlist.user_id == user_id, Watchlist.anime_id == anime_id)
+    )
+    await session.commit()
+    return result.rowcount > 0
+
+
+async def is_in_watchlist(session: AsyncSession, user_id: int, anime_id: int) -> bool:
+    """Anime watchlistda bormi?"""
+    from database.models import Watchlist
+
+    result = await session.execute(
+        select(Watchlist).where(Watchlist.user_id == user_id, Watchlist.anime_id == anime_id)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def get_watchlist(session: AsyncSession, user_id: int, limit: int = 20) -> list[Anime]:
+    """Foydalanuvchining watchlist (keyinroq ko'rish) ro'yxatini qaytaradi."""
+    from database.models import Watchlist
+
+    result = await session.execute(
+        select(Anime)
+        .join(Watchlist, Anime.id == Watchlist.anime_id)
+        .where(Watchlist.user_id == user_id)
+        .order_by(Watchlist.added_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_watchlist_count(session: AsyncSession, user_id: int) -> int:
+    """Foydalanuvchining watchlist da nechta anime bor."""
+    from database.models import Watchlist
+
+    result = await session.execute(
+        select(func.count(Watchlist.id)).where(Watchlist.user_id == user_id)
+    )
+    return result.scalar() or 0

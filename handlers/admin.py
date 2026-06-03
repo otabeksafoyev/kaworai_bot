@@ -27,10 +27,13 @@ from database.queries import (
     count_owner_animes,
     get_all_channels,
     get_all_partners,
+    get_news_channel_groups,
     get_news_channels,
+    get_news_channels_by_group,
     is_partner,
     remove_channel,
     remove_partner,
+    set_channel_news_group,
     toggle_channel,
 )
 from handlers.genres import GENRES, normalize_genre
@@ -45,6 +48,7 @@ from states.admin_states import (
     BroadcastState,
     EditAnime,
     EditProTextState,
+    PostToChannelState,
 )
 from utils.broadcast import send_with_retry
 from utils.genre_picker import genre_picker_kb, genre_picker_text
@@ -556,6 +560,165 @@ def _build_post_caption(anime: Anime) -> str:
             desc = desc[:600].rstrip() + "…"
         lines.append(f"\n📖 {desc}")
     return "\n".join(lines)
+
+
+def _build_short_caption(anime: Anime) -> str:
+    """
+    Anime uchun CHIROYLI QISQA post caption.
+    Estetik, emojilar bilan ajratilgan, blockquote tavsif.
+    """
+    type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
+    type_label = {"anime": "Anime", "movie": "Kino", "serial": "Serial", "dorama": "Dorama"}
+    emoji = type_emoji.get(anime.content_type or "anime", "🎬")
+    label = type_label.get(anime.content_type or "anime", "Kontent")
+
+    # Sarlavha
+    year_str = f" <i>({anime.year})</i>" if anime.year else ""
+    title = f"{emoji} <b>{esc(anime.title)}</b>{year_str}"
+
+    # Janrlar — max 3 ta, hashtag shaklida
+    genres = anime.genres or []
+    genre_tags = "  ".join(
+        f"<code>{g}</code>" for g in genres[:3]
+    ) if genres else ""
+
+    # Meta — reyting, qism soni, davomiylik
+    meta_parts: list[str] = []
+    if anime.rating is not None:
+        stars = "⭐" * min(int(float(anime.rating) / 2), 5)
+        meta_parts.append(f"{stars} <b>{float(anime.rating):.1f}</b>")
+    if anime.episodes_count:
+        meta_parts.append(f"🎞 <b>{anime.episodes_count}</b> qism")
+    elif anime.total_episodes:
+        meta_parts.append(f"🎞 <b>{anime.total_episodes}</b> qism")
+    if anime.duration:
+        meta_parts.append(f"⏱ {anime.duration} daq")
+
+    status_map = {
+        "completed": "✅ Tugagan",
+        "ongoing": "📡 Davom etmoqda",
+        "announced": "📢 Tez kunda",
+    }
+    status_str = status_map.get(anime.status or "", "")
+
+    # Tavsif — blockquote ichida
+    desc = (anime.description or "").strip()
+    if len(desc) > 300:
+        desc = desc[:300].rstrip() + "…"
+
+    # Yig'ish
+    lines: list[str] = []
+    lines.append(title)
+    lines.append(f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")
+    lines.append(f"🏷 {label}  •  {genre_tags}" if genre_tags else f"🏷 {label}")
+    if meta_parts:
+        lines.append("  ".join(meta_parts))
+    if status_str:
+        lines.append(status_str)
+    if desc:
+        lines.append(f"\n🖊 <b>Tavsif:</b>")
+        lines.append(f"<blockquote>{desc}</blockquote>")
+
+    return "\n".join(lines)
+
+
+# ─── In-memory caption kesh (postpick_ oqimi uchun) ──────────────────────
+# FSM state ishlatilmaydi — callback_data ichiga caption sig'maydi.
+# Kalit: (admin_user_id, anime_id), qiymat: caption matni.
+_post_caption_cache: dict[tuple[int, int], str] = {}
+
+
+def _caption_format_kb(anime_id: int) -> InlineKeyboardMarkup:
+    """Caption format tanlash klaviaturasi — 3 variant."""
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(
+        text="📋 To'liq ma'lumot",
+        callback_data=f"postcap_full_{anime_id}",
+        style="success",
+    ))
+    kb.row(InlineKeyboardButton(
+        text="📝 Qisqa ma'lumot",
+        callback_data=f"postcap_short_{anime_id}",
+        style="success",
+    ))
+    kb.row(InlineKeyboardButton(
+        text="✏️ O'zim yozaman",
+        callback_data=f"postcap_custom_{anime_id}",
+        style="primary",
+    ))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
+    return kb.as_markup()
+
+
+def _media_pick_kb(anime_id: int, has_poster: bool, has_trailer: bool) -> InlineKeyboardMarkup:
+    """Caption tanlangandan keyin media turi tanlash klaviaturasi."""
+    kb = InlineKeyboardBuilder()
+    if has_poster:
+        kb.row(InlineKeyboardButton(
+            text="🖼 Poster bilan",
+            callback_data=f"postmedia_poster_{anime_id}",
+            style="success",
+        ))
+    if has_trailer:
+        kb.row(InlineKeyboardButton(
+            text="🎬 Treyler bilan",
+            callback_data=f"postmedia_trailer_{anime_id}",
+            style="success",
+        ))
+    kb.row(InlineKeyboardButton(
+        text="📝 Faqat matn",
+        callback_data=f"postmedia_text_{anime_id}",
+        style="primary",
+    ))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
+    return kb.as_markup()
+
+
+def _channel_pick_kb(anime_id: int, media_type: str, channels: list, groups: list[str] | None = None) -> InlineKeyboardMarkup:
+    """
+    Kanal tanlash klaviaturasi.
+    Guruhlar mavjud bo'lsa — avval guruhlar, keyin alohida kanallar + Barcha.
+    Guruh yo'q bo'lsa — oddiy kanal ro'yxati.
+    """
+    kb = InlineKeyboardBuilder()
+
+    if groups:
+        # Guruhlar bo'yicha tugmalar
+        for g in groups:
+            kb.row(InlineKeyboardButton(
+                text=f"📂 {g}",
+                callback_data=f"postfin_{media_type}_grp_{g[:25]}_{anime_id}",
+                style="success",
+            ))
+        # Guruhsiz kanallar ham bo'lsa
+        for ch in channels:
+            if not ch.news_group:
+                kb.row(InlineKeyboardButton(
+                    text=f"📢 {ch.channel_name}",
+                    callback_data=f"postfin_{media_type}_{ch.id}_{anime_id}",
+                    style="primary",
+                ))
+        kb.row(InlineKeyboardButton(
+            text="📢 Barcha kanallarga",
+            callback_data=f"postfin_{media_type}_all_{anime_id}",
+            style="primary",
+        ))
+    else:
+        # Guruhsiz — oddiy kanal ro'yxati
+        for ch in channels:
+            kb.row(InlineKeyboardButton(
+                text=f"📢 {ch.channel_name}",
+                callback_data=f"postfin_{media_type}_{ch.id}_{anime_id}",
+                style="success",
+            ))
+        kb.row(InlineKeyboardButton(
+            text="📢 Barcha kanallarga",
+            callback_data=f"postfin_{media_type}_all_{anime_id}",
+            style="primary",
+        ))
+
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
+    return kb.as_markup()
 
 
 async def _send_anime_post(
@@ -2393,20 +2556,112 @@ async def skip_poster(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+def _get_aspect_ratio(photo) -> float:
+    """Rasmning en/bo'y nisbatini qaytaradi. width/height."""
+    w = getattr(photo, "width", 0) or 0
+    h = getattr(photo, "height", 0) or 0
+    if not h:
+        return 1.0
+    return w / h
+
+
+async def _get_telegram_file_url(bot, file_id: str) -> str | None:
+    """
+    Telegram CDN URL ni oladi.
+    Format: https://api.telegram.org/file/bot{TOKEN}/{file_path}
+    """
+    try:
+        file = await bot.get_file(file_id)
+        if not file.file_path:
+            return None
+        token = bot.token
+        return f"https://api.telegram.org/file/bot{token}/{file.file_path}"
+    except Exception as e:
+        logger.warning("_get_telegram_file_url xato: %s", e)
+        return None
+
+
 @admin_router.message(AddAnime.waiting_poster, F.photo)
 async def process_poster(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
         return
-    rejection = _poster_rejection_reason(msg.photo[-1])
+
+    photo = msg.photo[-1]
+
+    # Hajm tekshiruvi
+    rejection = _poster_rejection_reason(photo)
     if rejection:
         return await msg.answer(rejection + "\nIltimos, kichikroq rasm yuboring.")
-    await state.update_data(poster_file_id=msg.photo[-1].file_id)
-    await state.set_state(AddAnime.waiting_inline_url)
-    await msg.answer(
-        "🖼 <b>Inline thumbnail URL</b>:\n<i>https:// bilan boshlanadigan rasm URL</i>",
-        parse_mode="HTML",
-        reply_markup=_skip_kb("skip_inline_url"),
-    )
+
+    ratio = _get_aspect_ratio(photo)
+    poster_file_id = photo.file_id
+    w, h = photo.width, photo.height
+    IS_PORTRAIT = ratio <= 1.05
+
+    await state.update_data(poster_file_id=poster_file_id)
+
+    if IS_PORTRAIT:
+        # Portret/kvadrat — ImgBB ga avtomatik yuklaymiz
+        wait_msg = await msg.answer("⏳ ImgBB ga yuklanmoqda...", parse_mode="HTML")
+
+        imgbb_url = None
+        try:
+            from utils.imgbb import upload_telegram_photo_to_imgbb
+            imgbb_api_key = getattr(config, "IMGBB_API_KEY", "") or ""
+            if imgbb_api_key:
+                anime_data = await state.get_data()
+                anime_title = anime_data.get("title", "poster")
+                imgbb_url = await upload_telegram_photo_to_imgbb(
+                    msg.bot, poster_file_id, imgbb_api_key, name=anime_title
+                )
+        except Exception as e:
+            logger.warning("ImgBB upload xato: %s", e)
+
+        # ImgBB ishlamasa — Telegram CDN fallback
+        if not imgbb_url:
+            logger.info("ImgBB ishlamadi, Telegram CDN fallback")
+            imgbb_url = await _get_telegram_file_url(msg.bot, poster_file_id)
+
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
+
+        if imgbb_url:
+            await state.update_data(inline_thumbnail_url=imgbb_url)
+            await state.set_state(AddAnime.waiting_trailer)
+            source = "ImgBB ✅ (doimiy)" if "ibb.co" in (imgbb_url or "") else "Telegram CDN ⚠️"
+            await msg.answer(
+                f"✅ <b>Poster qabul qilindi!</b>\n\n"
+                f"📐 O'lcham: <b>{w}×{h}</b>  •  Nisbat: {ratio:.2f} — portret ✅\n"
+                f"🔗 URL: {source}\n\n"
+                f"🎬 <b>Treyler videosini yuboring:</b>",
+                parse_mode="HTML",
+                reply_markup=_skip_kb("skip_trailer"),
+            )
+        else:
+            await state.set_state(AddAnime.waiting_inline_url)
+            await msg.answer(
+                f"⚠️ <b>URL avtomatik olinmadi.</b>\n\n"
+                f"Inline thumbnail URL ni qo'lda kiriting:\n"
+                f"<i>https:// bilan boshlanadigan rasm URL</i>",
+                parse_mode="HTML",
+                reply_markup=_skip_kb("skip_inline_url"),
+            )
+    else:
+        # Landscape (16:9 va h.k.) — faqat poster saqlanadi, URL qo'lda so'raladi
+        await state.set_state(AddAnime.waiting_inline_url)
+        await msg.answer(
+            f"⚠️ <b>Landscape rasm aniqlandi</b>\n\n"
+            f"📐 O'lcham: <b>{w}×{h}</b>  •  Nisbat: {ratio:.2f}\n\n"
+            f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+            f"Bu rasm inline qidiruvda <b>xunuk ko'rinadi</b> 😕\n"
+            f"Poster saqlandı, lekin inline uchun alohida\n"
+            f"<b>portret yoki kvadrat</b> rasm URL kiriting:\n\n"
+            f"<i>Masalan: MyAnimeList, AniList, Google dan</i>",
+            parse_mode="HTML",
+            reply_markup=_skip_kb("skip_inline_url"),
+        )
 
 
 @admin_router.callback_query(F.data == "skip_inline_url", AddAnime.waiting_inline_url)
@@ -2925,10 +3180,52 @@ async def save_edit_value(msg: Message, state: FSMContext):
         elif field == "poster":
             if not msg.photo:
                 return await msg.answer("❌ Rasm yuboring!")
-            rejection = _poster_rejection_reason(msg.photo[-1])
+            photo = msg.photo[-1]
+            rejection = _poster_rejection_reason(photo)
             if rejection:
                 return await msg.answer(rejection)
-            anime.poster_file_id = msg.photo[-1].file_id
+            anime.poster_file_id = photo.file_id
+
+            ratio = _get_aspect_ratio(photo)
+            w, h = photo.width, photo.height
+
+            if ratio <= 1.05:
+                # Portret — ImgBB ga yuklaymiz
+                imgbb_url = None
+                try:
+                    from utils.imgbb import upload_telegram_photo_to_imgbb
+                    imgbb_api_key = getattr(config, "IMGBB_API_KEY", "") or ""
+                    if imgbb_api_key:
+                        imgbb_url = await upload_telegram_photo_to_imgbb(
+                            msg.bot, photo.file_id, imgbb_api_key, name=anime.title or "poster"
+                        )
+                except Exception as e:
+                    logger.warning("ImgBB edit upload xato: %s", e)
+
+                if not imgbb_url:
+                    imgbb_url = await _get_telegram_file_url(msg.bot, photo.file_id)
+
+                if imgbb_url:
+                    anime.inline_thumbnail_url = imgbb_url
+                await session.commit()
+                source = "ImgBB ✅" if imgbb_url and "ibb.co" in imgbb_url else "Telegram CDN ⚠️"
+                return await msg.answer(
+                    f"✅ <b>Poster yangilandi!</b>\n"
+                    f"📐 {w}×{h} (portret) — URL: {source}",
+                    parse_mode="HTML",
+                    reply_markup=admin_main_kb,
+                )
+            else:
+                # Landscape — URL alohida so'raymiz
+                await session.commit()
+                await state.update_data(edit_anime_id=data.get("edit_anime_id"), edit_field="inline_url")
+                return await msg.answer(
+                    f"⚠️ <b>Landscape rasm ({w}×{h})</b>\n\n"
+                    f"Poster saqlandi. Inline qidiruv uchun\n"
+                    f"alohida portret URL kiriting:",
+                    parse_mode="HTML",
+                    reply_markup=cancel_kb,
+                )
         elif field == "trailer":
             if not msg.video:
                 return await msg.answer("❌ Video yuboring!")
@@ -3062,151 +3359,310 @@ async def edit_genres_text_hint(msg: Message, state: FSMContext):
 
 
 async def _ask_send_to_channel(msg: Message, bot: Bot, anime: Anime):
-    """Bot poster/treyler bor-yo'qligiga qarab so'raydi."""
+    """
+    Yangi oqim: Caption format tanlash → Media tanlash → Kanal tanlash → Yuborish.
+    Eng birinchi CAPTION formati so'raladi.
+    """
     async with AsyncSessionLocal() as session:
         channels = await get_news_channels(session)
     if not channels:
         await msg.answer("⚠️ News kanallar yo'q! Avval kanal qo'shing.")
         return
 
-    # Poster/treyler mavjudligini tekshiramiz
-    has_poster = bool(anime.poster_file_id)
-    has_trailer = bool(anime.trailer_file_id)
-
-    if not has_poster and not has_trailer:
-        # Media yo'q — to'g'ridan-to'g'ri kanal tanlashga o'tish
-        kb = InlineKeyboardBuilder()
-        for ch in channels:
-            kb.row(
-                InlineKeyboardButton(
-                    text=f"📢 {ch.channel_name}", callback_data=f"postch_{ch.id}_{anime.id}", style="success"
-                )
-            )
-        kb.row(InlineKeyboardButton(text="📢 Barcha", callback_data=f"postch_all_{anime.id}", style="success"))
-        kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
-        await msg.answer(
-            f"📢 <b>{anime.title}</b>\n⚠️ Poster yoki treyler yo'q — faqat matn post qilinadi.\n\nQaysi kanalga?",
-            reply_markup=kb.as_markup(),
-            parse_mode="HTML",
-        )
-        return
-
-    # Media bor — media turi so'rash
-    kb = InlineKeyboardBuilder()
-    if has_poster:
-        kb.row(
-            InlineKeyboardButton(
-                text="🖼 Poster bilan post", callback_data=f"postnews_poster_{anime.id}", style="success"
-            )
-        )
-    if has_trailer:
-        kb.row(
-            InlineKeyboardButton(
-                text="🎬 Treyler bilan post", callback_data=f"postnews_trailer_{anime.id}", style="success"
-            )
-        )
-    kb.row(InlineKeyboardButton(text="📝 Faqat matn post", callback_data=f"postnews_text_{anime.id}", style="success"))
-    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
-
-    await msg.answer(f"📢 <b>{anime.title}</b>\n\nQanday post qilamiz?", reply_markup=kb.as_markup(), parse_mode="HTML")
+    await msg.answer(
+        f"📢 <b>{esc(anime.title)}</b>\n\n"
+        "1️⃣ Birinchi — <b>caption</b> (matn) turini tanlang:",
+        reply_markup=_caption_format_kb(anime.id),
+        parse_mode="HTML",
+    )
 
 
 @admin_router.callback_query(F.data.startswith("postnews_"))
-async def postnews_media_type(call: types.CallbackQuery):
-    """Poster/treyler/text tanlov — keyin kanal tanlash."""
+# ═══════════════════════════════════════════════════════════
+#  YANGI POST OQIMI: caption → media → kanal → yuborish
+# ═══════════════════════════════════════════════════════════
+
+
+@admin_router.callback_query(F.data.startswith("postcap_"))
+async def postcap_chosen(call: types.CallbackQuery, state: FSMContext):
+    """
+    1-qadam: Caption formati tanlandi.
+      postcap_full_{anime_id}   → To'liq ma'lumot
+      postcap_short_{anime_id}  → Qisqa ma'lumot
+      postcap_custom_{anime_id} → Admin o'zi yozadi
+    """
     if not await is_admin(call.from_user.id):
         return
 
-    # postnews_{media_type}_{anime_id}
-    parts = call.data.replace("postnews_", "").split("_", 1)
-    media_type = parts[0]  # poster | trailer | text
-    anime_id = int(parts[1])
+    raw = call.data.replace("postcap_", "")
+    cap_type, anime_id_str = raw.split("_", 1)
+    anime_id = int(anime_id_str)
 
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
-        channels = await get_news_channels(session)
-
     if not anime:
         return await call.answer("❌ Topilmadi!", show_alert=True)
-    if not channels:
-        return await call.answer("⚠️ News kanallar yo'q!", show_alert=True)
 
-    kb = InlineKeyboardBuilder()
-    for ch in channels:
-        kb.row(
-            InlineKeyboardButton(
-                text=f"📢 {ch.channel_name}", callback_data=f"postch2_{media_type}_{ch.id}_{anime_id}", style="success"
-            )
+    if cap_type == "custom":
+        await state.set_state(PostToChannelState.waiting_custom_caption)
+        await state.update_data(post_anime_id=anime_id)
+        cancel_inline = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger")]]
         )
-    kb.row(
-        InlineKeyboardButton(text="📢 Barcha", callback_data=f"postch2_{media_type}_all_{anime_id}", style="success")
-    )
-    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="manage_close", style="danger"))
+        try:
+            await call.message.edit_text(
+                f"✏️ <b>O'z captioningizni yozing:</b>\n\n"
+                f"<i>HTML teglar ishlatsa bo'ladi: &lt;b&gt;, &lt;i&gt;, &lt;code&gt;, &lt;a href&gt;\n"
+                f"Telegram chegarasi: 1024 belgi</i>\n\n"
+                f"📌 Anime: <b>{esc(anime.title)}</b> — ID: <code>{anime.id}</code>",
+                reply_markup=cancel_inline,
+                parse_mode="HTML",
+            )
+        except Exception:
+            await call.message.answer(
+                f"✏️ Caption yozing (HTML mumkin, max 1024 belgi):",
+                reply_markup=cancel_inline,
+                parse_mode="HTML",
+            )
+        return await call.answer()
 
-    media_label = {"poster": "🖼 Poster", "trailer": "🎬 Treyler", "text": "📝 Matn"}
-    await call.message.edit_text(
-        f"📢 <b>{anime.title}</b>\n{media_label.get(media_type, '')} bilan\n\nQaysi kanalga?",
-        reply_markup=kb.as_markup(),
-        parse_mode="HTML",
+    # To'liq yoki qisqa
+    caption = _build_post_caption(anime) if cap_type == "full" else _build_short_caption(anime)
+    _post_caption_cache[(call.from_user.id, anime_id)] = caption
+
+    has_poster = bool(anime.poster_file_id)
+    has_trailer = bool(anime.trailer_file_id)
+    cap_label = "To'liq" if cap_type == "full" else "Qisqa"
+
+    preview_text = (
+        f"✅ <b>Caption tanlandi ({cap_label})</b>\n\n"
+        f"👁 <b>Ko'rinishi:</b>\n"
+        f"<blockquote>{caption[:400]}{'…' if len(caption) > 400 else ''}</blockquote>\n\n"
+        f"2️⃣ Endi <b>media turini</b> tanlang:"
     )
+    try:
+        await call.message.edit_text(
+            preview_text,
+            reply_markup=_media_pick_kb(anime_id, has_poster, has_trailer),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            preview_text,
+            reply_markup=_media_pick_kb(anime_id, has_poster, has_trailer),
+            parse_mode="HTML",
+        )
     await call.answer()
 
 
-@admin_router.callback_query(F.data.startswith("postch2_"))
-async def send_to_channel_with_media(call: types.CallbackQuery):
-    """Media turi va kanal tanlanib — postni yuboradi."""
+@admin_router.message(PostToChannelState.waiting_custom_caption)
+async def postcap_custom_received(msg: Message, state: FSMContext):
+    """Admin o'zi yozgan captionni qabul qilish."""
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor qilindi.", reply_markup=admin_main_kb)
+
+    caption = (msg.text or msg.caption or "").strip()
+    if not caption:
+        return await msg.answer("❌ Caption bo'sh bo'lmasin. Qayta yozing:")
+    if len(caption) > 1024:
+        return await msg.answer(
+            f"❌ Juda uzun: {len(caption)} belgi (max 1024). Qisqartiring:"
+        )
+
+    data = await state.get_data()
+    anime_id = data.get("post_anime_id")
+    await state.clear()
+
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+    if not anime:
+        return await msg.answer("❌ Anime topilmadi!")
+
+    _post_caption_cache[(msg.from_user.id, anime_id)] = caption
+    has_poster = bool(anime.poster_file_id)
+    has_trailer = bool(anime.trailer_file_id)
+
+    await msg.answer(
+        f"✅ <b>Caption saqlandi!</b>\n\n"
+        f"👁 <b>Ko'rinishi:</b>\n"
+        f"<blockquote>{caption[:400]}{'…' if len(caption) > 400 else ''}</blockquote>\n\n"
+        f"2️⃣ <b>Media turini</b> tanlang:",
+        reply_markup=_media_pick_kb(anime_id, has_poster, has_trailer),
+        parse_mode="HTML",
+    )
+
+
+@admin_router.callback_query(F.data.startswith("postmedia_"))
+async def postmedia_chosen(call: types.CallbackQuery):
+    """
+    2-qadam: Media turi tanlandi.
+      postmedia_poster_{anime_id}
+      postmedia_trailer_{anime_id}
+      postmedia_text_{anime_id}
+    """
     if not await is_admin(call.from_user.id):
         return
 
-    # postch2_{media_type}_{ch_id_or_all}_{anime_id}
-    raw = call.data.replace("postch2_", "")
+    raw = call.data.replace("postmedia_", "")
+    media_type, anime_id_str = raw.split("_", 1)
+    anime_id = int(anime_id_str)
+
+    # Caption keshdan — yo'q bo'lsa fallback
+    caption = _post_caption_cache.get((call.from_user.id, anime_id))
+    if not caption:
+        async with AsyncSessionLocal() as session:
+            anime = await session.get(Anime, anime_id)
+        if not anime:
+            return await call.answer("❌ Topilmadi!", show_alert=True)
+        caption = _build_post_caption(anime)
+        _post_caption_cache[(call.from_user.id, anime_id)] = caption
+
+    async with AsyncSessionLocal() as session:
+        channels = await get_news_channels(session)
+        groups = await get_news_channel_groups(session)
+    if not channels:
+        return await call.answer("⚠️ News kanallar yo'q!", show_alert=True)
+
+    # Faqat 1 guruh bo'lsa va guruhsiz kanal yo'q bo'lsa — guruh ko'rsatmaylik
+    show_groups = len(groups) > 0
+    media_label = {"poster": "🖼 Poster", "trailer": "🎬 Treyler", "text": "📝 Faqat matn"}
+    try:
+        await call.message.edit_text(
+            f"✅ <b>{media_label.get(media_type, 'Media')} tanlandi</b>\n\n"
+            f"3️⃣ <b>Qaysi kanalga</b> yuboramiz?",
+            reply_markup=_channel_pick_kb(anime_id, media_type, channels, groups if show_groups else None),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            f"3️⃣ <b>Qaysi kanalga?</b>",
+            reply_markup=_channel_pick_kb(anime_id, media_type, channels, groups if show_groups else None),
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data.startswith("postfin_"))
+async def postfin_send(call: types.CallbackQuery):
+    """
+    3-qadam: Kanal yoki guruh tanlandi — post yuboriladi.
+      postfin_{media_type}_{ch_id_or_all}_{anime_id}
+      postfin_{media_type}_grp_{group_name}_{anime_id}  ← GURUH
+    """
+    if not await is_admin(call.from_user.id):
+        return
+
+    raw = call.data.replace("postfin_", "")
     parts = raw.split("_")
     media_type = parts[0]
+    # Guruh tanlovi: postfin_poster_grp_Dorama_190
+    if len(parts) >= 4 and parts[1] == "grp":
+        # group_name va anime_id ni ajratamiz
+        # format: {media_type}_grp_{group_name}_{anime_id}
+        # group_name ichida _ bo'lishi mumkin, shuning uchun oxiridan olamiz
+        anime_id = int(parts[-1])
+        group_name = "_".join(parts[2:-1])
+
+        async with AsyncSessionLocal() as session:
+            anime = await session.get(Anime, anime_id)
+            channels = await get_news_channels_by_group(session, group_name)
+        if not anime:
+            return await call.answer("❌ Topilmadi!", show_alert=True)
+        if not channels:
+            return await call.answer(f"⚠️ '{group_name}' guruhida kanal yo'q!", show_alert=True)
+
+        caption = _post_caption_cache.pop((call.from_user.id, anime_id), None) or _build_post_caption(anime)
+        watch_kb = _watch_kb(anime.id)
+        sent = 0
+        errors: list[str] = []
+
+        for ch in channels:
+            try:
+                if media_type == "poster" and anime.poster_file_id:
+                    await call.bot.send_photo(
+                        ch.channel_id, anime.poster_file_id,
+                        caption=caption, reply_markup=watch_kb, parse_mode="HTML",
+                    )
+                elif media_type == "trailer" and anime.trailer_file_id:
+                    await call.bot.send_video(
+                        ch.channel_id, anime.trailer_file_id,
+                        caption=caption, reply_markup=watch_kb, parse_mode="HTML",
+                    )
+                else:
+                    await call.bot.send_message(
+                        ch.channel_id, caption,
+                        reply_markup=watch_kb, parse_mode="HTML",
+                    )
+                sent += 1
+            except Exception as e:
+                errors.append(f"⚠️ {ch.channel_name}: {e}")
+
+        result = (
+            f"✅ <b>'{group_name}' guruhidagi {sent} ta kanalga yuborildi!</b>"
+        )
+        if errors:
+            result += "\n\n" + "\n".join(errors)
+        try:
+            await call.message.edit_text(result, parse_mode="HTML")
+        except Exception:
+            await call.message.answer(result, parse_mode="HTML")
+        await call.message.answer("Panel:", reply_markup=admin_main_kb)
+        return await call.answer("✅ Yuborildi!")
+
+    # Oddiy kanal yoki "all"
     ch_target = parts[1]
     anime_id = int(parts[2])
 
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         channels = await get_news_channels(session)
-
     if not anime:
         return await call.answer("❌ Topilmadi!", show_alert=True)
 
+    caption = _post_caption_cache.pop((call.from_user.id, anime_id), None) or _build_post_caption(anime)
     targets = channels if ch_target == "all" else [c for c in channels if str(c.id) == ch_target]
-    caption = _build_post_caption(anime)
     watch_kb = _watch_kb(anime.id)
     sent = 0
+    errors: list[str] = []
 
     for ch in targets:
         try:
             if media_type == "poster" and anime.poster_file_id:
                 await call.bot.send_photo(
-                    ch.channel_id, anime.poster_file_id, caption=caption, reply_markup=watch_kb, parse_mode="HTML"
+                    ch.channel_id, anime.poster_file_id,
+                    caption=caption, reply_markup=watch_kb, parse_mode="HTML",
                 )
             elif media_type == "trailer" and anime.trailer_file_id:
                 await call.bot.send_video(
-                    ch.channel_id, anime.trailer_file_id, caption=caption, reply_markup=watch_kb, parse_mode="HTML"
+                    ch.channel_id, anime.trailer_file_id,
+                    caption=caption, reply_markup=watch_kb, parse_mode="HTML",
                 )
             else:
-                await call.bot.send_message(ch.channel_id, caption, reply_markup=watch_kb, parse_mode="HTML")
+                await call.bot.send_message(
+                    ch.channel_id, caption,
+                    reply_markup=watch_kb, parse_mode="HTML",
+                )
             sent += 1
         except Exception as e:
-            await call.message.answer(f"⚠️ {ch.channel_name}: {e}")
+            errors.append(f"⚠️ {ch.channel_name}: {e}")
 
+    result = f"✅ <b>{sent} ta kanalga yuborildi!</b>"
+    if errors:
+        result += "\n\n" + "\n".join(errors)
     try:
-        await call.message.edit_text(f"✅ {sent} ta kanalga yuborildi!", parse_mode="HTML")
+        await call.message.edit_text(result, parse_mode="HTML")
     except Exception:
-        await call.message.answer(f"✅ {sent} ta kanalga yuborildi!")
+        await call.message.answer(result, parse_mode="HTML")
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
-    await call.answer()
+    await call.answer("✅ Yuborildi!")
 
 
 @admin_router.callback_query(F.data.startswith("postpick_"))
 async def postpick_media(call: types.CallbackQuery):
-    """Anime post tugmasi — poster/treyler tanlash menyusini ochadi.
-
-    Ikkisi bir vaqtda hech qachon yuborilmaydi: admin bittasini tanlaydi.
-    """
+    """Anime kartochkasidagi '📢 Kanalga post' — yangi caption oqimini boshlaydi."""
     if not await is_admin(call.from_user.id):
         return
     try:
@@ -3221,9 +3677,65 @@ async def postpick_media(call: types.CallbackQuery):
     await call.answer()
 
 
+@admin_router.callback_query(F.data.startswith("postnews_"))
+async def postnews_media_type(call: types.CallbackQuery):
+    """Eski postnews_ — yangi caption oqimiga yo'naltiradi."""
+    if not await is_admin(call.from_user.id):
+        return
+    parts = call.data.replace("postnews_", "").split("_", 1)
+    anime_id = int(parts[1])
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+    if not anime:
+        return await call.answer("❌ Topilmadi!", show_alert=True)
+    await _ask_send_to_channel(call.message, call.bot, anime)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data.startswith("postch2_"))
+async def send_to_channel_with_media(call: types.CallbackQuery):
+    """Eski postch2_ — to'liq caption bilan to'g'ridan-to'g'ri yuboradi (backward compat)."""
+    if not await is_admin(call.from_user.id):
+        return
+    raw = call.data.replace("postch2_", "")
+    parts = raw.split("_")
+    media_type = parts[0]
+    ch_target = parts[1]
+    anime_id = int(parts[2])
+
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+        channels = await get_news_channels(session)
+    if not anime:
+        return await call.answer("❌ Topilmadi!", show_alert=True)
+
+    targets = channels if ch_target == "all" else [c for c in channels if str(c.id) == ch_target]
+    caption = _build_post_caption(anime)
+    watch_kb = _watch_kb(anime.id)
+    sent = 0
+    for ch in targets:
+        try:
+            if media_type == "poster" and anime.poster_file_id:
+                await call.bot.send_photo(ch.channel_id, anime.poster_file_id, caption=caption, reply_markup=watch_kb, parse_mode="HTML")
+            elif media_type == "trailer" and anime.trailer_file_id:
+                await call.bot.send_video(ch.channel_id, anime.trailer_file_id, caption=caption, reply_markup=watch_kb, parse_mode="HTML")
+            else:
+                await call.bot.send_message(ch.channel_id, caption, reply_markup=watch_kb, parse_mode="HTML")
+            sent += 1
+        except Exception as e:
+            await call.message.answer(f"⚠️ {ch.channel_name}: {e}")
+
+    try:
+        await call.message.edit_text(f"✅ {sent} ta kanalga yuborildi!", parse_mode="HTML")
+    except Exception:
+        await call.message.answer(f"✅ {sent} ta kanalga yuborildi!")
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
 @admin_router.callback_query(F.data.startswith("postch_"))
 async def send_to_channel_cb(call: types.CallbackQuery):
-    """Eski postch_ handler — matn post."""
+    """Eski postch_ — matn post (backward compat)."""
     if not await is_admin(call.from_user.id):
         return
     parts = call.data.replace("postch_", "").split("_")
@@ -3234,7 +3746,6 @@ async def send_to_channel_cb(call: types.CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         channels = await get_news_channels(session)
-
     if not anime:
         return await call.answer("❌ Topilmadi!", show_alert=True)
     targets = channels if is_all else [c for c in channels if c.id == ch_id]
@@ -3434,13 +3945,22 @@ async def bc_media_type_selected(call: types.CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, data["bc_anime_id"])
     auto_cap = _build_post_caption(anime) if anime else ""
+    short_cap = _build_short_caption(anime) if anime else ""
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Shu caption", callback_data="bccap_auto", style="success")],
+            [InlineKeyboardButton(text="📋 To'liq ma'lumot", callback_data="bccap_auto", style="success")],
+            [InlineKeyboardButton(text="📝 Qisqa ma'lumot", callback_data="bccap_short", style="success")],
             [InlineKeyboardButton(text="✏️ O'zim yozaman", callback_data="bccap_custom", style="primary")],
         ]
     )
-    await call.message.answer(f"📝 <b>Caption preview:</b>\n\n{auto_cap}", reply_markup=kb, parse_mode="HTML")
+    preview = auto_cap[:600] + ("…" if len(auto_cap) > 600 else "")
+    await call.message.answer(
+        f"📝 <b>Caption turini tanlang:</b>\n\n"
+        f"<b>To'liq preview:</b>\n<blockquote>{preview}</blockquote>\n\n"
+        f"<b>Qisqa preview:</b>\n<blockquote>{short_cap}</blockquote>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
     await call.answer()
 
 
@@ -3451,6 +3971,17 @@ async def bc_caption_auto(call: types.CallbackQuery, state: FSMContext):
         anime = await session.get(Anime, data["bc_anime_id"])
     if anime:
         await state.update_data(bc_caption=_build_post_caption(anime))
+    await _bc_ask_extra_btn(call.message, state)
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "bccap_short", BroadcastState.waiting_anime_post_caption)
+async def bc_caption_short(call: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, data["bc_anime_id"])
+    if anime:
+        await state.update_data(bc_caption=_build_short_caption(anime))
     await _bc_ask_extra_btn(call.message, state)
     await call.answer()
 
@@ -5570,6 +6101,9 @@ async def channel_manager(msg: Message):
         InlineKeyboardButton(text="➕ Obuna kanali", callback_data="add_channel", style="primary"),
         InlineKeyboardButton(text="📰 News kanal", callback_data="add_news_channel", style="primary"),
     )
+    kb.row(
+        InlineKeyboardButton(text="📂 News guruhlar", callback_data="channels_news_groups", style="success"),
+    )
     await msg.answer(text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
 
@@ -5717,18 +6251,27 @@ async def save_ch_id(msg: Message, state: FSMContext):
     data = await state.get_data()
     is_news = data.get("is_news_channel", False)
     owner_id = await _get_owner_ctx(msg.from_user.id)
-    # News kanalda region cheklovi yo'q — darrov qo'shamiz.
+    # News kanalda region cheklovi yo'q — guruh so'raymiz keyin qo'shamiz.
     if is_news:
-        await state.clear()
-        return await _finalize_add_channel(
-            msg=msg,
-            channel_name=data["channel_name"],
-            channel_url=data["channel_url"],
-            channel_id=channel_id,
-            is_news=True,
-            region=None,
-            owner_id=owner_id,
+        await state.update_data(channel_id=channel_id)
+        await state.set_state(AddChannel.waiting_news_group)
+        # Mavjud guruhlarni ko'rsatamiz
+        async with AsyncSessionLocal() as session:
+            groups = await get_news_channel_groups(session)
+        kb = InlineKeyboardBuilder()
+        for g in groups:
+            kb.row(InlineKeyboardButton(text=f"📂 {g}", callback_data=f"newsch_grp_{g[:30]}", style="success"))
+        kb.row(InlineKeyboardButton(text="➕ Yangi guruh nomi yozing", callback_data="newsch_grp_new", style="primary"))
+        kb.row(InlineKeyboardButton(text="⏭ Guruhsiz qo'shish", callback_data="newsch_grp_skip", style="primary"))
+        await msg.answer(
+            "📂 <b>Kanal guruhini tanlang:</b>\n\n"
+            "<i>Masalan: Dorama, Anime, Kino\n"
+            "Guruh tanlansa post yuborishda o'sha guruh ichidagi\n"
+            "barcha kanallarga bir vaqtda yuborish mumkin bo'ladi.</i>",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML",
         )
+        return
     # Majburiy kanal: region scope so'raymiz.
     await state.update_data(channel_id=channel_id)
     await state.set_state(AddChannel.waiting_region_scope)
@@ -6208,3 +6751,455 @@ async def exit_admin(msg: Message, state: FSMContext):
 
     # 🔥 SHU YERGA QO‘SHASAN
     mark_admin_inactive(msg.from_user.id)
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  THUMBNAIL BOSHQARUV — kunduzgi/kechgi rasmlar
+# ═══════════════════════════════════════════════════════════
+
+
+@admin_router.callback_query(F.data.startswith("set_thumb_"))
+async def set_thumbnail_start(call: types.CallbackQuery, state: FSMContext):
+    """Anime uchun thumbnail rasmlarni o'rnatish — edit paneldan chaqiriladi."""
+    if not await is_admin(call.from_user.id):
+        return
+    anime_id = int(call.data.replace("set_thumb_", ""))
+    await state.set_state(AddAnime.waiting_thumbnail_day)
+    await state.update_data(thumb_anime_id=anime_id)
+    await call.message.answer(
+        "☀️ <b>Kunduzgi thumbnail rasm</b>\n\n"
+        "Bu rasm <b>05:00 — 22:00</b> oralig'ida qism thumbnail sifatida ishlatiladi.\n\n"
+        "📐 Tavsiya: <b>portret yoki kvadrat</b> rasm (320×320 dan katta)\n\n"
+        "Rasmni yuboring 👇",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_thumb_day"),
+    )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "skip_thumb_day", AddAnime.waiting_thumbnail_day)
+async def skip_thumb_day(call: types.CallbackQuery, state: FSMContext):
+    """Kunduzgi thumbnail o'tkazib yuborildi."""
+    await state.set_state(AddAnime.waiting_thumbnail_night)
+    await call.message.answer(
+        "🌙 <b>Kechki thumbnail rasm</b>\n\n"
+        "Bu rasm <b>22:00 — 05:00</b> oralig'ida ishlatiladi.\n\n"
+        "Rasmni yuboring 👇",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_thumb_night"),
+    )
+    await call.answer()
+
+
+@admin_router.message(AddAnime.waiting_thumbnail_day, F.photo)
+async def process_thumb_day(msg: Message, state: FSMContext):
+    """Kunduzgi thumbnail qabul qilindi."""
+    if not await is_admin(msg.from_user.id):
+        return
+    photo = msg.photo[-1]
+    rejection = _poster_rejection_reason(photo)
+    if rejection:
+        return await msg.answer(rejection)
+
+    await state.update_data(thumb_day_file_id=photo.file_id)
+    await state.set_state(AddAnime.waiting_thumbnail_night)
+    await msg.answer(
+        "✅ <b>Kunduzgi rasm saqlandi!</b>\n\n"
+        "🌙 <b>Kechki thumbnail rasm</b>\n"
+        "<b>22:00 — 05:00</b> oralig'ida ishlatiladi.\n\n"
+        "Rasmni yuboring 👇",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_thumb_night"),
+    )
+
+
+@admin_router.callback_query(F.data == "skip_thumb_night", AddAnime.waiting_thumbnail_night)
+async def skip_thumb_night(call: types.CallbackQuery, state: FSMContext):
+    """Kechki thumbnail o'tkazib yuborildi — saqlaymiz."""
+    await _save_thumbnails(call.message, state)
+    await call.answer()
+
+
+@admin_router.message(AddAnime.waiting_thumbnail_night, F.photo)
+async def process_thumb_night(msg: Message, state: FSMContext):
+    """Kechki thumbnail qabul qilindi."""
+    if not await is_admin(msg.from_user.id):
+        return
+    photo = msg.photo[-1]
+    rejection = _poster_rejection_reason(photo)
+    if rejection:
+        return await msg.answer(rejection)
+
+    await state.update_data(thumb_night_file_id=photo.file_id)
+    await _save_thumbnails(msg, state)
+
+
+async def _save_thumbnails(msg_or_msg: Message, state: FSMContext):
+    """Thumbnail rasmlarni DB ga saqlaydi."""
+    data = await state.get_data()
+    anime_id = data.get("thumb_anime_id")
+    day_id = data.get("thumb_day_file_id")
+    night_id = data.get("thumb_night_file_id")
+    await state.clear()
+
+    if not anime_id:
+        await msg_or_msg.answer("❌ Anime ID topilmadi!", reply_markup=admin_main_kb)
+        return
+
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+        if not anime:
+            await msg_or_msg.answer("❌ Anime topilmadi!", reply_markup=admin_main_kb)
+            return
+
+        if day_id:
+            anime.thumbnail_day_file_id = day_id
+        if night_id:
+            anime.thumbnail_night_file_id = night_id
+        await session.commit()
+
+    parts = []
+    if day_id:
+        parts.append("☀️ Kunduzgi rasm")
+    if night_id:
+        parts.append("🌙 Kechki rasm")
+
+    saved = " va ".join(parts) if parts else "hech narsa"
+
+    await msg_or_msg.answer(
+        f"✅ <b>Thumbnail saqlandi!</b>\n\n"
+        f"🎬 Anime: <b>#{anime_id}</b>\n"
+        f"💾 Saqlangan: {saved}\n\n"
+        f"<i>Endi yangi qismlar yuborilganda thumbnail avtomatik qo'shiladi.</i>",
+        parse_mode="HTML",
+        reply_markup=admin_main_kb,
+    )
+
+
+@admin_router.callback_query(F.data.startswith("ef_set_thumb_"))
+async def ef_set_thumbnail(call: types.CallbackQuery, state: FSMContext):
+    """Kontent boshqaruvdagi edit panel orqali thumbnail o'rnatish."""
+    if not await is_admin(call.from_user.id):
+        return
+    anime_id = int(call.data.replace("ef_set_thumb_", ""))
+    await state.set_state(AddAnime.waiting_thumbnail_day)
+    await state.update_data(thumb_anime_id=anime_id)
+    await call.message.answer(
+        "🖼 <b>Thumbnail rasmlar</b>\n\n"
+        "☀️ <b>1. Kunduzgi rasm</b> (05:00–22:00)\n"
+        "🌙 <b>2. Kechki rasm</b> (22:00–05:00)\n\n"
+        "Avval kunduzgi rasmni yuboring 👇\n"
+        "<i>O'tkazib yuborish uchun tugmani bosing</i>",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("skip_thumb_day"),
+    )
+    await call.answer()
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  NEWS KANAL GURUH BOSHQARUVI
+# ═══════════════════════════════════════════════════════════
+
+
+def _news_group_kb(groups: list[str], channel_id: int) -> InlineKeyboardMarkup:
+    """Mavjud guruhlar + yangi guruh qo'shish tugmalari."""
+    kb = InlineKeyboardBuilder()
+    for g in groups:
+        kb.row(InlineKeyboardButton(
+            text=f"📂 {g}",
+            callback_data=f"chgrp_set_{channel_id}_{g[:30]}",
+            style="success",
+        ))
+    kb.row(InlineKeyboardButton(
+        text="➕ Yangi guruh nomi",
+        callback_data=f"chgrp_new_{channel_id}",
+        style="primary",
+    ))
+    kb.row(InlineKeyboardButton(
+        text="🗑 Guruhsiz (Umumiy)",
+        callback_data=f"chgrp_set_{channel_id}_Umumiy",
+        style="primary",
+    ))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="channels_menu", style="danger"))
+    return kb.as_markup()
+
+
+@admin_router.callback_query(F.data.startswith("chgrp_pick_"))
+async def chgrp_pick(call: types.CallbackQuery, state: FSMContext):
+    """News kanal uchun guruh tanlash menyusi."""
+    if not await is_admin(call.from_user.id):
+        return
+    channel_id = int(call.data.replace("chgrp_pick_", ""))
+
+    async with AsyncSessionLocal() as session:
+        ch = await session.get(SubscriptionChannel, channel_id)
+        groups = await get_news_channel_groups(session)
+
+    if not ch:
+        return await call.answer("❌ Kanal topilmadi!", show_alert=True)
+
+    current = ch.news_group or "Umumiy"
+    try:
+        await call.message.edit_text(
+            f"📂 <b>Guruh tanlash</b>\n\n"
+            f"📢 Kanal: <b>{esc(ch.channel_name)}</b>\n"
+            f"📁 Hozirgi guruh: <b>{current}</b>\n\n"
+            f"Guruhni tanlang yoki yangi nom kiriting:",
+            reply_markup=_news_group_kb(groups, channel_id),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            f"📂 Guruh tanlash — <b>{esc(ch.channel_name)}</b>",
+            reply_markup=_news_group_kb(groups, channel_id),
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data.startswith("chgrp_set_"))
+async def chgrp_set(call: types.CallbackQuery):
+    """Mavjud guruhdan birini tanlash."""
+    if not await is_admin(call.from_user.id):
+        return
+    # chgrp_set_{channel_id}_{group_name}
+    raw = call.data.replace("chgrp_set_", "")
+    parts = raw.split("_", 1)
+    channel_id = int(parts[0])
+    group_name = parts[1] if len(parts) > 1 else "Umumiy"
+
+    async with AsyncSessionLocal() as session:
+        ok = await set_channel_news_group(session, channel_id, group_name)
+        ch = await session.get(SubscriptionChannel, channel_id)
+
+    if not ok:
+        return await call.answer("❌ Saqlanmadi!", show_alert=True)
+
+    ch_name = ch.channel_name if ch else str(channel_id)
+    display = group_name if group_name != "Umumiy" else "Guruhsiz (Umumiy)"
+
+    try:
+        await call.message.edit_text(
+            f"✅ <b>Guruh belgilandi!</b>\n\n"
+            f"📢 <b>{esc(ch_name)}</b>\n"
+            f"📁 Guruh: <b>{display}</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+    await call.answer("✅ Saqlandi!")
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+
+
+@admin_router.callback_query(F.data.startswith("chgrp_new_"))
+async def chgrp_new_start(call: types.CallbackQuery, state: FSMContext):
+    """Yangi guruh nomi kiritish."""
+    if not await is_admin(call.from_user.id):
+        return
+    channel_id = int(call.data.replace("chgrp_new_", ""))
+    await state.set_state(AddChannel.waiting_news_group)
+    await state.update_data(grp_channel_id=channel_id)
+    await call.message.answer(
+        "✏️ <b>Yangi guruh nomini kiriting:</b>\n\n"
+        "<i>Masalan: Dorama, Anime, Kino, Serial</i>\n"
+        "Max 60 ta belgi",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@admin_router.message(AddChannel.waiting_news_group)
+async def chgrp_new_received(msg: Message, state: FSMContext):
+    """Yangi guruh nomini qabul qilish va saqlash."""
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+
+    group_name = (msg.text or "").strip()
+    if not group_name:
+        return await msg.answer("❌ Guruh nomi bo'sh bo'lmasin!")
+    if len(group_name) > 60:
+        return await msg.answer("❌ Guruh nomi 60 ta belgidan oshmasin!")
+
+    data = await state.get_data()
+    channel_id = data.get("grp_channel_id")
+    await state.clear()
+
+    async with AsyncSessionLocal() as session:
+        ok = await set_channel_news_group(session, channel_id, group_name)
+        ch = await session.get(SubscriptionChannel, channel_id)
+
+    ch_name = ch.channel_name if ch else str(channel_id)
+    if ok:
+        await msg.answer(
+            f"✅ <b>Guruh saqlandi!</b>\n\n"
+            f"📢 <b>{esc(ch_name)}</b>\n"
+            f"📁 Guruh: <b>{group_name}</b>",
+            parse_mode="HTML",
+            reply_markup=admin_main_kb,
+        )
+    else:
+        await msg.answer("❌ Kanal topilmadi!", reply_markup=admin_main_kb)
+
+
+@admin_router.callback_query(F.data.startswith("chgrp_set_group_"))
+async def chgrp_set_by_name(call: types.CallbackQuery, state: FSMContext):
+    """Kanal tanlash — guruh nomi orqali."""
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(AddChannel.waiting_set_group_channel_id)
+    group_name = call.data.replace("chgrp_set_group_", "")
+    await state.update_data(set_group_name=group_name)
+
+    async with AsyncSessionLocal() as session:
+        channels = await get_news_channels(session)
+
+    if not channels:
+        await state.clear()
+        return await call.answer("⚠️ News kanallar yo'q!", show_alert=True)
+
+    kb = InlineKeyboardBuilder()
+    for ch in channels:
+        current = ch.news_group or "Umumiy"
+        kb.row(InlineKeyboardButton(
+            text=f"📢 {ch.channel_name} [{current}]",
+            callback_data=f"chgrp_pick_{ch.id}",
+            style="success",
+        ))
+    kb.row(InlineKeyboardButton(text="❌ Bekor", callback_data="channels_menu", style="danger"))
+
+    try:
+        await call.message.edit_text(
+            f"📂 <b>News kanallarni guruhlab boshqarish</b>\n\n"
+            f"Kanalga bosing → guruhini o'zgartiring:",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            "📂 News kanal tanlang:",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "channels_news_groups")
+async def channels_news_groups_menu(call: types.CallbackQuery):
+    """News kanallarni guruhlar bo'yicha boshqarish menyusi."""
+    if not await is_admin(call.from_user.id):
+        return
+
+    async with AsyncSessionLocal() as session:
+        channels = await get_news_channels(session)
+        groups = await get_news_channel_groups(session)
+
+    if not channels:
+        return await call.answer("⚠️ News kanallar yo'q!", show_alert=True)
+
+    # Guruhlar bo'yicha ko'rsatish
+    lines = ["📂 <b>News kanallar guruhlari</b>\n"]
+    by_group: dict[str, list] = {}
+    for ch in channels:
+        g = ch.news_group or "Umumiy"
+        by_group.setdefault(g, []).append(ch)
+
+    for g, chs in sorted(by_group.items()):
+        lines.append(f"<b>{g}</b> ({len(chs)} ta):")
+        for ch in chs:
+            lines.append(f"  • {esc(ch.channel_name)}")
+        lines.append("")
+
+    kb = InlineKeyboardBuilder()
+    for ch in channels:
+        kb.row(InlineKeyboardButton(
+            text=f"✏️ {ch.channel_name}",
+            callback_data=f"chgrp_pick_{ch.id}",
+            style="primary",
+        ))
+    kb.row(InlineKeyboardButton(text="🔙 Orqaga", callback_data="channels_menu", style="primary"))
+
+    try:
+        await call.message.edit_text(
+            "\n".join(lines),
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer("\n".join(lines), reply_markup=kb.as_markup(), parse_mode="HTML")
+    await call.answer()
+
+
+
+# ─── News kanal qo'shishda guruh tanlash ─────────────────────────────────────
+
+
+@admin_router.callback_query(F.data.startswith("newsch_grp_"))
+async def newsch_grp_pick(call: types.CallbackQuery, state: FSMContext):
+    """News kanal qo'shishda guruh tanlov."""
+    if not await is_admin(call.from_user.id):
+        return
+
+    raw = call.data.replace("newsch_grp_", "")
+    data = await state.get_data()
+    owner_id = await _get_owner_ctx(call.from_user.id)
+
+    if raw == "new":
+        await call.message.answer(
+            "✏️ <b>Yangi guruh nomini kiriting:</b>\n<i>Masalan: Dorama, Anime, Kino</i>",
+            parse_mode="HTML",
+            reply_markup=cancel_kb,
+        )
+        await call.answer()
+        return
+
+    group_name = None if raw == "skip" else raw
+
+    await state.clear()
+    await _finalize_add_channel_with_group(
+        msg=call.message, data=data, group_name=group_name, owner_id=owner_id,
+    )
+    await call.answer()
+
+
+async def _finalize_add_channel_with_group(
+    msg,
+    data: dict,
+    group_name: str | None,
+    owner_id: int | None,
+) -> None:
+    """News kanalni guruh bilan birga saqlaydi."""
+    async with AsyncSessionLocal() as session:
+        ch, status = await add_channel(
+            session=session,
+            channel_name=data["channel_name"],
+            channel_url=data["channel_url"],
+            require_check=False,
+            is_news=True,
+            channel_id=data["channel_id"],
+            owner_id=owner_id,
+        )
+        if ch and group_name:
+            ch.news_group = group_name
+            await session.commit()
+
+    try:
+        from middlewares.subscription import invalidate_active_channels_cache
+        invalidate_active_channels_cache()
+    except Exception:
+        pass
+
+    grp_line = f"\n📂 Guruh: <b>{esc(group_name)}</b>" if group_name else "\n📂 Guruh: <b>Umumiy</b>"
+    await msg.answer(
+        f"✅ <b>News kanal qo'shildi!</b>\n\n"
+        f"📰 <b>{esc(data['channel_name'])}</b>\n"
+        f"🔗 {data['channel_url']}"
+        f"{grp_line}",
+        parse_mode="HTML",
+        reply_markup=admin_main_kb,
+    )
