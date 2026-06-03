@@ -329,6 +329,21 @@ async def _send_or_edit_video(
         if ad:
             caption += ad
 
+    # Thumbnail bo'lsa — doim yangi video (edit_media thumbnail qo'llab-quvvatlamaydi)
+    if thumb:
+        if is_pro:
+            await call.message.answer_video(
+                video=ep_file_id, caption=caption, reply_markup=kb,
+                parse_mode="HTML", thumbnail=thumb,
+            )
+        else:
+            await call.message.answer_video(
+                video=ep_file_id, caption=caption, reply_markup=kb,
+                parse_mode="HTML", protect_content=True, thumbnail=thumb,
+            )
+        return
+
+    # Thumbnail yo'q — edit_media (xabar o'rnida turadi)
     if is_pro:
         try:
             await call.message.edit_media(
@@ -339,8 +354,7 @@ async def _send_or_edit_video(
         except Exception:
             pass
         await call.message.answer_video(
-            video=ep_file_id, caption=caption, reply_markup=kb,
-            parse_mode="HTML", thumbnail=thumb,
+            video=ep_file_id, caption=caption, reply_markup=kb, parse_mode="HTML",
         )
     else:
         try:
@@ -353,7 +367,7 @@ async def _send_or_edit_video(
             pass
         await call.message.answer_video(
             video=ep_file_id, caption=caption, reply_markup=kb,
-            parse_mode="HTML", protect_content=True, thumbnail=thumb,
+            parse_mode="HTML", protect_content=True,
         )
 
 
