@@ -41,6 +41,11 @@ class AddChannel(StatesGroup):
     # keyin agar bitta bo'lsa — region tanlash.
     waiting_region_scope = State()
     waiting_region_pick = State()
+    # News kanal uchun: guruh nomi (masalan "Dorama", "Anime")
+    waiting_news_group = State()
+    # Mavjud news kanalga guruh belgilash
+    waiting_set_group_channel_id = State()
+    waiting_set_group_name = State()
 
 
 # 🔹 Anime tahrirlash

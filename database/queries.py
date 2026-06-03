@@ -198,6 +198,65 @@ async def get_news_channels(session: AsyncSession) -> list:
     return result.scalars().all()
 
 
+async def get_news_channel_groups(session: AsyncSession) -> list[str]:
+    """
+    Barcha news kanallar guruh nomlarini qaytaradi.
+    NULL guruhlar 'Umumiy' sifatida ko'rsatiladi.
+    Takrorlanmagan, tartiblangan ro'yxat.
+    """
+    result = await session.execute(
+        select(SubscriptionChannel.news_group)
+        .where(SubscriptionChannel.is_news == True, SubscriptionChannel.is_active == True)
+        .distinct()
+    )
+    groups = []
+    for row in result.scalars().all():
+        name = row if row else "Umumiy"
+        if name not in groups:
+            groups.append(name)
+    return sorted(groups)
+
+
+async def get_news_channels_by_group(session: AsyncSession, group_name: str) -> list:
+    """
+    Guruh nomiga mos news kanallarni qaytaradi.
+    group_name = 'Umumiy' bo'lsa — news_group IS NULL kanallar qaytariladi.
+    """
+    if group_name == "Umumiy":
+        result = await session.execute(
+            select(SubscriptionChannel).where(
+                SubscriptionChannel.is_news == True,
+                SubscriptionChannel.is_active == True,
+                SubscriptionChannel.news_group.is_(None),
+            )
+        )
+    else:
+        result = await session.execute(
+            select(SubscriptionChannel).where(
+                SubscriptionChannel.is_news == True,
+                SubscriptionChannel.is_active == True,
+                SubscriptionChannel.news_group == group_name,
+            )
+        )
+    return result.scalars().all()
+
+
+async def set_channel_news_group(
+    session: AsyncSession, channel_id: int, group_name: str | None
+) -> bool:
+    """
+    Kanal uchun news guruh nomini o'rnatadi.
+    group_name = None → guruhsiz (Umumiy).
+    channel_id — SubscriptionChannel.id (telegram_id emas!).
+    """
+    ch = await session.get(SubscriptionChannel, channel_id)
+    if not ch:
+        return False
+    ch.news_group = group_name if group_name != "Umumiy" else None
+    await session.commit()
+    return True
+
+
 async def add_channel(
     session: AsyncSession,
     channel_name: str,

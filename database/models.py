@@ -167,6 +167,10 @@ class SubscriptionChannel(Base):
     # qo'llaniladi). Hamkor telegram_id'si bo'lsa — bu kanal faqat shu
     # hamkor qo'shgan kontent ochilganida tekshiriladi.
     owner_id = Column(BigInteger, nullable=True, index=True)
+    # News kanallar guruhi — admin o'zi belgilaydi.
+    # Masalan: "Dorama", "Anime", "Kino", "Umumiy"
+    # NULL = guruhsiz (eski kanallar)
+    news_group = Column(String(60), nullable=True)
 
 
 class AnimeSubscription(Base):
