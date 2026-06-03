@@ -166,44 +166,48 @@ async def generate_episode_thumbnail(
     poster_file_id: str | None = None,
 ) -> io.BytesIO | None:
     """
-    Qism uchun thumbnail generatsiya qiladi.
-
-    Tanlash tartibi:
-    1. Vaqtga qarab: kecha → thumbnail_night, kunduz → thumbnail_day
-    2. Mos rasm yo'q bo'lsa → poster_file_id
-    3. Bari yo'q bo'lsa → None (Telegram o'z previewini ishlatadi)
-
-    Returns:
-        io.BytesIO: send_video(..., thumbnail=...) ga beriladigan bytes
-        None: thumbnail generatsiya qilib bo'lmasa
+    Global BotSetting dan thumbnail oladi — barcha anime uchun bir xil.
+    Agar global rasm bo'lmasa → poster → None.
     """
-    # Vaqtga qarab mos file_id tanlash
     night = is_night_time()
-    if night and thumbnail_night_file_id:
-        source_file_id = thumbnail_night_file_id
-        logger.debug("thumbnail_gen: kechki rasm ishlatildi (ep=%s)", episode)
-    elif not night and thumbnail_day_file_id:
-        source_file_id = thumbnail_day_file_id
-        logger.debug("thumbnail_gen: kunduzgi rasm ishlatildi (ep=%s)", episode)
+
+    # 1. Global thumbnail — BotSetting da saqlangan
+    global_day = None
+    global_night = None
+    try:
+        from database.engine import AsyncSessionLocal
+        from database.queries import get_global_thumbnail
+        async with AsyncSessionLocal() as session:
+            thumbs = await get_global_thumbnail(session)
+            global_day = thumbs.get("day")
+            global_night = thumbs.get("night")
+        logger.debug("thumbnail_gen: global day=%s night=%s", bool(global_day), bool(global_night))
+    except Exception as e:
+        logger.warning("thumbnail_gen: global thumbnail olishda xato: %s", e)
+
+    # Tanlash: kecha → kunduz → poster → None
+    if night and global_night:
+        source_file_id = global_night
+    elif global_day:
+        source_file_id = global_day
+    elif global_night:
+        source_file_id = global_night
     elif poster_file_id:
         source_file_id = poster_file_id
-        logger.debug("thumbnail_gen: poster fallback (ep=%s)", episode)
     else:
         logger.debug("thumbnail_gen: hech qanday rasm yo'q (ep=%s)", episode)
         return None
 
-    # Rasmni yuklab olish
     photo_bytes = await _download_photo_bytes(bot, source_file_id)
     if not photo_bytes:
+        logger.warning("thumbnail_gen: rasm yuklab olinmadi file_id=%s", source_file_id)
         return None
 
-    # Thumbnail generatsiya (sinxron Pillow kodi, lekin kichik rasm — tez)
     import asyncio
     loop = asyncio.get_event_loop()
     thumb_bytes = await loop.run_in_executor(
         None, generate_thumbnail_sync, photo_bytes, episode
     )
-
     if not thumb_bytes:
         return None
 
