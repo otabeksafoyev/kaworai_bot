@@ -29,6 +29,8 @@ class AddAnime(StatesGroup):
     # Thumbnail rasmlar — kunduzgi va kechgi
     waiting_thumbnail_day = State()
     waiting_thumbnail_night = State()
+    # Global thumbnail sozlash
+    waiting_global_thumb_photo = State()
 
 
 # 🔹 Kanal qo‘shish

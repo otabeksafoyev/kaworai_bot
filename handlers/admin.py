@@ -25,8 +25,10 @@ from database.queries import (
     add_channel,
     add_partner,
     count_owner_animes,
+    delete_global_thumbnail,
     get_all_channels,
     get_all_partners,
+    get_global_thumbnail,
     get_news_channel_groups,
     get_news_channels,
     get_news_channels_by_group,
@@ -34,6 +36,7 @@ from database.queries import (
     remove_channel,
     remove_partner,
     set_channel_news_group,
+    set_global_thumbnail,
     toggle_channel,
 )
 from handlers.genres import GENRES, normalize_genre
@@ -183,6 +186,7 @@ ADMIN_REPLY_BUTTONS: set[str] = {
     "📣 Reklamalar",
     "🌍 Regionlar",
     "📝 Pro yozuvi",
+    "🖼 Thumbnail sozlash",
     "🔙 Chiqish",
     "🚫 Bekor qilish",
 }
@@ -792,7 +796,7 @@ admin_main_kb = ReplyKeyboardMarkup(
         [KeyboardButton(text="🗄 Baza zaxira"), KeyboardButton(text="📊 Statistika")],
         [KeyboardButton(text="🏆 Top 18"), KeyboardButton(text="📣 Reklamalar")],
         [KeyboardButton(text="🌍 Regionlar"), KeyboardButton(text="📝 Pro yozuvi")],
-        [KeyboardButton(text="🔙 Chiqish")],
+        [KeyboardButton(text="🖼 Thumbnail sozlash"), KeyboardButton(text="🔙 Chiqish")],
     ],
     resize_keyboard=True,
 )
@@ -7235,3 +7239,173 @@ async def _finalize_add_channel_with_group(
         parse_mode="HTML",
         reply_markup=admin_main_kb,
     )
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  GLOBAL THUMBNAIL SOZLASH
+# ═══════════════════════════════════════════════════════════
+
+
+def _global_thumb_menu_kb(has_day: bool, has_night: bool) -> InlineKeyboardMarkup:
+    """Global thumbnail boshqaruv menyusi."""
+    kb = InlineKeyboardBuilder()
+    day_label = "☀️ Kunduzgi rasm ✅" if has_day else "☀️ Kunduzgi rasm qo'shish"
+    night_label = "🌙 Kechki rasm ✅" if has_night else "🌙 Kechki rasm qo'shish"
+    kb.row(InlineKeyboardButton(text=day_label, callback_data="gthumb_set_day", style="success"))
+    kb.row(InlineKeyboardButton(text=night_label, callback_data="gthumb_set_night", style="success"))
+    if has_day or has_night:
+        kb.row(InlineKeyboardButton(text="🗑 Kunduzgini o'chirish", callback_data="gthumb_del_day", style="danger"))
+        kb.row(InlineKeyboardButton(text="🗑 Kechkini o'chirish", callback_data="gthumb_del_night", style="danger"))
+        kb.row(InlineKeyboardButton(text="🗑 Ikkalasini o'chirish", callback_data="gthumb_del_both", style="danger"))
+    kb.row(InlineKeyboardButton(text="❌ Yopish", callback_data="gthumb_close", style="primary"))
+    return kb.as_markup()
+
+
+@admin_router.message(F.text == "🖼 Thumbnail sozlash")
+async def global_thumb_menu(msg: Message):
+    """Global thumbnail boshqaruv menyusi."""
+    if not await is_admin(msg.from_user.id):
+        return
+    async with AsyncSessionLocal() as session:
+        thumbs = await get_global_thumbnail(session)
+    has_day = bool(thumbs.get("day"))
+    has_night = bool(thumbs.get("night"))
+
+    status_lines = []
+    if has_day:
+        status_lines.append("☀️ Kunduzgi rasm: <b>✅ Qo'shilgan</b>")
+    else:
+        status_lines.append("☀️ Kunduzgi rasm: <b>❌ Qo'shilmagan</b>")
+    if has_night:
+        status_lines.append("🌙 Kechki rasm: <b>✅ Qo'shilgan</b>")
+    else:
+        status_lines.append("🌙 Kechki rasm: <b>❌ Qo'shilmagan</b>")
+
+    await msg.answer(
+        "🖼 <b>Global Thumbnail Sozlash</b>\n\n"
+        "Bu rasmlar <b>barcha animelardagi barcha qismlar</b> uchun\n"
+        "video thumbnail sifatida ishlatiladi.\n\n"
+        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        + "\n".join(status_lines) + "\n\n"
+        "<i>☀️ Kunduz: 05:00–22:00\n"
+        "🌙 Kecha: 22:00–05:00</i>",
+        reply_markup=_global_thumb_menu_kb(has_day, has_night),
+        parse_mode="HTML",
+    )
+
+
+@admin_router.callback_query(F.data.startswith("gthumb_set_"))
+async def gthumb_set_start(call: types.CallbackQuery, state: FSMContext):
+    """Kunduzgi yoki kechki rasm qo'shish."""
+    if not await is_admin(call.from_user.id):
+        return
+    which = call.data.replace("gthumb_set_", "")  # "day" | "night"
+    await state.set_state(AddAnime.waiting_global_thumb_photo)
+    await state.update_data(gthumb_which=which)
+    label = "☀️ Kunduzgi" if which == "day" else "🌙 Kechki"
+    time_range = "05:00–22:00" if which == "day" else "22:00–05:00"
+    try:
+        await call.message.edit_text(
+            f"🖼 <b>{label} thumbnail rasm</b>\n\n"
+            f"Bu rasm soat <b>{time_range}</b> oralig'ida\n"
+            f"barcha qismlarning video thumbnail sifatida chiqadi.\n\n"
+            f"📐 Tavsiya: <b>kengroq rasm (16:9 yoki landscape)</b>\n"
+            f"chunki video thumbnaillar odatda shu formatda bo'ladi.\n\n"
+            f"Rasmni yuboring 👇",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="❌ Bekor", callback_data="gthumb_close", style="danger")]]
+            ),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            f"🖼 {label} rasm yuboring:",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+@admin_router.message(AddAnime.waiting_global_thumb_photo, F.photo)
+async def gthumb_photo_received(msg: Message, state: FSMContext):
+    """Global thumbnail rasmini qabul qilish va saqlash."""
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+
+    data = await state.get_data()
+    which = data.get("gthumb_which", "day")
+    await state.clear()
+
+    photo = msg.photo[-1]
+    file_id = photo.file_id
+    w, h = photo.width, photo.height
+
+    async with AsyncSessionLocal() as session:
+        if which == "day":
+            await set_global_thumbnail(session, day_file_id=file_id)
+        else:
+            await set_global_thumbnail(session, night_file_id=file_id)
+        thumbs = await get_global_thumbnail(session)
+
+    has_day = bool(thumbs.get("day"))
+    has_night = bool(thumbs.get("night"))
+    label = "☀️ Kunduzgi" if which == "day" else "🌙 Kechki"
+
+    await msg.answer(
+        f"✅ <b>{label} thumbnail saqlandi!</b>\n\n"
+        f"📐 O'lcham: <b>{w}×{h}</b>\n\n"
+        f"<i>Endi bu rasm barcha qismlarda avtomatik\n"
+        f"thumbnail sifatida ishlatiladi.</i>",
+        reply_markup=_global_thumb_menu_kb(has_day, has_night),
+        parse_mode="HTML",
+    )
+
+
+@admin_router.callback_query(F.data.startswith("gthumb_del_"))
+async def gthumb_delete(call: types.CallbackQuery):
+    """Global thumbnail o'chirish."""
+    if not await is_admin(call.from_user.id):
+        return
+    which = call.data.replace("gthumb_del_", "")  # "day" | "night" | "both"
+
+    async with AsyncSessionLocal() as session:
+        await delete_global_thumbnail(session, which=which)
+        thumbs = await get_global_thumbnail(session)
+
+    has_day = bool(thumbs.get("day"))
+    has_night = bool(thumbs.get("night"))
+
+    labels = {"day": "☀️ Kunduzgi", "night": "🌙 Kechki", "both": "Ikkalasi"}
+    label = labels.get(which, "")
+
+    try:
+        await call.message.edit_text(
+            f"🗑 <b>{label} thumbnail o'chirildi!</b>\n\n"
+            + ("☀️ Kunduzgi: ✅\n" if has_day else "☀️ Kunduzgi: ❌\n")
+            + ("🌙 Kechki: ✅" if has_night else "🌙 Kechki: ❌"),
+            reply_markup=_global_thumb_menu_kb(has_day, has_night),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await call.message.answer(
+            f"✅ {label} o'chirildi.",
+            reply_markup=admin_main_kb,
+            parse_mode="HTML",
+        )
+    await call.answer("✅ O'chirildi!")
+
+
+@admin_router.callback_query(F.data == "gthumb_close")
+async def gthumb_close(call: types.CallbackQuery, state: FSMContext):
+    """Global thumbnail menyusini yopish."""
+    await state.clear()
+    try:
+        await call.message.edit_text("✅ Yopildi.")
+    except Exception:
+        pass
+    await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
