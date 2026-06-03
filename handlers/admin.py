@@ -6101,6 +6101,9 @@ async def channel_manager(msg: Message):
         InlineKeyboardButton(text="➕ Obuna kanali", callback_data="add_channel", style="primary"),
         InlineKeyboardButton(text="📰 News kanal", callback_data="add_news_channel", style="primary"),
     )
+    kb.row(
+        InlineKeyboardButton(text="📂 News guruhlar", callback_data="channels_news_groups", style="success"),
+    )
     await msg.answer(text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
 
@@ -6248,18 +6251,27 @@ async def save_ch_id(msg: Message, state: FSMContext):
     data = await state.get_data()
     is_news = data.get("is_news_channel", False)
     owner_id = await _get_owner_ctx(msg.from_user.id)
-    # News kanalda region cheklovi yo'q — darrov qo'shamiz.
+    # News kanalda region cheklovi yo'q — guruh so'raymiz keyin qo'shamiz.
     if is_news:
-        await state.clear()
-        return await _finalize_add_channel(
-            msg=msg,
-            channel_name=data["channel_name"],
-            channel_url=data["channel_url"],
-            channel_id=channel_id,
-            is_news=True,
-            region=None,
-            owner_id=owner_id,
+        await state.update_data(channel_id=channel_id)
+        await state.set_state(AddChannel.waiting_news_group)
+        # Mavjud guruhlarni ko'rsatamiz
+        async with AsyncSessionLocal() as session:
+            groups = await get_news_channel_groups(session)
+        kb = InlineKeyboardBuilder()
+        for g in groups:
+            kb.row(InlineKeyboardButton(text=f"📂 {g}", callback_data=f"newsch_grp_{g[:30]}", style="success"))
+        kb.row(InlineKeyboardButton(text="➕ Yangi guruh nomi yozing", callback_data="newsch_grp_new", style="primary"))
+        kb.row(InlineKeyboardButton(text="⏭ Guruhsiz qo'shish", callback_data="newsch_grp_skip", style="primary"))
+        await msg.answer(
+            "📂 <b>Kanal guruhini tanlang:</b>\n\n"
+            "<i>Masalan: Dorama, Anime, Kino\n"
+            "Guruh tanlansa post yuborishda o'sha guruh ichidagi\n"
+            "barcha kanallarga bir vaqtda yuborish mumkin bo'ladi.</i>",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML",
         )
+        return
     # Majburiy kanal: region scope so'raymiz.
     await state.update_data(channel_id=channel_id)
     await state.set_state(AddChannel.waiting_region_scope)
@@ -7121,3 +7133,73 @@ async def channels_news_groups_menu(call: types.CallbackQuery):
     except Exception:
         await call.message.answer("\n".join(lines), reply_markup=kb.as_markup(), parse_mode="HTML")
     await call.answer()
+
+
+
+# ─── News kanal qo'shishda guruh tanlash ─────────────────────────────────────
+
+
+@admin_router.callback_query(F.data.startswith("newsch_grp_"))
+async def newsch_grp_pick(call: types.CallbackQuery, state: FSMContext):
+    """News kanal qo'shishda guruh tanlov."""
+    if not await is_admin(call.from_user.id):
+        return
+
+    raw = call.data.replace("newsch_grp_", "")
+    data = await state.get_data()
+    owner_id = await _get_owner_ctx(call.from_user.id)
+
+    if raw == "new":
+        await call.message.answer(
+            "✏️ <b>Yangi guruh nomini kiriting:</b>\n<i>Masalan: Dorama, Anime, Kino</i>",
+            parse_mode="HTML",
+            reply_markup=cancel_kb,
+        )
+        await call.answer()
+        return
+
+    group_name = None if raw == "skip" else raw
+
+    await state.clear()
+    await _finalize_add_channel_with_group(
+        msg=call.message, data=data, group_name=group_name, owner_id=owner_id,
+    )
+    await call.answer()
+
+
+async def _finalize_add_channel_with_group(
+    msg,
+    data: dict,
+    group_name: str | None,
+    owner_id: int | None,
+) -> None:
+    """News kanalni guruh bilan birga saqlaydi."""
+    async with AsyncSessionLocal() as session:
+        ch, status = await add_channel(
+            session=session,
+            channel_name=data["channel_name"],
+            channel_url=data["channel_url"],
+            require_check=False,
+            is_news=True,
+            channel_id=data["channel_id"],
+            owner_id=owner_id,
+        )
+        if ch and group_name:
+            ch.news_group = group_name
+            await session.commit()
+
+    try:
+        from middlewares.subscription import invalidate_active_channels_cache
+        invalidate_active_channels_cache()
+    except Exception:
+        pass
+
+    grp_line = f"\n📂 Guruh: <b>{esc(group_name)}</b>" if group_name else "\n📂 Guruh: <b>Umumiy</b>"
+    await msg.answer(
+        f"✅ <b>News kanal qo'shildi!</b>\n\n"
+        f"📰 <b>{esc(data['channel_name'])}</b>\n"
+        f"🔗 {data['channel_url']}"
+        f"{grp_line}",
+        parse_mode="HTML",
+        reply_markup=admin_main_kb,
+    )
