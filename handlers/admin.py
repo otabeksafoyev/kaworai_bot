@@ -7276,15 +7276,15 @@ async def global_thumb_menu(msg: Message):
     if has_day:
         status_lines.append("☀️ Kunduzgi rasm: <b>✅ Qo'shilgan</b>")
     else:
-        status_lines.append("☀️ Kunduzgi rasm: <b>❌ Qo'shilmagan</b>")
+        status_lines.append("☀️ Kunduzgi rasm: <b>❌ Yo'q</b>")
     if has_night:
         status_lines.append("🌙 Kechki rasm: <b>✅ Qo'shilgan</b>")
     else:
-        status_lines.append("🌙 Kechki rasm: <b>❌ Qo'shilmagan</b>")
+        status_lines.append("🌙 Kechki rasm: <b>❌ Yo'q</b>")
 
     await msg.answer(
         "🖼 <b>Global Thumbnail Sozlash</b>\n\n"
-        "Bu rasmlar <b>barcha animelardagi barcha qismlar</b> uchun\n"
+        "Bu rasmlar <b>barcha qismlar</b> uchun\n"
         "video thumbnail sifatida ishlatiladi.\n\n"
         "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
         + "\n".join(status_lines) + "\n\n"
@@ -7293,6 +7293,20 @@ async def global_thumb_menu(msg: Message):
         reply_markup=_global_thumb_menu_kb(has_day, has_night),
         parse_mode="HTML",
     )
+
+    # Mavjud rasmlarni ko'rsatish
+    if has_day:
+        await msg.answer_photo(
+            photo=thumbs["day"],
+            caption="☀️ <b>Hozirgi kunduzgi thumbnail</b>",
+            parse_mode="HTML",
+        )
+    if has_night:
+        await msg.answer_photo(
+            photo=thumbs["night"],
+            caption="🌙 <b>Hozirgi kechki thumbnail</b>",
+            parse_mode="HTML",
+        )
 
 
 @admin_router.callback_query(F.data.startswith("gthumb_set_"))
