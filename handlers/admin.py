@@ -7255,6 +7255,7 @@ def _global_thumb_menu_kb(has_day: bool, has_night: bool) -> InlineKeyboardMarku
     kb.row(InlineKeyboardButton(text=day_label, callback_data="gthumb_set_day", style="success"))
     kb.row(InlineKeyboardButton(text=night_label, callback_data="gthumb_set_night", style="success"))
     if has_day or has_night:
+        kb.row(InlineKeyboardButton(text="🔍 Thumbnail test (ID kiriting)", callback_data="gthumb_test", style="primary"))
         kb.row(InlineKeyboardButton(text="🗑 Kunduzgini o'chirish", callback_data="gthumb_del_day", style="danger"))
         kb.row(InlineKeyboardButton(text="🗑 Kechkini o'chirish", callback_data="gthumb_del_night", style="danger"))
         kb.row(InlineKeyboardButton(text="🗑 Ikkalasini o'chirish", callback_data="gthumb_del_both", style="danger"))
@@ -7422,4 +7423,147 @@ async def gthumb_close(call: types.CallbackQuery, state: FSMContext):
     except Exception:
         pass
     await call.message.answer("Panel:", reply_markup=admin_main_kb)
+    await call.answer()
+
+
+
+# ─── Thumbnail test handler ───────────────────────────────────────────────────
+
+
+@admin_router.callback_query(F.data == "gthumb_test")
+async def gthumb_test_start(call: types.CallbackQuery, state: FSMContext):
+    """Thumbnail test — ID kiriting, 1-qismni thumbnail bilan yuboradi."""
+    if not await is_admin(call.from_user.id):
+        return
+    await state.set_state(AddAnime.waiting_thumb_test_id)
+    try:
+        await call.message.edit_text(
+            "🔍 <b>Thumbnail test</b>\n\n"
+            "Kontent ID sini kiriting:\n"
+            "<i>Bot 1-qismni thumbnail bilan sizga yuboradi</i>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="❌ Bekor", callback_data="gthumb_test_cancel", style="danger")]]
+            ),
+        )
+    except Exception:
+        await call.message.answer(
+            "🔍 Kontent ID sini kiriting:",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+@admin_router.callback_query(F.data == "gthumb_test_cancel")
+async def gthumb_test_cancel(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        thumbs = await get_global_thumbnail(session)
+    has_day = bool(thumbs.get("day"))
+    has_night = bool(thumbs.get("night"))
+    try:
+        await call.message.edit_text(
+            "🖼 <b>Global Thumbnail Sozlash</b>",
+            reply_markup=_global_thumb_menu_kb(has_day, has_night),
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+    await call.answer()
+
+
+@admin_router.message(AddAnime.waiting_thumb_test_id)
+async def gthumb_test_id_received(msg: Message, state: FSMContext):
+    """ID qabul qilib, 1-qismni thumbnail bilan yuboradi."""
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == "🚫 Bekor qilish":
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+
+    if not msg.text or not msg.text.strip().isdigit():
+        return await msg.answer("❌ Faqat raqam kiriting!")
+
+    anime_id = int(msg.text.strip())
+    await state.clear()
+
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+        if not anime:
+            return await msg.answer(f"❌ ID {anime_id} topilmadi!", reply_markup=admin_main_kb)
+
+        from sqlalchemy import select as _select
+        from database.models import Series
+        result = await session.execute(
+            _select(Series).where(Series.anime_id == anime_id).order_by(Series.episode).limit(1)
+        )
+        ep = result.scalar_one_or_none()
+
+    if not ep:
+        return await msg.answer(
+            f"❌ <b>{esc(anime.title)}</b> da hali qismlar yo'q!",
+            parse_mode="HTML",
+            reply_markup=admin_main_kb,
+        )
+
+    # Thumbnail generatsiya
+    await msg.answer(f"⏳ <b>{esc(anime.title)}</b> — {ep.episode}-qism thumbnail generatsiya qilinmoqda...", parse_mode="HTML")
+
+    try:
+        from utils.thumbnail_gen import generate_episode_thumbnail
+        thumb = await generate_episode_thumbnail(
+            bot=msg.bot,
+            anime_id=anime_id,
+            episode=ep.episode,
+            thumbnail_day_file_id=getattr(anime, "thumbnail_day_file_id", None),
+            thumbnail_night_file_id=getattr(anime, "thumbnail_night_file_id", None),
+            poster_file_id=getattr(anime, "poster_file_id", None),
+        )
+    except Exception as e:
+        logger.error("gthumb_test: xato: %s", e, exc_info=True)
+        thumb = None
+
+    from aiogram.types import InlineKeyboardMarkup as IKM, InlineKeyboardButton as IKB
+    from aiogram.utils.keyboard import InlineKeyboardBuilder as IKB2
+    kb = IKB2()
+    kb.row(IKB(text="🖼 Thumbnail sozlash", callback_data="gthumb_back", style="primary"))
+
+    if thumb:
+        await msg.answer_video(
+            video=ep.file_id,
+            caption=(
+                f"✅ <b>Thumbnail ishlayapti!</b>\n\n"
+                f"🎬 {esc(anime.title)}\n"
+                f"🎞 {ep.episode}-qism\n"
+                f"📐 Bu thumbnailni foydalanuvchi ham shunday ko'radi"
+            ),
+            thumbnail=thumb,
+            parse_mode="HTML",
+            reply_markup=kb.as_markup(),
+        )
+    else:
+        await msg.answer(
+            f"❌ <b>Thumbnail ishlamadi!</b>\n\n"
+            f"🎬 {esc(anime.title)}\n\n"
+            f"Sabab: 🖼 Thumbnail sozlash da rasm yo'q yoki\n"
+            f"Pillow o'rnatilmagan.\n\n"
+            f"Railway logidan tekshiring: <code>thumbnail_gen:</code>",
+            parse_mode="HTML",
+            reply_markup=kb.as_markup(),
+        )
+
+
+@admin_router.callback_query(F.data == "gthumb_back")
+async def gthumb_back(call: types.CallbackQuery):
+    """Thumbnail sozlash menyusiga qaytish."""
+    async with AsyncSessionLocal() as session:
+        thumbs = await get_global_thumbnail(session)
+    has_day = bool(thumbs.get("day"))
+    has_night = bool(thumbs.get("night"))
+    await call.message.answer(
+        "🖼 <b>Global Thumbnail Sozlash</b>",
+        reply_markup=_global_thumb_menu_kb(has_day, has_night),
+        parse_mode="HTML",
+    )
     await call.answer()
