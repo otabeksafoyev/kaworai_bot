@@ -7539,6 +7539,7 @@ async def gthumb_test_id_received(msg: Message, state: FSMContext):
                 f"📐 Bu thumbnailni foydalanuvchi ham shunday ko'radi"
             ),
             thumbnail=thumb,
+            supports_streaming=True,
             parse_mode="HTML",
             reply_markup=kb.as_markup(),
         )
