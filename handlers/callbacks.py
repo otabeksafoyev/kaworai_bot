@@ -291,6 +291,49 @@ def _episodes_kb(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+async def _send_sleep_alert(call: CallbackQuery, text: str, anime=None) -> None:
+    """
+    Uxlash/pauza eslatmasini thumbnail bilan yuboradi.
+    Global thumbnail (kunduz/kecha) ishlatiladi.
+    Thumbnail yo'q bo'lsa — faqat matn yuboriladi.
+    """
+    from aiogram.types import BufferedInputFile
+    from utils.sleep_reminder import is_night_time
+    from database.queries import get_global_thumbnail
+
+    thumb = None
+    try:
+        async with AsyncSessionLocal() as session:
+            thumbs = await get_global_thumbnail(session)
+        night = is_night_time()
+        file_id = thumbs.get("night") if night else thumbs.get("day")
+        if not file_id:
+            file_id = thumbs.get("day") or thumbs.get("night")
+
+        if file_id:
+            photo_bytes = None
+            try:
+                file = await call.bot.get_file(file_id)
+                bio = await call.bot.download_file(file.file_path)
+                photo_bytes = bio.read() if hasattr(bio, "read") else bytes(bio)
+            except Exception:
+                pass
+
+            if photo_bytes:
+                thumb = BufferedInputFile(photo_bytes, filename="sleep.jpg")
+    except Exception:
+        pass
+
+    if thumb:
+        await call.message.answer_photo(
+            photo=thumb,
+            caption=text,
+            parse_mode="HTML",
+        )
+    else:
+        await call.message.answer(text, parse_mode="HTML")
+
+
 # ── Video yuborish yordamchi ─────────────────────────────────
 async def _send_or_edit_video(
     call: CallbackQuery,
@@ -464,10 +507,15 @@ async def watch_start(call: CallbackQuery):
     await _send_or_edit_video(call, ep.file_id, caption, kb, is_pro, anime=anime, episode=ep.episode)
     await call.answer()
 
-
-# ═══════════════════════════════════════════════════════════
-#  EPISODE — qism navigatsiyasi
-# ═══════════════════════════════════════════════════════════
+    from utils.sleep_reminder import record_episode_view
+    genres = list(anime.genres or []) if anime else []
+    moods = list(anime.mood or []) if anime else []
+    alert = record_episode_view(user_id, anime_id=anime_id, genres=genres, moods=moods)
+    if alert:
+        try:
+            await _send_sleep_alert(call, alert, anime)
+        except Exception:
+            pass
 
 
 @callback_router.callback_query(F.data.startswith("ep_"))
@@ -515,10 +563,12 @@ async def show_episode(call: CallbackQuery):
 
     from utils.sleep_reminder import record_episode_view
 
-    alert = record_episode_view(user_id)
+    genres = list(anime.genres or []) if anime else []
+    moods = list(anime.mood or []) if anime else []
+    alert = record_episode_view(user_id, anime_id=anime_id, genres=genres, moods=moods)
     if alert:
         try:
-            await call.message.answer(alert, parse_mode="HTML")
+            await _send_sleep_alert(call, alert, anime)
         except Exception:
             pass
 
