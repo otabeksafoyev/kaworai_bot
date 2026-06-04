@@ -31,6 +31,8 @@ class AddAnime(StatesGroup):
     waiting_thumbnail_night = State()
     # Global thumbnail sozlash
     waiting_global_thumb_photo = State()
+    # Thumbnail test — ID kiritib qism thumbnail ni ko'rish
+    waiting_thumb_test_id = State()
 
 
 # 🔹 Kanal qo‘shish
