@@ -178,8 +178,9 @@ async def generate_episode_thumbnail(
         None: thumbnail generatsiya qilib bo'lmasa
     """
     night = is_night_time()
+    logger.info("thumbnail_gen: start ep=%s night=%s", episode, night)
 
-    # Global thumbnail — BotSetting dan olamiz (anime bo'yicha emas)
+    # Global thumbnail — BotSetting dan olamiz
     global_day = None
     global_night = None
     try:
@@ -189,37 +190,40 @@ async def generate_episode_thumbnail(
             thumbs = await get_global_thumbnail(session)
             global_day = thumbs.get("day")
             global_night = thumbs.get("night")
+        logger.info("thumbnail_gen: DB dan olindi — day=%s night=%s", bool(global_day), bool(global_night))
     except Exception as e:
-        logger.warning("thumbnail_gen: global thumbnail olishda xato: %s", e)
+        logger.warning("thumbnail_gen: DB xato: %s", e)
 
-    # Tanlash tartibi: global kecha → global kunduz → poster → None
+    # Tanlash tartibi
+    source_file_id = None
     if night and global_night:
         source_file_id = global_night
-        logger.debug("thumbnail_gen: global kechki rasm (ep=%s)", episode)
+        logger.info("thumbnail_gen: kechki rasm tanlandi ep=%s", episode)
     elif not night and global_day:
         source_file_id = global_day
-        logger.debug("thumbnail_gen: global kunduzgi rasm (ep=%s)", episode)
+        logger.info("thumbnail_gen: kunduzgi rasm tanlandi ep=%s", episode)
     elif global_day:
-        # Kecha uchun rasm yo'q — kunduzgini ishlatamiz
         source_file_id = global_day
-        logger.debug("thumbnail_gen: global kunduzgi (fallback) rasm (ep=%s)", episode)
+        logger.info("thumbnail_gen: kunduzgi fallback ep=%s", episode)
     elif global_night:
-        # Kunduz uchun rasm yo'q — kechkini ishlatamiz
         source_file_id = global_night
-        logger.debug("thumbnail_gen: global kechki (fallback) rasm (ep=%s)", episode)
+        logger.info("thumbnail_gen: kechki fallback ep=%s", episode)
     elif poster_file_id:
         source_file_id = poster_file_id
-        logger.debug("thumbnail_gen: poster fallback (ep=%s)", episode)
+        logger.info("thumbnail_gen: poster fallback ep=%s", episode)
     else:
-        logger.debug("thumbnail_gen: hech qanday rasm yo'q (ep=%s)", episode)
+        logger.info("thumbnail_gen: hech qanday rasm yo'q — thumbnail yo'q ep=%s", episode)
         return None
 
     # Rasmni yuklab olish
+    logger.info("thumbnail_gen: rasm yuklanmoqda file_id=%s...", source_file_id[:20] if source_file_id else None)
     photo_bytes = await _download_photo_bytes(bot, source_file_id)
     if not photo_bytes:
+        logger.warning("thumbnail_gen: rasm yuklanmadi!")
         return None
+    logger.info("thumbnail_gen: rasm yuklandi %d bytes", len(photo_bytes))
 
-    # Thumbnail generatsiya (sinxron Pillow kodi)
+    # Thumbnail generatsiya (Pillow)
     import asyncio
     loop = asyncio.get_event_loop()
     thumb_bytes = await loop.run_in_executor(
@@ -227,8 +231,10 @@ async def generate_episode_thumbnail(
     )
 
     if not thumb_bytes:
+        logger.warning("thumbnail_gen: generatsiya muvaffaqiyatsiz!")
         return None
 
+    logger.info("thumbnail_gen: OK! %d bytes ep=%s", len(thumb_bytes), episode)
     bio = io.BytesIO(thumb_bytes)
     bio.name = f"thumb_ep{episode}.jpg"
     bio.seek(0)

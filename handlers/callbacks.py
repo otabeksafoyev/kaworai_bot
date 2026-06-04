@@ -309,6 +309,9 @@ async def _send_or_edit_video(
     # Thumbnail generatsiya
     thumb = None
     if anime is not None:
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+        _logger.info("callbacks: thumbnail generatsiya boshlandi anime_id=%s ep=%s", anime.id, episode)
         try:
             from utils.thumbnail_gen import generate_episode_thumbnail
             thumb = await generate_episode_thumbnail(
@@ -319,9 +322,9 @@ async def _send_or_edit_video(
                 thumbnail_night_file_id=getattr(anime, "thumbnail_night_file_id", None),
                 poster_file_id=getattr(anime, "poster_file_id", None),
             )
+            _logger.info("callbacks: thumbnail natija=%s", "OK" if thumb else "None")
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning("thumbnail generatsiya xato: %s", e)
+            _logger.error("callbacks: thumbnail XATO: %s", e, exc_info=True)
 
     if not is_pro:
         from utils.ad_helpers import get_ad_text
