@@ -235,7 +235,6 @@ async def generate_episode_thumbnail(
         return None
 
     logger.info("thumbnail_gen: OK! %d bytes ep=%s", len(thumb_bytes), episode)
-    bio = io.BytesIO(thumb_bytes)
-    bio.name = f"thumb_ep{episode}.jpg"
-    bio.seek(0)
-    return bio
+    # aiogram 3 da thumbnail BufferedInputFile bo'lishi kerak (BytesIO emas!)
+    from aiogram.types import BufferedInputFile
+    return BufferedInputFile(thumb_bytes, filename=f"thumb_ep{episode}.jpg")
