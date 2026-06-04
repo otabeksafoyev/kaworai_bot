@@ -333,16 +333,18 @@ async def _send_or_edit_video(
             caption += ad
 
     # Thumbnail bo'lsa — doim yangi video (edit_media thumbnail qo'llab-quvvatlamaydi)
+    # supports_streaming=True — Telegram thumbnail ni chat da ham ko'rsatadi
     if thumb:
         if is_pro:
             await call.message.answer_video(
                 video=ep_file_id, caption=caption, reply_markup=kb,
-                parse_mode="HTML", thumbnail=thumb,
+                parse_mode="HTML", thumbnail=thumb, supports_streaming=True,
             )
         else:
             await call.message.answer_video(
                 video=ep_file_id, caption=caption, reply_markup=kb,
                 parse_mode="HTML", protect_content=True, thumbnail=thumb,
+                supports_streaming=True,
             )
         return
 
