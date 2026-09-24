@@ -1,7 +1,11 @@
 import os
 from datetime import datetime
+<<<<<<< HEAD
 import time
 from datetime import datetime
+=======
+
+>>>>>>> 74c71b1f944700a2f0a2276cbc4a395754482f33
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo
 from sqlalchemy import func, select
@@ -663,6 +667,7 @@ async def toggle_subscription(call: CallbackQuery):
 # ═══════════════════════════════════════════════════════════
 
 
+<<<<<<< HEAD
 
 
 
@@ -872,6 +877,74 @@ async def consume_pending_problem(message) -> bool:
 
 
 
+=======
+@callback_router.callback_query(F.data.startswith("problems_"))
+async def show_problems_menu(call: CallbackQuery):
+    parts = call.data.split("_")
+    anime_id = parts[1]
+    episode = parts[2]
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔊 Ovoz tezlashib ketgan", callback_data=f"prob_speed_{anime_id}_{episode}", style="primary"
+                )
+            ],
+            [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"ep_{anime_id}_{episode}", style="primary")],
+        ]
+    )
+    try:
+        await call.message.edit_caption(
+            caption="⚠️ <b>Epizodda muammo bormi?</b>\n\nPastdagi menyudan tanlang:", reply_markup=kb, parse_mode="HTML"
+        )
+    except Exception:
+        await call.message.answer(
+            "⚠️ <b>Epizodda muammo bormi?</b>\n\nPastdagi menyudan tanlang:", reply_markup=kb, parse_mode="HTML"
+        )
+    await call.answer()
+
+
+@callback_router.callback_query(F.data.startswith("prob_speed_"))
+async def problem_speed(call: CallbackQuery):
+    parts = call.data.split("_")
+    anime_id = parts[2]
+    episode = parts[3]
+    is_pro = await _is_pro(call.from_user.id)
+
+    text = (
+        "🔊 <b>Ovoz tezlashib ketgan — yechim:</b>\n\n"
+        "1️⃣ Telegramning <b>keshini tozalang:</b>\n"
+        "   <i>Sozlamalar → Ma'lumotlar va saqlash → Keshni tozalash</i>\n\n"
+        "2️⃣ Agar hal bo'lmasa, epizodni qurilmangizning "
+        "<b>gallereyasiga saqlang</b> va o'sha yerdan tomosha qiling.\n\n"
+        "✅ Bu 2 usul 90% holatlarda muammoni hal qiladi."
+    )
+    if not is_pro:
+        from utils.ad_helpers import get_pro_ad_text
+
+        pro_txt = await get_pro_ad_text()
+        if pro_txt:
+            text += f"\n\n━━━━━━━━━━━━━━━\n💎 {pro_txt}"
+        else:
+            text += (
+                "\n\n━━━━━━━━━━━━━━━\n"
+                "💎 <b>Kaworai Pro</b> obunasini sotib oling — sifatli va muammosiz tomosha qiling!"
+            )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"problems_{anime_id}_{episode}", style="primary")]
+        ]
+    )
+    try:
+        await call.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await call.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await call.answer()
+
+
+>>>>>>> 74c71b1f944700a2f0a2276cbc4a395754482f33
 # ═══════════════════════════════════════════════════════════
 #  RATING
 # ═══════════════════════════════════════════════════════════

@@ -175,7 +175,11 @@ def _build_episode_keyboard(
         sub_btn = InlineKeyboardButton(text="❤️ Obuna bo'lish", callback_data=f"toggle_sub_{anime_id}", style="success")
     builder.row(
         sub_btn,
+<<<<<<< HEAD
       InlineKeyboardButton(text="⚠️ Muammo", callback_data=f"problems_{anime_id}_{current_ep}", style="danger"),
+=======
+        InlineKeyboardButton(text="⚠️ Muammo", callback_data=f"report_ep_{anime_id}_{current_ep}", style="danger"),
+>>>>>>> 74c71b1f944700a2f0a2276cbc4a395754482f33
     )
 
     builder.row(
@@ -1656,6 +1660,11 @@ async def block_media(message: types.Message):
 # ═══════════════════════════════════════════════════════════
 #  MATN XABARLAR
 # ═══════════════════════════════════════════════════════════
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> 74c71b1f944700a2f0a2276cbc4a395754482f33
 @user_router.message(F.text & ~F.text.startswith("/"))
 async def handle_text(message: types.Message):
     """
@@ -1668,6 +1677,7 @@ async def handle_text(message: types.Message):
     text = message.text.strip()
     user_id = message.from_user.id
 
+<<<<<<< HEAD
     # "📝 Boshqa muammo" oqimi — BU YERGA QO'YING ⬇️
     from handlers.callbacks import consume_pending_problem
     if await consume_pending_problem(message):
@@ -1679,6 +1689,11 @@ async def handle_text(message: types.Message):
 
 
 
+=======
+    if text.isdigit():
+        return
+
+>>>>>>> 74c71b1f944700a2f0a2276cbc4a395754482f33
     # Inline dan kelgan link → 2-rasmdagi dizayn
     if "?start=anime_" in text:
         try:
