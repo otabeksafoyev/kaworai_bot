@@ -667,24 +667,9 @@ async def toggle_subscription(call: CallbackQuery):
 # ═══════════════════════════════════════════════════════════
 
 
-<<<<<<< HEAD
 
-
-
-
-
-
-
-# ═══════════════════════════════════════════════════════════
-#  MUAMMOLAR — silliq oqim (video o'chmaydi, caption tahrirlanadi)
-# ═══════════════════════════════════════════════════════════
-
-# "📝 Boshqa muammo" dan keyin user matnini kutish holati:
-# user_id -> (anime_id, episode, expire_ts). FSM ishlatilmaydi —
-# users.py dagi handle_text har qanday matnni o'chiradi, shuning
-# uchun u yerda birinchi navbatda tekshiriladi (pastda consume_pending_problem).
 _PENDING_PROBLEM: dict[int, tuple[int, int, float]] = {}
-_PENDING_PROBLEM_TTL = 300.0  # 5 daqiqa ichida yozmasa bekor
+_PENDING_PROBLEM_TTL = 300.0 
 
 _PROBLEM_ISSUES: dict[str, str] = {
     "speed": "🎙 Ovoz tezlashib ketgan",
@@ -875,9 +860,6 @@ async def consume_pending_problem(message) -> bool:
 
 
 
-
-
-=======
 @callback_router.callback_query(F.data.startswith("problems_"))
 async def show_problems_menu(call: CallbackQuery):
     parts = call.data.split("_")
@@ -944,7 +926,7 @@ async def problem_speed(call: CallbackQuery):
     await call.answer()
 
 
->>>>>>> 74c71b1f944700a2f0a2276cbc4a395754482f33
+
 # ═══════════════════════════════════════════════════════════
 #  RATING
 # ═══════════════════════════════════════════════════════════
