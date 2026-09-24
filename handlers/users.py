@@ -175,11 +175,11 @@ def _build_episode_keyboard(
         sub_btn = InlineKeyboardButton(text="❤️ Obuna bo'lish", callback_data=f"toggle_sub_{anime_id}", style="success")
     builder.row(
         sub_btn,
-<<<<<<< HEAD
+
       InlineKeyboardButton(text="⚠️ Muammo", callback_data=f"problems_{anime_id}_{current_ep}", style="danger"),
-=======
+
         InlineKeyboardButton(text="⚠️ Muammo", callback_data=f"report_ep_{anime_id}_{current_ep}", style="danger"),
->>>>>>> 74c71b1f944700a2f0a2276cbc4a395754482f33
+
     )
 
     builder.row(
