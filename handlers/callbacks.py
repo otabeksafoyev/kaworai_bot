@@ -1,11 +1,7 @@
 import os
 from datetime import datetime
-<<<<<<< HEAD
 import time
-from datetime import datetime
-=======
 
->>>>>>> 74c71b1f944700a2f0a2276cbc4a395754482f33
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo
 from sqlalchemy import func, select
@@ -77,8 +73,6 @@ def _anime_info_kb(
     is_pro: bool,
     is_pro_locked: bool,
 ) -> InlineKeyboardMarkup:
-    # Bot API 9.4 ranglari: success (yashil) = tomosha/boshlash, primary (ko'k) = menyu/ulashish,
-    # danger (qizil) = bekor qilish/obunani uzish.
     rows = []
 
     if is_pro_locked and not is_pro:
@@ -161,7 +155,6 @@ def _player_kb(
 ) -> InlineKeyboardMarkup:
     rows = []
 
-    # Navigatsiya — primary (ko'k) = qism ko'chirish.
     nav = []
     if episode > 1:
         nav.append(
@@ -182,7 +175,6 @@ def _player_kb(
     if nav:
         rows.append(nav)
 
-    # Qismlar/Asosiy — primary (ko'k).
     ep_page = max(0, (episode - 1) // EP_PAGE_SIZE)
     rows.append(
         [
@@ -242,10 +234,6 @@ def _episodes_kb(
     episodes: list,
     page: int = 0,
 ) -> InlineKeyboardMarkup:
-    """
-    12 ta qism ko'rsatiladi (4 ta × 3 qator).
-    12 tadan ko'p bo'lsa keyingi/oldingi sahifa tugmalari chiqadi.
-    """
     total = len(episodes)
     total_pages = max(1, (total + EP_PAGE_SIZE - 1) // EP_PAGE_SIZE)
     page = max(0, min(page, total_pages - 1))
@@ -254,7 +242,6 @@ def _episodes_kb(
     end = start + EP_PAGE_SIZE
     page_eps = sorted(episodes, key=lambda e: e.episode)[start:end]
 
-    # Qism tugmalari — success (yashil), sahifa/orqaga — primary (ko'k).
     rows = []
     row = []
     for ep in page_eps:
@@ -265,7 +252,7 @@ def _episodes_kb(
                 style="success",
             )
         )
-        if len(row) == 4:  # 4 ta × 3 qator = 12 ta
+        if len(row) == 4:
             rows.append(row)
             row = []
     if row:
@@ -297,11 +284,6 @@ def _episodes_kb(
 
 
 async def _send_sleep_alert(call: CallbackQuery, text: str, anime=None) -> None:
-    """
-    Uxlash/pauza eslatmasini thumbnail bilan yuboradi.
-    Global thumbnail (kunduz/kecha) ishlatiladi.
-    Thumbnail yo'q bo'lsa — faqat matn yuboriladi.
-    """
     from aiogram.types import BufferedInputFile
     from utils.sleep_reminder import is_night_time
     from database.queries import get_global_thumbnail
@@ -339,7 +321,6 @@ async def _send_sleep_alert(call: CallbackQuery, text: str, anime=None) -> None:
         await call.message.answer(text, parse_mode="HTML")
 
 
-# ── Video yuborish yordamchi ─────────────────────────────────
 async def _send_or_edit_video(
     call: CallbackQuery,
     ep_file_id: str,
@@ -349,12 +330,6 @@ async def _send_or_edit_video(
     anime=None,
     episode: int = 1,
 ) -> None:
-    """
-    Video yuborish yoki tahrirlash.
-    anime va episode berilsa — thumbnail avtomatik generatsiya qilinadi
-    (poster + qism raqami doira ichida, vaqtga qarab kunduzgi/kechki).
-    """
-    # Thumbnail generatsiya
     thumb = None
     if anime is not None:
         import logging as _log
@@ -380,8 +355,6 @@ async def _send_or_edit_video(
         if ad:
             caption += ad
 
-    # Thumbnail bo'lsa — doim yangi video (edit_media thumbnail qo'llab-quvvatlamaydi)
-    # supports_streaming=True — Telegram thumbnail ni chat da ham ko'rsatadi
     if thumb:
         if is_pro:
             await call.message.answer_video(
@@ -396,7 +369,6 @@ async def _send_or_edit_video(
             )
         return
 
-    # Thumbnail yo'q — edit_media (xabar o'rnida turadi)
     if is_pro:
         try:
             await call.message.edit_media(
@@ -585,7 +557,6 @@ async def show_episode(call: CallbackQuery):
 
 @callback_router.callback_query(F.data.startswith("episodes_"))
 async def show_episodes_list(call: CallbackQuery):
-    # Format: episodes_{anime_id}_{page}
     parts = call.data.split("_")
     anime_id = int(parts[1])
     page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
@@ -625,7 +596,6 @@ async def show_episodes_list(call: CallbackQuery):
     await call.answer()
 
 
-# noop — sahifa ko'rsatkichi uchun
 @callback_router.callback_query(F.data == "noop")
 async def noop_cb(call: CallbackQuery):
     await call.answer()
@@ -650,7 +620,6 @@ async def toggle_subscription(call: CallbackQuery):
             await subscribe_anime(session, anime_id, user_id)
             await call.answer("🔔 Obuna bo'ldingiz!\nYangi qismlar chiqsa xabar beramiz.", show_alert=True)
 
-    # Anime info sahifasini yangilash
     await show_anime_info(
         CallbackQuery(
             id=call.id,
@@ -663,13 +632,11 @@ async def toggle_subscription(call: CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════
-#  MUAMMOLAR
+#  MUAMMOLAR — silliq oqim (video o'chmaydi, caption tahrirlanadi)
 # ═══════════════════════════════════════════════════════════
 
-
-
 _PENDING_PROBLEM: dict[int, tuple[int, int, float]] = {}
-_PENDING_PROBLEM_TTL = 300.0 
+_PENDING_PROBLEM_TTL = 300.0  # 5 daqiqa ichida yozmasa bekor
 
 _PROBLEM_ISSUES: dict[str, str] = {
     "speed": "🎙 Ovoz tezlashib ketgan",
@@ -692,7 +659,6 @@ def _problems_kb(anime_id: int, episode: int) -> InlineKeyboardMarkup:
     rows.append(
         [InlineKeyboardButton(text="📝 Boshqa muammo", callback_data=f"probother_{anime_id}_{episode}", style="primary")]
     )
-    # Orqaga — o'sha qismga qaytadi (watch_ handleri videoni tiklab beradi).
     rows.append(
         [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"watch_{anime_id}_{episode}", style="primary")]
     )
@@ -785,7 +751,6 @@ async def problem_auto_fix(call: CallbackQuery):
     anime_id, episode = int(parts[1]), int(parts[2])
     if not await _is_pro(call.from_user.id):
         return await call.answer("🔒 Avto tuzatish — faqat ⚡ Kaworai Pro uchun!", show_alert=True)
-    # Pro user — adminga avto-tuzatish so'rovi ketadi.
     await _send_problem_report(
         call.bot,
         call.from_user,
@@ -851,80 +816,6 @@ async def consume_pending_problem(message) -> bool:
         parse_mode="HTML",
     )
     return True
-
-
-
-
-
-
-
-
-
-@callback_router.callback_query(F.data.startswith("problems_"))
-async def show_problems_menu(call: CallbackQuery):
-    parts = call.data.split("_")
-    anime_id = parts[1]
-    episode = parts[2]
-
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🔊 Ovoz tezlashib ketgan", callback_data=f"prob_speed_{anime_id}_{episode}", style="primary"
-                )
-            ],
-            [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"ep_{anime_id}_{episode}", style="primary")],
-        ]
-    )
-    try:
-        await call.message.edit_caption(
-            caption="⚠️ <b>Epizodda muammo bormi?</b>\n\nPastdagi menyudan tanlang:", reply_markup=kb, parse_mode="HTML"
-        )
-    except Exception:
-        await call.message.answer(
-            "⚠️ <b>Epizodda muammo bormi?</b>\n\nPastdagi menyudan tanlang:", reply_markup=kb, parse_mode="HTML"
-        )
-    await call.answer()
-
-
-@callback_router.callback_query(F.data.startswith("prob_speed_"))
-async def problem_speed(call: CallbackQuery):
-    parts = call.data.split("_")
-    anime_id = parts[2]
-    episode = parts[3]
-    is_pro = await _is_pro(call.from_user.id)
-
-    text = (
-        "🔊 <b>Ovoz tezlashib ketgan — yechim:</b>\n\n"
-        "1️⃣ Telegramning <b>keshini tozalang:</b>\n"
-        "   <i>Sozlamalar → Ma'lumotlar va saqlash → Keshni tozalash</i>\n\n"
-        "2️⃣ Agar hal bo'lmasa, epizodni qurilmangizning "
-        "<b>gallereyasiga saqlang</b> va o'sha yerdan tomosha qiling.\n\n"
-        "✅ Bu 2 usul 90% holatlarda muammoni hal qiladi."
-    )
-    if not is_pro:
-        from utils.ad_helpers import get_pro_ad_text
-
-        pro_txt = await get_pro_ad_text()
-        if pro_txt:
-            text += f"\n\n━━━━━━━━━━━━━━━\n💎 {pro_txt}"
-        else:
-            text += (
-                "\n\n━━━━━━━━━━━━━━━\n"
-                "💎 <b>Kaworai Pro</b> obunasini sotib oling — sifatli va muammosiz tomosha qiling!"
-            )
-
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"problems_{anime_id}_{episode}", style="primary")]
-        ]
-    )
-    try:
-        await call.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        await call.message.answer(text, reply_markup=kb, parse_mode="HTML")
-    await call.answer()
-
 
 
 # ═══════════════════════════════════════════════════════════
