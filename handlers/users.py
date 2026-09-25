@@ -175,13 +175,12 @@ def _build_episode_keyboard(
         sub_btn = InlineKeyboardButton(text="❤️ Obuna bo'lish", callback_data=f"toggle_sub_{anime_id}", style="success")
     builder.row(
         sub_btn,
-
-      InlineKeyboardButton(text="⚠️ Muammo", callback_data=f"problems_{anime_id}_{current_ep}", style="danger"),
-
-        InlineKeyboardButton(text="⚠️ Muammo", callback_data=f"report_ep_{anime_id}_{current_ep}", style="danger"),
-
+        InlineKeyboardButton(
+            text="⚠️ Muammo",
+            callback_data=f"problems_{anime_id}_{current_ep}_{page}",
+            style="danger",
+        ),
     )
-
     builder.row(
         InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu", style="primary"),
         InlineKeyboardButton(text="⭐ Baho berish", callback_data=f"rate_{anime_id}", style="success"),
@@ -1311,46 +1310,6 @@ async def toggle_subscription(call: types.CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════
-#  MUAMMO
-# ═══════════════════════════════════════════════════════════
-
-
-@user_router.callback_query(F.data.startswith("report_ep_"))
-async def report_episode(call: types.CallbackQuery):
-    parts = call.data.replace("report_ep_", "").split("_")
-    try:
-        anime_id = int(parts[0])
-        episode = int(parts[1])
-    except (ValueError, IndexError):
-        return await call.answer()
-
-    user_id = call.from_user.id
-
-    async with AsyncSessionLocal() as session:
-        anime = await session.get(Anime, anime_id)
-        title = anime.title if anime else f"ID {anime_id}"
-
-    try:
-        admin_id = os.getenv("ADMIN_ID", "").split(",")[0]
-        if admin_id:
-            await call.bot.send_message(
-                chat_id=int(admin_id),
-                text=(
-                    f"⚠️ <b>Muammo xabari</b>\n\n"
-                    f"🎬 Kontent: <b>{title}</b>\n"
-                    f"🆔 ID: <code>{anime_id}</code>\n"
-                    f"📺 Qism: <b>{episode}</b>\n"
-                    f"👤 User: <code>{user_id}</code>"
-                ),
-                parse_mode="HTML",
-            )
-    except Exception as e:
-        logger.error(f"report_episode error: {e}")
-
-    await call.answer("⚠️ Muammo yuborildi! Tez orada hal qilinadi.", show_alert=True)
-
-
-# ═══════════════════════════════════════════════════════════
 #  BAHO BERISH — 1 DAN 10 GACHA
 # ═══════════════════════════════════════════════════════════
 
@@ -1678,13 +1637,6 @@ async def handle_text(message: types.Message):
     from handlers.callbacks import consume_pending_problem
     if await consume_pending_problem(message):
         return
-
-    if text.isdigit():
-        return
-
-
-
-
 
     if text.isdigit():
         return

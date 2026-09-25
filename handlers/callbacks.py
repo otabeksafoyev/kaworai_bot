@@ -191,7 +191,7 @@ def _player_kb(
         [
             InlineKeyboardButton(
                 text="⚠️ Muammo bormi?",
-                callback_data=f"problems_{anime_id}_{episode}",
+                callback_data=f"problems_{anime_id}_{episode}_-1",
                 style="danger",
             )
         ]
@@ -631,7 +631,6 @@ async def toggle_subscription(call: CallbackQuery):
     )
 
 
-# ═══════════════════════════════════════════════════════════
 #  MUAMMOLAR — silliq oqim (video o'chmaydi, caption tahrirlanadi)
 # ═══════════════════════════════════════════════════════════
 
@@ -648,19 +647,23 @@ _PROBLEM_ISSUES: dict[str, str] = {
 _ADMIN_ID_RAW = (os.getenv("ADMIN_ID", "") or "").split(",")[0].strip()
 
 
-def _problems_kb(anime_id: int, episode: int) -> InlineKeyboardMarkup:
+def _problems_kb(anime_id: int, episode: int, page: int) -> InlineKeyboardMarkup:
+    # page >= 0 — grid'dan ochilgan, Orqaga grid'ga qaytadi.
+    # page == -1 — player'dan ochilgan, Orqaga player'ga qaytadi.
+    back_cb = (
+        f"probback_{anime_id}_{episode}_{page}"
+        if page >= 0
+        else f"watch_{anime_id}_{episode}"
+    )
     rows = [
-        [InlineKeyboardButton(text=label, callback_data=f"probfix_{key}_{anime_id}_{episode}", style="primary")]
+        [InlineKeyboardButton(text=label, callback_data=f"probfix_{key}_{anime_id}_{episode}_{page}", style="primary")]
         for key, label in _PROBLEM_ISSUES.items()
     ]
     rows.append(
-        [InlineKeyboardButton(text="♻️ Avto tuzatish 🔒", callback_data=f"probauto_{anime_id}_{episode}", style="success")]
+        [InlineKeyboardButton(text="📝 Boshqa muammo", callback_data=f"probother_{anime_id}_{episode}_{page}", style="primary")]
     )
     rows.append(
-        [InlineKeyboardButton(text="📝 Boshqa muammo", callback_data=f"probother_{anime_id}_{episode}", style="primary")]
-    )
-    rows.append(
-        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"watch_{anime_id}_{episode}", style="primary")]
+        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=back_cb, style="primary")]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -669,10 +672,8 @@ def _problem_fix_text(issue_label: str) -> str:
     return (
         f"📌 <b>{issue_label}</b>\n\n"
         "Muammoni hal qilish uchun Telegramning keshini tozalab ko'ring.\n\n"
-        "Agar muammo hal bo'lmasa ⚡ <b>Kaworai Pro</b> obunasini sotib oling "
-        "va ♻️ <b>Avto tuzatish</b> tugmasini bosing yoki shu epizodni "
-        "qurilmangizni galereyasiga saqlab olib tomosha qiling. "
-        "Shunda muammo 90% holatda hal bo'ladi."
+        "Agar muammo hal bo'lmasa shu epizodni qurilmangizning "
+        "galereyasiga saqlab olib tomosha qiling. Shunda muammo 90% holatda hal bo'ladi."
     )
 
 
@@ -717,68 +718,97 @@ async def _send_problem_report(bot, user, anime_id: int, episode: int, extra_lin
 
 @callback_router.callback_query(F.data.startswith("problems_"))
 async def show_problems_menu(call: CallbackQuery):
+    # Format: problems_{anime_id}_{episode}_{page}  (page == -1 — player'dan)
     parts = call.data.split("_")
-    if len(parts) < 3:
+    if len(parts) < 4:
         return await call.answer()
-    anime_id, episode = int(parts[1]), int(parts[2])
+    anime_id, episode, page = int(parts[1]), int(parts[2]), int(parts[3])
     await _edit_or_answer(
         call,
         "⚠️ <b>Epizodda muammo bormi?</b>\nPastdagi menyudan tanlang 👇",
-        _problems_kb(anime_id, episode),
+        _problems_kb(anime_id, episode, page),
     )
+    await call.answer()
+
+
+@callback_router.callback_query(F.data.startswith("probback_"))
+async def problem_back_to_grid(call: CallbackQuery):
+    """Grid'dan ochilgan muammo menyusidan Orqaga — grid'ni tiklaydi (silliq).
+
+    Video xabar joyida qoladi — faqat caption va klaviatura tiklanadi,
+    shunda user yana 1-rasmdagi grid ko'rinishiga qaytadi.
+    """
+    from handlers.users import GRID_SIZE, _build_episode_caption, _build_episode_keyboard
+
+    parts = call.data.split("_")
+    if len(parts) < 4:
+        return await call.answer()
+    anime_id, episode, page = int(parts[1]), int(parts[2]), int(parts[3])
+    user_id = call.from_user.id
+
+    async with AsyncSessionLocal() as session:
+        anime = await session.get(Anime, anime_id)
+        if not anime:
+            return await call.answer("❌ Topilmadi!", show_alert=True)
+        res = await session.execute(
+            select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
+        )
+        rows = res.scalars().all()
+        ep_numbers = [e.episode for e in rows]
+        filler_eps = {e.episode for e in rows if getattr(e, "is_filler", False)}
+        subscribed = await is_subscribed_anime(session, anime_id, user_id)
+        user = await session.get(User, user_id)
+        now = datetime.utcnow()
+        is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
+
+    if not ep_numbers or episode not in ep_numbers:
+        return await call.answer("❌ Qism topilmadi!", show_alert=True)
+
+    page = max(0, min(page, (len(ep_numbers) - 1) // GRID_SIZE))
+    kb = _build_episode_keyboard(
+        anime_id, ep_numbers, episode, subscribed, is_pro, page=page, filler_eps=filler_eps
+    )
+    caption = _build_episode_caption(anime, episode, len(ep_numbers))
+
+    try:
+        await call.message.edit_caption(caption=caption, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        try:
+            await call.message.edit_text(text=caption, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
     await call.answer()
 
 
 @callback_router.callback_query(F.data.startswith("probfix_"))
 async def problem_fix_selected(call: CallbackQuery):
+    # Format: probfix_{issue}_{anime_id}_{episode}_{page}
     parts = call.data.split("_")
+    if len(parts) < 5:
+        return await call.answer()
     issue = parts[1]
-    anime_id, episode = int(parts[2]), int(parts[3])
+    anime_id, episode, page = int(parts[2]), int(parts[3]), int(parts[4])
     label = _PROBLEM_ISSUES.get(issue, issue)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⚡ Kaworai Pro", callback_data="kawaii_pass", style="success")],
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"problems_{anime_id}_{episode}", style="primary")],
+            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"problems_{anime_id}_{episode}_{page}", style="primary")],
         ]
     )
     await _edit_or_answer(call, _problem_fix_text(label), kb)
     await call.answer()
 
 
-@callback_router.callback_query(F.data.startswith("probauto_"))
-async def problem_auto_fix(call: CallbackQuery):
-    parts = call.data.split("_")
-    anime_id, episode = int(parts[1]), int(parts[2])
-    if not await _is_pro(call.from_user.id):
-        return await call.answer("🔒 Avto tuzatish — faqat ⚡ Kaworai Pro uchun!", show_alert=True)
-    await _send_problem_report(
-        call.bot,
-        call.from_user,
-        anime_id,
-        episode,
-        ["", "♻️ <b>Avto tuzatish (Pro)</b> — epizod tiklanishi so'raldi"],
-    )
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"problems_{anime_id}_{episode}", style="primary")],
-        ]
-    )
-    await _edit_or_answer(
-        call,
-        "♻️ <b>Avto tuzatish boshlandi!</b>\n\nEpizod tez orada tiklanadi — natija haqida xabar beramiz.",
-        kb,
-    )
-    await call.answer("✅ So'rov yuborildi")
-
-
 @callback_router.callback_query(F.data.startswith("probother_"))
 async def problem_other_start(call: CallbackQuery):
+    # Format: probother_{anime_id}_{episode}_{page}
     parts = call.data.split("_")
-    anime_id, episode = int(parts[1]), int(parts[2])
+    if len(parts) < 4:
+        return await call.answer()
+    anime_id, episode, page = int(parts[1]), int(parts[2]), int(parts[3])
     _PENDING_PROBLEM[call.from_user.id] = (anime_id, episode, time.monotonic() + _PENDING_PROBLEM_TTL)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"problems_{anime_id}_{episode}", style="primary")],
+            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"problems_{anime_id}_{episode}_{page}", style="primary")],
         ]
     )
     await _edit_or_answer(
