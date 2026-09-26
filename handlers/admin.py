@@ -1,7 +1,3 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# KAWORAI BOT — ADMIN HANDLERS (TUZATILGAN)
-# 4 ta Caption Type bilan Broadcast Section
-# ═══════════════════════════════════════════════════════════════════════════
 import asyncio
 import logging
 import os
@@ -496,16 +492,13 @@ def _yn(val: bool) -> str:
     return "Ha" if val else "Yo'q"
 
 
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 495-626 QATORLAR: CAPTION TYPE BUILDERS (4 TA TIP)
-# ═════════════════════════════════════════════════════════════════════════════
-
 def _build_post_caption(anime: Anime) -> str:
     """
-    Anime uchun TO'LIQ post caption quradi.
-    Barcha ma'lumot: tur, nom, yil, janr, tag, mood, yulduz, qism soni, 
-    davomiylik, holat, mashhurlik, Pro lock, hidden gem, tavsif.
+    Anime uchun to'liq post caption quradi. Admin so'ragan bo'yicha
+    animening barcha ma'lumotlari (tur, nom, yil, janr, tag, mood, yulduz,
+    ovozlar, qism soni, davomiylik, holat, mashhurlik, Pro lock, yashirin
+    gem, tavsif) chiqadi — cheklashlar olib tashlandi, faqat tavsif
+    Telegram caption limitiga sig'ishi uchun 600 belgigacha qisqartiriladi.
     """
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
     type_label = {"anime": "Anime", "movie": "Kino", "serial": "Serial", "dorama": "Dorama"}
@@ -575,20 +568,25 @@ def _build_post_caption(anime: Anime) -> str:
 
 def _build_short_caption(anime: Anime) -> str:
     """
-    Anime uchun QISQA va CHIROYLI post caption.
-    Estetik, blockquote tavsif.
+    Anime uchun CHIROYLI QISQA post caption.
+    Estetik, emojilar bilan ajratilgan, blockquote tavsif.
     """
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
     type_label = {"anime": "Anime", "movie": "Kino", "serial": "Serial", "dorama": "Dorama"}
     emoji = type_emoji.get(anime.content_type or "anime", "🎬")
     label = type_label.get(anime.content_type or "anime", "Kontent")
 
+    # Sarlavha
     year_str = f" <i>({anime.year})</i>" if anime.year else ""
     title = f"{emoji} <b>{esc(anime.title)}</b>{year_str}"
 
+    # Janrlar — max 3 ta, hashtag shaklida
     genres = anime.genres or []
-    genre_tags = "  ".join(f"<code>{g}</code>" for g in genres[:3]) if genres else ""
+    genre_tags = "  ".join(
+        f"<code>{g}</code>" for g in genres[:3]
+    ) if genres else ""
 
+    # Meta — reyting, qism soni, davomiylik
     meta_parts: list[str] = []
     if anime.rating is not None:
         stars = "⭐" * min(int(float(anime.rating) / 2), 5)
@@ -607,10 +605,12 @@ def _build_short_caption(anime: Anime) -> str:
     }
     status_str = status_map.get(anime.status or "", "")
 
+    # Tavsif — blockquote ichida
     desc = (anime.description or "").strip()
     if len(desc) > 300:
         desc = desc[:300].rstrip() + "…"
 
+    # Yig'ish
     lines: list[str] = []
     lines.append(title)
     lines.append(f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")
@@ -624,49 +624,6 @@ def _build_short_caption(anime: Anime) -> str:
         lines.append(f"<blockquote>{desc}</blockquote>")
 
     return "\n".join(lines)
-
-
-def _build_medium_caption(anime: Anime) -> str:
-    """
-    Anime uchun O'RTACHA ma'lumot — asosiy details.
-    Minimal lekin ma'lumotli format (ID, qism soni, tur, janr).
-    """
-    type_label = {"anime": "Anime", "movie": "Kino", "serial": "Serial", "dorama": "Dorama"}
-    type_str = type_label.get(anime.content_type or "anime", "—")
-    genres_str = ", ".join((anime.genres or [])[:3]) or "—"
-    
-    lines: list[str] = []
-    lines.append(f"➤ 🎬 Tur: {type_str}")
-    lines.append(f"➤ 🆔 Kode: {anime.id}")
-    
-    if anime.episodes_count:
-        lines.append(f"➤ 🎞 Qismlar: {anime.episodes_count}")
-    elif anime.total_episodes:
-        lines.append(f"➤ 🎞 Qismlar: {anime.total_episodes}")
-    
-    lines.append(f"➤ 🎭 Janri: {genres_str}")
-    
-    return "\n".join(lines)
-
-
-def _build_minimal_caption(anime: Anime) -> str:
-    """
-    Anime uchun MINIMAL ma'lumot — faqat eng zaruriy.
-    Eng qisqa va toza format (Qismlar, Janrlar).
-    """
-    genres_str = ", ".join((anime.genres or [])[:3]) or "—"
-    
-    lines: list[str] = []
-    
-    if anime.episodes_count:
-        lines.append(f"‣ Qism: {anime.episodes_count}")
-    elif anime.total_episodes:
-        lines.append(f"‣ Qism: {anime.total_episodes}")
-    
-    lines.append(f"‣ Janrlari: {genres_str}")
-    
-    return "\n".join(lines)
-
 
 
 # ─── In-memory caption kesh (postpick_ oqimi uchun) ──────────────────────
@@ -3983,97 +3940,36 @@ async def bc_get_anime_id(msg: Message, state: FSMContext):
     await msg.answer(f"✅ <b>{title}</b>{lock_str}\n\nPost turi:", reply_markup=kb.as_markup(), parse_mode="HTML")
 
 
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 3943-4008 QATORLAR: BROADCAST CAPTION TYPE SELECTORS (4 TA TIP)
-# ═════════════════════════════════════════════════════════════════════════════
-
 @admin_router.callback_query(F.data.startswith("bcmedia_"), BroadcastState.waiting_anime_media_type)
 async def bc_media_type_selected(call: types.CallbackQuery, state: FSMContext):
-    """Post media turini qabul qildan keyin 4 ta caption type selector ko'rsata.
-    
-    HTML tag'larni preview'da o'chirib, PLAIN MATN ko'rsatadi — 
-    <blockquote> tag yopilmay qolmasligi uchun.
-    """
-    if not await is_admin(call.from_user.id):
-        return
-    
     media_type = call.data.replace("bcmedia_", "")
     await state.update_data(bc_media_type=media_type)
     await state.set_state(BroadcastState.waiting_anime_post_caption)
     data = await state.get_data()
-    
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, data["bc_anime_id"])
-    
-    if not anime:
-        return await call.answer("❌ Anime topilmadi!", show_alert=True)
-    
-    # ═══════════════════════════════════════════════════════════
-    # 4 TA CAPTION BUILDER
-    # ═══════════════════════════════════════════════════════════
-    full_cap = _build_post_caption(anime)
-    short_cap = _build_short_caption(anime)
-    medium_cap = _build_medium_caption(anime)
-    minimal_cap = _build_minimal_caption(anime)
-    
-    # ═══════════════════════════════════════════════════════════
-    # KEYBOARD
-    # ═══════════════════════════════════════════════════════════
+    auto_cap = _build_post_caption(anime) if anime else ""
+    short_cap = _build_short_caption(anime) if anime else ""
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📋 To'liq ma'lumot", callback_data="bccap_full", style="success")],
+            [InlineKeyboardButton(text="📋 To'liq ma'lumot", callback_data="bccap_auto", style="success")],
             [InlineKeyboardButton(text="📝 Qisqa ma'lumot", callback_data="bccap_short", style="success")],
-            [InlineKeyboardButton(text="🎞 O'rtacha ma'lumot", callback_data="bccap_medium", style="primary")],
-            [InlineKeyboardButton(text="🏷 Minimal", callback_data="bccap_minimal", style="primary")],
             [InlineKeyboardButton(text="✏️ O'zim yozaman", callback_data="bccap_custom", style="primary")],
         ]
     )
-    
-    # ═══════════════════════════════════════════════════════════
-    # HTML TAG'LARNI O'CHIRISH — MUHIM!
-    # ═══════════════════════════════════════════════════════════
-    import re
-    def strip_html_tags(text: str) -> str:
-        """HTML tag'larni o'chirib plain matn qaytaradi."""
-        return re.sub(r'<[^>]+>', '', text)
-    
-    # ═══════════════════════════════════════════════════════════
-    # PREVIEW MATNLARINI TAYYORLA (TAG BO'LMASIZ)
-    # ═══════════════════════════════════════════════════════════
-    full_text = strip_html_tags(full_cap)
-    full_preview = full_text[:300] + ("…" if len(full_text) > 300 else "")
-    
-    short_text = strip_html_tags(short_cap)
-    short_preview = short_text[:300] + ("…" if len(short_text) > 300 else "")
-    
-    medium_text = strip_html_tags(medium_cap)
-    medium_preview = medium_text[:250] + ("…" if len(medium_text) > 250 else "")
-    
-    minimal_text = strip_html_tags(minimal_cap)
-    minimal_preview = minimal_text[:150] + ("…" if len(minimal_text) > 150 else "")
-    
-    # ═══════════════════════════════════════════════════════════
-    # XABAR YUBORISH
-    # ═══════════════════════════════════════════════════════════
-    # Preview'lar plain matn, <blockquote> ichida xavfsiz
+    preview = auto_cap[:600] + ("…" if len(auto_cap) > 600 else "")
     await call.message.answer(
         f"📝 <b>Caption turini tanlang:</b>\n\n"
-        f"<b>1️⃣ To'liq ma'lumot:</b>\n<blockquote>{full_preview}</blockquote>\n\n"
-        f"<b>2️⃣ Qisqa ma'lumot:</b>\n<blockquote>{short_preview}</blockquote>\n\n"
-        f"<b>3️⃣ O'rtacha ma'lumot:</b>\n<blockquote>{medium_preview}</blockquote>\n\n"
-        f"<b>4️⃣ Minimal:</b>\n<blockquote>{minimal_preview}</blockquote>",
+        f"<b>To'liq preview:</b>\n<blockquote>{preview}</blockquote>\n\n"
+        f"<b>Qisqa preview:</b>\n<blockquote>{short_cap}</blockquote>",
         reply_markup=kb,
         parse_mode="HTML",
     )
     await call.answer()
 
 
-@admin_router.callback_query(F.data == "bccap_full", BroadcastState.waiting_anime_post_caption)
-async def bc_caption_full(call: types.CallbackQuery, state: FSMContext):
-    """📋 To'liq ma'lumot caption."""
-    if not await is_admin(call.from_user.id):
-        return
+@admin_router.callback_query(F.data == "bccap_auto", BroadcastState.waiting_anime_post_caption)
+async def bc_caption_auto(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, data["bc_anime_id"])
@@ -4085,9 +3981,6 @@ async def bc_caption_full(call: types.CallbackQuery, state: FSMContext):
 
 @admin_router.callback_query(F.data == "bccap_short", BroadcastState.waiting_anime_post_caption)
 async def bc_caption_short(call: types.CallbackQuery, state: FSMContext):
-    """📝 Qisqa ma'lumot caption."""
-    if not await is_admin(call.from_user.id):
-        return
     data = await state.get_data()
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, data["bc_anime_id"])
@@ -4097,46 +3990,14 @@ async def bc_caption_short(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
-@admin_router.callback_query(F.data == "bccap_medium", BroadcastState.waiting_anime_post_caption)
-async def bc_caption_medium(call: types.CallbackQuery, state: FSMContext):
-    """🎞 O'rtacha ma'lumot caption."""
-    if not await is_admin(call.from_user.id):
-        return
-    data = await state.get_data()
-    async with AsyncSessionLocal() as session:
-        anime = await session.get(Anime, data["bc_anime_id"])
-    if anime:
-        await state.update_data(bc_caption=_build_medium_caption(anime))
-    await _bc_ask_extra_btn(call.message, state)
-    await call.answer()
-
-
-@admin_router.callback_query(F.data == "bccap_minimal", BroadcastState.waiting_anime_post_caption)
-async def bc_caption_minimal(call: types.CallbackQuery, state: FSMContext):
-    """🏷 Minimal caption."""
-    if not await is_admin(call.from_user.id):
-        return
-    data = await state.get_data()
-    async with AsyncSessionLocal() as session:
-        anime = await session.get(Anime, data["bc_anime_id"])
-    if anime:
-        await state.update_data(bc_caption=_build_minimal_caption(anime))
-    await _bc_ask_extra_btn(call.message, state)
-    await call.answer()
-
-
 @admin_router.callback_query(F.data == "bccap_custom", BroadcastState.waiting_anime_post_caption)
 async def bc_caption_custom(call: types.CallbackQuery, state: FSMContext):
-    """✏️ O'zim yozaman."""
-    if not await is_admin(call.from_user.id):
-        return
     await call.message.answer("✏️ Caption yozing:", reply_markup=cancel_kb)
     await call.answer()
 
 
 @admin_router.message(BroadcastState.waiting_anime_post_caption)
 async def bc_caption_received(msg: Message, state: FSMContext):
-    """O'ziy yozilgan caption'ni qabul qil."""
     if not await is_admin(msg.from_user.id):
         return
     if msg.text == "🚫 Bekor qilish":
