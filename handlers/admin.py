@@ -3502,10 +3502,13 @@ async def postcap_chosen(call: types.CallbackQuery, state: FSMContext):
     has_poster = bool(anime.poster_file_id)
     has_trailer = bool(anime.trailer_file_id)
 
+    # PLAIN MATN preview — HTML taglarini o'chirish
+    import re
+    plain_caption = re.sub(r'<[^>]+>', '', caption)
     preview_text = (
         f"✅ <b>Caption tanlandi ({cap_label})</b>\n\n"
         f"👁 <b>Ko'rinishi:</b>\n"
-        f"<blockquote>{caption[:400]}{'…' if len(caption) > 400 else ''}</blockquote>\n\n"
+        f"<blockquote>{plain_caption[:400]}{'…' if len(plain_caption) > 400 else ''}</blockquote>\n\n"
         f"2️⃣ Endi <b>media turini</b> tanlang:"
     )
     try:
@@ -4027,11 +4030,18 @@ async def bc_media_type_selected(call: types.CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="✏️ O'zim yozaman", callback_data="bccap_custom", style="primary")],
         ]
     )
-    preview = auto_cap[:600] + ("…" if len(auto_cap) > 600 else "")
+    # PLAIN MATN preview — HTML taglarini o'chirish
+    import re
+    plain_auto_cap = re.sub(r'<[^>]+>', '', auto_cap)
+    plain_short_cap = re.sub(r'<[^>]+>', '', short_cap)
+    plain_medium_cap = re.sub(r'<[^>]+>', '', medium_cap)
+    plain_minimal_cap = re.sub(r'<[^>]+>', '', minimal_cap)
+    
+    preview = plain_auto_cap[:600] + ("…" if len(plain_auto_cap) > 600 else "")
     await call.message.answer(
         f"📝 <b>Caption turini tanlang:</b>\n\n"
         f"<b>To'liq preview:</b>\n<blockquote>{preview}</blockquote>\n\n"
-        f"<b>Qisqa preview:</b>\n<blockquote>{short_cap}</blockquote>",
+        f"<b>Qisqa preview:</b>\n<blockquote>{plain_short_cap[:300]}{'…' if len(plain_short_cap) > 300 else ''}</blockquote>",
         reply_markup=kb,
         parse_mode="HTML",
     )
