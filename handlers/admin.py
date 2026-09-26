@@ -3990,25 +3990,36 @@ async def bc_get_anime_id(msg: Message, state: FSMContext):
 
 @admin_router.callback_query(F.data.startswith("bcmedia_"), BroadcastState.waiting_anime_media_type)
 async def bc_media_type_selected(call: types.CallbackQuery, state: FSMContext):
-    """Post media turini qabul qildan keyin 4 ta caption type selector ko'rsata."""
+    """Post media turini qabul qildan keyin 4 ta caption type selector ko'rsata.
+    
+    HTML tag'larni preview'da o'chirib, PLAIN MATN ko'rsatadi — 
+    <blockquote> tag yopilmay qolmasligi uchun.
+    """
     if not await is_admin(call.from_user.id):
         return
+    
     media_type = call.data.replace("bcmedia_", "")
     await state.update_data(bc_media_type=media_type)
     await state.set_state(BroadcastState.waiting_anime_post_caption)
     data = await state.get_data()
+    
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, data["bc_anime_id"])
     
     if not anime:
         return await call.answer("❌ Anime topilmadi!", show_alert=True)
     
-    # 4 ta caption preview
+    # ═══════════════════════════════════════════════════════════
+    # 4 TA CAPTION BUILDER
+    # ═══════════════════════════════════════════════════════════
     full_cap = _build_post_caption(anime)
     short_cap = _build_short_caption(anime)
     medium_cap = _build_medium_caption(anime)
     minimal_cap = _build_minimal_caption(anime)
     
+    # ═══════════════════════════════════════════════════════════
+    # KEYBOARD
+    # ═══════════════════════════════════════════════════════════
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📋 To'liq ma'lumot", callback_data="bccap_full", style="success")],
@@ -4019,17 +4030,38 @@ async def bc_media_type_selected(call: types.CallbackQuery, state: FSMContext):
         ]
     )
     
-    # Preview matnini qisqartir
-    full_preview = full_cap[:400] + ("…" if len(full_cap) > 400 else "")
-    short_preview = short_cap[:400] + ("…" if len(short_cap) > 400 else "")
-    medium_preview = medium_cap[:300] + ("…" if len(medium_cap) > 300 else "")
-    minimal_preview = minimal_cap[:200] + ("…" if len(minimal_cap) > 200 else "")
+    # ═══════════════════════════════════════════════════════════
+    # HTML TAG'LARNI O'CHIRISH — MUHIM!
+    # ═══════════════════════════════════════════════════════════
+    import re
+    def strip_html_tags(text: str) -> str:
+        """HTML tag'larni o'chirib plain matn qaytaradi."""
+        return re.sub(r'<[^>]+>', '', text)
     
+    # ═══════════════════════════════════════════════════════════
+    # PREVIEW MATNLARINI TAYYORLA (TAG BO'LMASIZ)
+    # ═══════════════════════════════════════════════════════════
+    full_text = strip_html_tags(full_cap)
+    full_preview = full_text[:300] + ("…" if len(full_text) > 300 else "")
+    
+    short_text = strip_html_tags(short_cap)
+    short_preview = short_text[:300] + ("…" if len(short_text) > 300 else "")
+    
+    medium_text = strip_html_tags(medium_cap)
+    medium_preview = medium_text[:250] + ("…" if len(medium_text) > 250 else "")
+    
+    minimal_text = strip_html_tags(minimal_cap)
+    minimal_preview = minimal_text[:150] + ("…" if len(minimal_text) > 150 else "")
+    
+    # ═══════════════════════════════════════════════════════════
+    # XABAR YUBORISH
+    # ═══════════════════════════════════════════════════════════
+    # Preview'lar plain matn, <blockquote> ichida xavfsiz
     await call.message.answer(
         f"📝 <b>Caption turini tanlang:</b>\n\n"
-        f"<b>1️⃣ To'liq:</b>\n<blockquote>{full_preview}</blockquote>\n\n"
-        f"<b>2️⃣ Qisqa:</b>\n<blockquote>{short_preview}</blockquote>\n\n"
-        f"<b>3️⃣ O'rtacha:</b>\n<blockquote>{medium_preview}</blockquote>\n\n"
+        f"<b>1️⃣ To'liq ma'lumot:</b>\n<blockquote>{full_preview}</blockquote>\n\n"
+        f"<b>2️⃣ Qisqa ma'lumot:</b>\n<blockquote>{short_preview}</blockquote>\n\n"
+        f"<b>3️⃣ O'rtacha ma'lumot:</b>\n<blockquote>{medium_preview}</blockquote>\n\n"
         f"<b>4️⃣ Minimal:</b>\n<blockquote>{minimal_preview}</blockquote>",
         reply_markup=kb,
         parse_mode="HTML",
