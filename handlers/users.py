@@ -1,12 +1,3 @@
-"""
-users.py — Kaworai Bot (to'liq versiya)
-
-Tuzatishlar:
-1. Admin panel ochiq bo'lsa — admin yozgan xabarlar o'chmasin
-2. Inline tanlanganda 2-rasmdagi dizayn chiqadi
-3. Baho: 1-10 tizim saqlangan
-"""
-
 import asyncio
 import logging
 import os
@@ -42,16 +33,9 @@ PHOTO_URL = "https://i.postimg.cc/zDpjp9Mz/kawaro-(1)-(3).jpg"
 GRID_SIZE = 8
 GRID_COLS = 4
 
-
-# ═══════════════════════════════════════════════════════════
-#  ADMIN TEKSHIRISH
-# ═══════════════════════════════════════════════════════════
-
-# `parse_admin_ids` tirnoq, bo'sh stringlar va ortiqcha probellarni tozalaydi —
-# Railway'da `ADMIN_ID="8173188671"` kabi qo'shtirnoqli qiymat ham to'g'ri
-# tanib olinadi. Aks holda `'"8173188671"' in _ADMINS` False bo'lib, admin
-# xabarlarini user_router noto'g'ri o'chirib yuborardi.
 _ADMINS = set(parse_admin_ids(os.getenv("ADMIN_ID", "")))
+
+_admin_panel_active: set[int] = set()
 
 
 async def _is_admin(user_id: int) -> bool:
@@ -67,27 +51,16 @@ async def _is_admin(user_id: int) -> bool:
         return False
 
 
-# Admin panel ochiqligini tracking
-_admin_panel_active: set[int] = set()
-
-
 def mark_admin_active(user_id: int):
-    """admin.py dagi admin_entry dan chaqiriladi."""
     _admin_panel_active.add(user_id)
 
 
 def mark_admin_inactive(user_id: int):
-    """admin.py dagi exit_admin dan chaqiriladi."""
     _admin_panel_active.discard(user_id)
 
 
 def is_admin_panel_active(user_id: int) -> bool:
     return user_id in _admin_panel_active
-
-
-# ═══════════════════════════════════════════════════════════
-#  EPISODE KEYBOARD
-# ═══════════════════════════════════════════════════════════
 
 
 def _build_episode_keyboard(
@@ -110,7 +83,6 @@ def _build_episode_keyboard(
 
     row_buttons = []
     for ep in page_eps:
-        # Tanlangan qism — yashil. Filler qism — sariq (warning). Qolgani — ko'k.
         is_filler_btn = ep in filler_set
         if ep == current_ep:
             label = f"✅ {ep}" if not is_filler_btn else f"🎲 {ep}"
@@ -175,12 +147,9 @@ def _build_episode_keyboard(
         sub_btn = InlineKeyboardButton(text="❤️ Obuna bo'lish", callback_data=f"toggle_sub_{anime_id}", style="success")
     builder.row(
         sub_btn,
-        InlineKeyboardButton(
-            text="⚠️ Muammo",
-            callback_data=f"problems_{anime_id}_{current_ep}_{page}",
-            style="danger",
-        ),
+        InlineKeyboardButton(text="⚠️ Muammo", callback_data=f"problems_{anime_id}_{current_ep}", style="danger"),
     )
+
     builder.row(
         InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu", style="primary"),
         InlineKeyboardButton(text="⭐ Baho berish", callback_data=f"rate_{anime_id}", style="success"),
@@ -208,17 +177,6 @@ async def _deliver_episode_video(
     is_pro: bool,
     ux_mode: str,
 ) -> None:
-    """Qism videosini yetkazish — UX rejimiga qarab ishlaydi.
-
-    * `ux_mode == "send"` (faqat Pro tanlasa): eski xabar **o'chmaydi**,
-      faqat tugmalari olib tashlanadi (video va captioni joyida qoladi),
-      keyin yangi video xabar yuboriladi. Har bir qism botda saqlanib boradi.
-    * `ux_mode == "edit"` (default): mavjud xabar `edit_media` bilan
-      almashtiriladi (silliq UX). Agar edit xato bo'lsa — send fallback.
-
-    `protect_content=not is_pro` — oddiy userlar yuklab/ulashib olmaydi.
-    Oddiy userlar uchun video ostida reklama ko'rsatiladi.
-    """
     if not is_pro:
         from utils.ad_helpers import get_ad_text, get_pro_ad_text
 
@@ -230,7 +188,6 @@ async def _deliver_episode_video(
             caption += f"\n\n💎 {pro_txt}"
     media = InputMediaVideo(media=file_id, caption=caption, parse_mode="HTML")
     if ux_mode == "send":
-        # Eski xabarning tugmalarini olib tashlaymiz (video o'zi qoladi).
         try:
             await call.message.edit_reply_markup(reply_markup=None)
         except Exception as e:
@@ -246,11 +203,9 @@ async def _deliver_episode_video(
             return
         except Exception as e:
             logger.warning(f"episode send-mode fallback: {e}")
-            # Agar yangi video yuborilmasa — oxirgi chora matn xabar.
             await call.message.answer(caption, reply_markup=kb, parse_mode="HTML")
             return
 
-    # Default: edit_media (silliq)
     try:
         await call.message.edit_media(media=media, reply_markup=kb)
         return
@@ -271,10 +226,6 @@ async def _deliver_episode_video(
 
 
 async def _load_episodes_and_filler(session, anime_id: int) -> tuple[list[int], set[int]]:
-    """Anime'ning barcha qismlari + filler raqamlari to'plamini qaytaradi.
-
-    Yagona joyda yuklash — har callback'da takror takror SELECT yozilmasin.
-    """
     res = await session.execute(select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc()))
     rows = list(res.scalars().all())
     ep_nums = [e.episode for e in rows]
@@ -283,12 +234,6 @@ async def _load_episodes_and_filler(session, anime_id: int) -> tuple[list[int], 
 
 
 def _next_after_filler(all_episodes: list[int], current: int, filler_eps: set[int]) -> int | None:
-    """Filler qismdan keyingi kanonik (non-filler) qism raqamini topadi.
-
-    Avval `current`'dan keyingi non-filler qism qidiriladi. Agar topilmasa
-    (qolganlari ham filler bo'lsa), shunchaki `current`'dan keyingi qaysi
-    qism bo'lsa shu qaytariladi. Hech qaysi qism qolmagan bo'lsa — None.
-    """
     for n in all_episodes:
         if n > current and n not in filler_eps:
             return n
@@ -307,12 +252,6 @@ async def _deliver_filler_episode(
     page: int,
     kb: InlineKeyboardMarkup,
 ) -> None:
-    """Filler qismni yetkazish — video o'rniga anime.filter_file_id rasm/video.
-
-    Caption'da `🎲 FILLER` belgisi va "Keyingi qism" tugmasi (mavjud bo'lsa).
-    Video umuman yuborilmaydi — user filler ekanligini ko'radi va `▶️ Keyingi`
-    bilan kanonik qismga o'tadi.
-    """
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
     emoji = type_emoji.get(anime.content_type or "anime", "🎬")
     caption = (
@@ -331,7 +270,6 @@ async def _deliver_filler_episode(
                 style="success",
             )
         )
-    # Eski grid kb'ni ham qo'shamiz, shunda user istasa boshqa qismni tanlay oladi
     for row in kb.inline_keyboard:
         builder.row(*row)
     final_kb = builder.as_markup()
@@ -374,12 +312,10 @@ async def _deliver_filler_episode(
         logger.exception("filler delivery failed")
 
     if not sent:
-        # Filter o'rnatilmagan — matn xabar bilan baribir foydalanuvchini ogohlantiramiz.
         await call.message.answer(caption, parse_mode="HTML", reply_markup=final_kb)
 
 
 async def _send_filter_media(call: types.CallbackQuery, anime: Anime) -> None:
-    """Anime uchun saqlangan filter mediani yuborish (agar mavjud bo'lsa)."""
     f_type = getattr(anime, "filter_type", None)
     if not f_type:
         return
@@ -400,19 +336,7 @@ async def _send_filter_media(call: types.CallbackQuery, anime: Anime) -> None:
         logger.debug("filter media yuborib bo'lmadi", exc_info=True)
 
 
-# ═══════════════════════════════════════════════════════════
-#  INLINE TANLANGANDA — 2-RASMDAGI DIZAYN
-# ═══════════════════════════════════════════════════════════
-
-
 async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id: int):
-    """
-    Inline dan anime tanlanganda chiqadigan karta (2-rasmdagi dizayn).
-
-    [ Tomosha qilish (N qism)              ]
-    [ ♥ obuna bo'lganlar (N) | 🔍 qidirsh ]
-    [ 🏠 menu                              ]
-    """
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
@@ -500,10 +424,6 @@ async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id
 
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
-    # MUHIM: Poster `protect_content=not is_pro` bilan yuboriladi.
-    # Shunda keyingi `edit_media` chaqiruvlari (poster → video) xuddi shu
-    # xabarning himoya flag'ini meros qilib oladi va oddiy userlar video
-    # qismlarini yuklab/ulashib ololmaydi. Pro uchun cheklov yo'q.
     try:
         if anime.poster_file_id:
             await message.answer_photo(
@@ -527,16 +447,7 @@ async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id
         await message.answer(caption, reply_markup=kb, parse_mode="HTML")
 
 
-# ═══════════════════════════════════════════════════════════
-#  ANIME KARTOCHKA (1-RASMDAGI DIZAYN)
-# ═══════════════════════════════════════════════════════════
-
-
 async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, from_inline: bool = False):
-    """
-    from_inline=True  → 2-rasmdagi dizayn (inline tanlanganda)
-    from_inline=False → 1-rasmdagi dizayn (kod/start orqali)
-    """
     if from_inline:
         return await _show_anime_card_inline(message, anime_id, user_id)
 
@@ -631,7 +542,6 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
 
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
-    # Poster protect_content=not is_pro bilan yuboriladi — edit_media meros qiladi.
     try:
         if anime.poster_file_id:
             await message.answer_photo(
@@ -655,14 +565,6 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
         await message.answer(caption, reply_markup=kb, parse_mode="HTML")
 
 
-# ═══════════════════════════════════════════════════════════
-#  ASOSIY MENYU
-# ═══════════════════════════════════════════════════════════
-
-
-# Pro `start_extras` kalitlari uchun ko'rinadigan nomlar — userlar ko'radigan
-# labellar. Yangi Pro shortcut qo'shilsa, bu yerga va `queries.ALLOWED_START_EXTRAS`
-# ga qo'shish kerak.
 _PRO_START_SHORTCUTS: dict[str, str] = {
     "pro_recommend": "🤖 AI Tavsiyalar",
     "pro_mood": "😌 Kayfiyatim",
@@ -676,11 +578,6 @@ _PRO_START_SHORTCUTS: dict[str, str] = {
 
 
 def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboardMarkup:
-    """Asosiy /start menyusi.
-
-    `pro_extras` — Pro user tanlagan shortcut kalitlar (tartibi). Tanlangan
-    bo'lsa, default tugmalardan oldin (tepada) ko'rsatiladi, 2 ustunli grid'da.
-    """
     rows: list[list[InlineKeyboardButton]] = []
     if pro_extras:
         row: list[InlineKeyboardButton] = []
@@ -714,11 +611,6 @@ def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboar
 
 
 async def _get_user_start_extras(user_id: int) -> list[str]:
-    """Pro user tanlagan /start shortcut'larini DB'dan oladi.
-
-    Oddiy user yoki Pro bo'lmasa — bo'sh ro'yxat. DB xato bersa — bo'sh
-    ro'yxat (menyu har doim ko'rsatilishi kerak).
-    """
     try:
         from database.queries import get_user_start_extras
 
@@ -755,11 +647,6 @@ async def send_main_menu(target, delete_prev: bool = False):
         await msg.answer(caption, reply_markup=kb, parse_mode="HTML")
 
 
-# ═══════════════════════════════════════════════════════════
-#  /start
-# ═══════════════════════════════════════════════════════════
-
-
 def _parse_start_anime_id(args: str) -> int | None:
     args = args or ""
     if args.startswith("anime_"):
@@ -784,7 +671,6 @@ async def _continue_after_start(
     anime_id: int | None,
     edit: bool = False,
 ) -> None:
-    """Region tanlangan yoki oldindan bor bo'lganda — oddiy /start oqimi."""
     async with AsyncSessionLocal() as session:
         channels = await get_active_channels(session)
     not_subbed = await check_subscription(message.bot, user_id, channels)
@@ -835,7 +721,6 @@ async def cmd_start(message: types.Message, command: CommandObject):
 
 @user_router.callback_query(F.data.startswith("userregion_"))
 async def user_region_pick(call: types.CallbackQuery):
-    """User /start'da yoki kartada 'viloyatni tanlash' tugmasidan region tanladi."""
     code = call.data.replace("userregion_", "", 1)
     if not is_valid_region(code):
         return await call.answer("❌ Noto'g'ri region!", show_alert=True)
@@ -862,11 +747,6 @@ async def user_region_pick(call: types.CallbackQuery):
     await _continue_after_start(call.message, user_id=user_id, anime_id=None)
 
 
-# ═══════════════════════════════════════════════════════════
-#  1-QISMDAN BOSHLA
-# ═══════════════════════════════════════════════════════════
-
-
 @user_router.callback_query(F.data.startswith("watch_start_"))
 async def watch_start(call: types.CallbackQuery):
     anime_id = int(call.data.replace("watch_start_", ""))
@@ -890,7 +770,6 @@ async def watch_start(call: types.CallbackQuery):
         )
         episodes = list(eps_res.scalars().all())
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
-        # Pro tanlagan UX rejimi (edit/send). Non-Pro har doim edit — silliq.
         ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
 
     if not episodes:
@@ -905,8 +784,6 @@ async def watch_start(call: types.CallbackQuery):
         anime_id, ep_numbers, first_ep.episode, subscribed, is_pro, page=0, filler_eps=filler_eps
     )
 
-    # Birinchi qism filler bo'lib qolgan kam uchraydigan holat — oddiy video
-    # yubormay, filter rasm + "Keyingi qism" tugmasini ko'rsatamiz.
     if getattr(first_ep, "is_filler", False):
         next_ep = _next_after_filler(ep_numbers, first_ep.episode, filler_eps)
         await _deliver_filler_episode(call, anime=anime, episode=first_ep.episode, next_episode=next_ep, page=0, kb=kb)
@@ -933,11 +810,6 @@ async def watch_start(call: types.CallbackQuery):
             await call.message.answer(alert, parse_mode="HTML")
         except Exception:
             pass
-
-
-# ═══════════════════════════════════════════════════════════
-#  QISM TANLASH (GRID)
-# ═══════════════════════════════════════════════════════════
 
 
 @user_router.callback_query(F.data.startswith("ep_") & ~F.data.startswith("eppage_") & ~F.data.startswith("epnav_"))
@@ -1013,11 +885,6 @@ async def episode_select(call: types.CallbackQuery):
             pass
 
 
-# ═══════════════════════════════════════════════════════════
-#  GRID SAHIFA
-# ═══════════════════════════════════════════════════════════
-
-
 @user_router.callback_query(F.data.startswith("eppage_"))
 async def episode_page_change(call: types.CallbackQuery):
     parts = call.data.split("_")
@@ -1050,11 +917,6 @@ async def episode_page_change(call: types.CallbackQuery):
         await call.message.edit_reply_markup(reply_markup=kb)
     except Exception as e:
         logger.warning(f"eppage error: {e}")
-
-
-# ═══════════════════════════════════════════════════════════
-#  OLDINGI / KEYINGI QISM
-# ═══════════════════════════════════════════════════════════
 
 
 @user_router.callback_query(F.data.startswith("epnav_"))
@@ -1108,18 +970,14 @@ async def episode_navigate(call: types.CallbackQuery):
             new_idx = idx - 1
         else:
             if idx >= len(ep_numbers) - 1:
-                # Oxirgi qismda "Keyingi" bosildi — keyingi fasl bormi?
                 next_anime = await find_next_season_anime(session, anime_id)
                 if next_anime is None:
-                    # Keyingi fasl yo'q — userni oxirgi qismda qoldiramiz,
-                    # obuna bo'lib qo'yishni taklif qilamiz (yangi qism chiqsa xabar).
                     already_subscribed = await is_subscribed_anime(session, anime_id, user_id)
                     if already_subscribed:
                         msg = "✅ Bu oxirgi qism!\n🔔 Obunadasiz — yangi qism chiqsa sizga xabar beramiz."
                     else:
                         msg = "✅ Bu oxirgi qism!\n❤️ Obuna bo'lib qo'ying — yangi qism chiqqanda xabar beramiz."
                     return await call.answer(msg, show_alert=True)
-                # Keyingi faslning 1-qismiga o'tamiz.
                 if next_anime.is_pro_locked and not is_pro:
                     return await call.answer("🔒 Keyingi fasl Pro foydalanuvchilar uchun!", show_alert=True)
                 next_eps_res = await session.execute(
@@ -1131,7 +989,7 @@ async def episode_navigate(call: types.CallbackQuery):
                 season_jump = True
                 next_ep_obj = next_eps[0]
                 next_ep_numbers = [e.episode for e in next_eps]
-                new_idx = 0  # yangi faslning 1-qismi indeksi
+                new_idx = 0
             else:
                 new_idx = idx + 1
 
@@ -1152,7 +1010,6 @@ async def episode_navigate(call: types.CallbackQuery):
     new_page = new_idx // GRID_SIZE if not season_jump else 0
     caption = _build_episode_caption(target_anime, target_ep_num, len(target_ep_numbers))
     if season_jump:
-        # Userga yangi fasl boshlanganini bildiramiz (caption ichida).
         caption = f"🎉 <b>Yangi fasl boshlanmoqda!</b>\n\n{caption}"
     kb = _build_episode_keyboard(
         target_anime.id,
@@ -1164,14 +1021,9 @@ async def episode_navigate(call: types.CallbackQuery):
         filler_eps=target_filler_eps,
     )
 
-    # Fasl o'tishi — eski fasl xabar qolishi mantiqsiz, shuning uchun
-    # har doim yangi xabar yuboramiz (user o'zining rejimi qanday bo'lsa ham).
     delivery_mode = "send" if season_jump else ux_mode
     await call.answer("🎉 2-faslga o'tildi!" if season_jump else None, show_alert=season_jump)
 
-    # Filler qismga ⬅️/➡️ tugmasi bilan o'tilgan bo'lsa ham, oddiy video
-    # yubormaymiz — anime'ning filter rasmi + "Keyingi qism" tugmasi.
-    # `episode_select`'dagi mantiq bilan bir xil.
     if getattr(target_ep_obj, "is_filler", False):
         next_ep = _next_after_filler(target_ep_numbers, target_ep_num, target_filler_eps)
         await _deliver_filler_episode(
@@ -1186,7 +1038,6 @@ async def episode_navigate(call: types.CallbackQuery):
         from database.queries import add_to_watch_history, record_view
 
         async with AsyncSessionLocal() as session:
-            # Eski fasl oxirigacha ko'rilgan bo'lsa — completed deb belgilaymiz.
             if season_jump:
                 await add_to_watch_history(session, user_id, anime_id, episode=current_ep, is_completed=True)
                 await add_to_watch_history(session, user_id, target_anime.id, episode=target_ep_num)
@@ -1206,11 +1057,6 @@ async def episode_navigate(call: types.CallbackQuery):
             await call.message.answer(alert, parse_mode="HTML")
         except Exception:
             pass
-
-
-# ═══════════════════════════════════════════════════════════
-#  QISMLAR RO'YXATI
-# ═══════════════════════════════════════════════════════════
 
 
 @user_router.callback_query(F.data.startswith("episodes_"))
@@ -1259,11 +1105,6 @@ async def show_episodes_list(call: types.CallbackQuery):
         )
 
 
-# ═══════════════════════════════════════════════════════════
-#  OBUNA TOGGLE
-# ═══════════════════════════════════════════════════════════
-
-
 @user_router.callback_query(F.data.startswith("toggle_sub_"))
 async def toggle_subscription(call: types.CallbackQuery):
     anime_id = int(call.data.replace("toggle_sub_", ""))
@@ -1309,14 +1150,7 @@ async def toggle_subscription(call: types.CallbackQuery):
             pass
 
 
-# ═══════════════════════════════════════════════════════════
-#  BAHO BERISH — 1 DAN 10 GACHA
-# ═══════════════════════════════════════════════════════════
-
-
-@user_router.callback_query(
-    F.data.startswith("rate_") & ~F.data.startswith("rate_set_") & ~F.data.startswith("rate_cancel")
-)
+@user_router.callback_query(F.data.startswith("rate_"))
 async def rate_anime_start(call: types.CallbackQuery):
     anime_id = int(call.data.replace("rate_", ""))
 
@@ -1371,7 +1205,6 @@ async def rate_anime_set(call: types.CallbackQuery):
     )
     kb_rows: list[list[InlineKeyboardButton]] = []
     if next_season is not None:
-        # Keyingi fasl mavjud — userga darhol tavsiya qilamiz.
         text += f"\n\n🎌 <b>Yaxshi xabar!</b> <i>{next_season.title}</i> ham mavjud.\nTomosha qilishni xohlaysizmi?"
         kb_rows.append(
             [
@@ -1403,17 +1236,8 @@ async def rate_cancel(call: types.CallbackQuery):
         pass
 
 
-# ═══════════════════════════════════════════════════════════
-#  ASOSIY MENYU CALLBACK
-# ═══════════════════════════════════════════════════════════
-
-
 @user_router.callback_query(F.data == "main_menu")
 async def go_main_menu(call: types.CallbackQuery):
-    """Asosiy menyu — silliq o'tish uchun avval `edit_media` bilan mavjud
-    xabarni asosiy bannerga aylantirishga urinamiz. Agar mavjud xabar
-    media emas bo'lsa yoki edit xato bersa — yangi xabar yuboramiz.
-    """
     await call.answer()
     caption = "🎌 <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
     extras = await _get_user_start_extras(call.from_user.id)
@@ -1428,8 +1252,6 @@ async def go_main_menu(call: types.CallbackQuery):
     except Exception as e:
         logger.debug(f"go_main_menu edit_media failed: {e}")
 
-    # Matn xabar bo'lsa edit_media ishlamaydi — fallback: eski xabarni
-    # o'chirib, yangi rasmli menyuni yuboramiz.
     try:
         await call.message.delete()
     except Exception:
@@ -1445,11 +1267,6 @@ async def no_episodes_cb(call: types.CallbackQuery):
 @user_router.callback_query(F.data == "ep_noop")
 async def ep_noop(call: types.CallbackQuery):
     await call.answer()
-
-
-# ═══════════════════════════════════════════════════════════
-#  KOD ORQALI QIDIRISH
-# ═══════════════════════════════════════════════════════════
 
 
 @user_router.callback_query(F.data == "search_by_code")
@@ -1486,13 +1303,7 @@ async def handle_code_input(message: types.Message):
     not_subbed = await check_subscription(message.bot, user_id, channels)
     if not_subbed:
         return
-    # Kod orqali → 1-rasmdagi dizayn
     await _show_anime_card(message, anime_id, user_id, from_inline=False)
-
-
-# ═══════════════════════════════════════════════════════════
-#  OBUNALARIM
-# ═══════════════════════════════════════════════════════════
 
 
 @user_router.callback_query(F.data == "my_subs")
@@ -1552,11 +1363,6 @@ async def anime_info_cb(call: types.CallbackQuery):
     await _show_anime_card(call.message, anime_id, call.from_user.id, from_inline=False)
 
 
-# ═══════════════════════════════════════════════════════════
-#  OBUNA TEKSHIRISH
-# ═══════════════════════════════════════════════════════════
-
-
 @user_router.callback_query(F.data == "check_subs")
 async def recheck_subscription(call: types.CallbackQuery):
     user_id = call.from_user.id
@@ -1593,18 +1399,8 @@ async def cancel_sub(call: types.CallbackQuery):
     await call.answer()
 
 
-# ═══════════════════════════════════════════════════════════
-#  MEDIA BLOKLASH
-# ═══════════════════════════════════════════════════════════
-
-
 @user_router.message(F.video | F.document | F.audio | F.voice, F.chat.type == "private")
 async def block_media(message: types.Message):
-    """
-    ✅ Admin panel ochiq bo'lsa — o'chirmaydi
-    ✅ Admin bo'lsa ham o'chirmaydi
-    ✅ Kanal videolariga tegmaydi
-    """
     user_id = message.from_user.id
     if is_admin_panel_active(user_id):
         return
@@ -1616,24 +1412,13 @@ async def block_media(message: types.Message):
         pass
 
 
-# ═══════════════════════════════════════════════════════════
-#  MATN XABARLAR
-# ═══════════════════════════════════════════════════════════
-
 @user_router.message(F.text & ~F.text.startswith("/"))
 async def handle_text(message: types.Message):
-    """
-    ✅ Admin panel ochiq bo'lsa — o'chirmaydi
-    ✅ Admin bo'lsa ham o'chirmaydi
-    ✅ Inline link → 2-rasmdagi dizayn
-    ✅ anime_ID format → 2-rasmdagi dizayn
-    ✅ Oddiy user matn → o'chiriladi
-    """
     text = message.text.strip()
     user_id = message.from_user.id
 
-
-    # "📝 Boshqa muammo" oqimi — BU YERGA QO'YING ⬇️
+    # "📝 Boshqa muammo" oqimi: user muammo matnini yozmoqda —
+    # admin ga yuborib, xabar o'chirilmaydi.
     from handlers.callbacks import consume_pending_problem
     if await consume_pending_problem(message):
         return
@@ -1641,8 +1426,6 @@ async def handle_text(message: types.Message):
     if text.isdigit():
         return
 
-
-    # Inline dan kelgan link → 2-rasmdagi dizayn
     if "?start=anime_" in text:
         try:
             anime_id_str = text.split("?start=anime_")[-1].strip()
@@ -1656,7 +1439,6 @@ async def handle_text(message: types.Message):
         except Exception:
             pass
 
-    # anime_123 format
     if text.startswith("anime_"):
         try:
             anime_id = int(text.replace("anime_", "").strip())
@@ -1669,24 +1451,16 @@ async def handle_text(message: types.Message):
         except ValueError:
             pass
 
-    # Admin panel ochiq bo'lsa — o'chirmaydi
     if is_admin_panel_active(user_id):
         return
 
-    # Admin bo'lsa ham o'chirmaydi
     if await _is_admin(user_id):
         return
 
-    # Oddiy user — o'chirish
     try:
         await message.delete()
     except Exception:
         pass
-
-
-# ═══════════════════════════════════════════════════════════
-#  MENING DIDIM
-# ═══════════════════════════════════════════════════════════
 
 
 @user_router.callback_query(F.data == "my_taste")
