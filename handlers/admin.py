@@ -4055,8 +4055,8 @@ async def bc_caption_full(call: types.CallbackQuery, state: FSMContext):
         anime = await session.get(Anime, data["bc_anime_id"])
     if anime:
         await state.update_data(bc_caption=_build_post_caption(anime))
+    await call.answer("✅ To'liq caption saqlandi")
     await _bc_ask_extra_btn(call.message, state)
-    await call.answer()
 
 
 @admin_router.callback_query(F.data == "bccap_short", BroadcastState.waiting_anime_post_caption)
@@ -4066,8 +4066,8 @@ async def bc_caption_short(call: types.CallbackQuery, state: FSMContext):
         anime = await session.get(Anime, data["bc_anime_id"])
     if anime:
         await state.update_data(bc_caption=_build_short_caption(anime))
+    await call.answer("✅ Qisqa caption saqlandi")
     await _bc_ask_extra_btn(call.message, state)
-    await call.answer()
 
 
 @admin_router.callback_query(F.data == "bccap_medium", BroadcastState.waiting_anime_post_caption)
@@ -4077,8 +4077,8 @@ async def bc_caption_medium(call: types.CallbackQuery, state: FSMContext):
         anime = await session.get(Anime, data["bc_anime_id"])
     if anime:
         await state.update_data(bc_caption=_build_medium_caption(anime))
+    await call.answer("✅ O'rtacha caption saqlandi")
     await _bc_ask_extra_btn(call.message, state)
-    await call.answer()
 
 
 @admin_router.callback_query(F.data == "bccap_minimal", BroadcastState.waiting_anime_post_caption)
@@ -4088,8 +4088,8 @@ async def bc_caption_minimal(call: types.CallbackQuery, state: FSMContext):
         anime = await session.get(Anime, data["bc_anime_id"])
     if anime:
         await state.update_data(bc_caption=_build_minimal_caption(anime))
+    await call.answer("✅ Minimal caption saqlandi")
     await _bc_ask_extra_btn(call.message, state)
-    await call.answer()
 
 
 @admin_router.callback_query(F.data == "bccap_custom", BroadcastState.waiting_anime_post_caption)
