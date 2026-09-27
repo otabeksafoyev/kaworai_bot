@@ -2727,7 +2727,7 @@ async def skip_inline_url(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
-@admin_router.message(AddAnime.waiting_inline_url)
+@admin_router.message(F.text, AddAnime.waiting_inline_url)
 async def process_inline_url(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
         return
