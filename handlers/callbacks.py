@@ -656,8 +656,12 @@ def _problems_kb(anime_id: int, episode: int, page: int) -> InlineKeyboardMarkup
         else f"watch_{anime_id}_{episode}"
     )
     rows = [
-        [InlineKeyboardButton(text="📝 Muammoni yozish", callback_data=f"probother_{anime_id}_{episode}_{page}", style="success")]
+        [InlineKeyboardButton(text=label, callback_data=f"probfix_{key}_{anime_id}_{episode}_{page}", style="primary")]
+        for key, label in _PROBLEM_ISSUES.items()
     ]
+    rows.append(
+        [InlineKeyboardButton(text="📝 Boshqa muammo", callback_data=f"probother_{anime_id}_{episode}_{page}", style="primary")]
+    )
     rows.append(
         [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=back_cb, style="primary")]
     )
