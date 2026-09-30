@@ -855,7 +855,9 @@ async def consume_pending_problem(message) -> bool:
 
 @callback_router.callback_query(F.data.startswith("rate_"))
 async def rate_anime(call: CallbackQuery):
-    anime_id = int(call.data.split("_")[1])
+    # Format: rate_{anime_id} yoki rate_set_{anime_id}_{episode}
+    raw = call.data.replace("rate_", "").split("_")
+    anime_id = int(raw[0]) if raw[0].isdigit() else int(raw[1])
     async with AsyncSessionLocal() as session:
         user_rating = await get_user_rating(session, anime_id, call.from_user.id)
     if user_rating:
