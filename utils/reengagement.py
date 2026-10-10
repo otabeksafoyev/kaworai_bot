@@ -68,8 +68,8 @@ def _reminder_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="👍 Ha, ishlatyapman", callback_data="rmd_yes", style="success"),
-                InlineKeyboardButton(text="😴 Keyinroq ko'raman", callback_data="rmd_no", style="primary"),
+                InlineKeyboardButton(text="✓ Ha, ishlatyapman", callback_data="rmd_yes"),
+                InlineKeyboardButton(text="☾ Keyinroq ko'raman", callback_data="rmd_no"),
             ]
         ]
     )

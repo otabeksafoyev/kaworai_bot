@@ -20,7 +20,7 @@ from database.queries import (
 
 callback_router = Router()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
-from utils.ui import rating_stars, share_anime_url  # noqa: E402
+from utils.ui import sym, rating_stars, share_anime_url  # noqa: E402
 
 EP_PAGE_SIZE = 12  # 4 ta × 3 qator
 
@@ -80,9 +80,8 @@ def _anime_info_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="🔒 Faqat Kaworai Pro uchun",
+                    text="⊘ Faqat Kaworai Pro uchun",
                     callback_data="kawaii_pass",
-                    style="primary",
                 )
             ]
         )
@@ -90,18 +89,16 @@ def _anime_info_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="▶️ 1-qismdan tomosha qilish",
+                    text="ᐅ 1-qismdan tomosha qilish",
                     callback_data=f"watch_start_{anime_id}",
-                    style="success",
                 )
             ]
         )
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="📋 Barcha qismlar",
+                    text="≡ Barcha qismlar",
                     callback_data=f"episodes_{anime_id}_0",
-                    style="primary",
                 )
             ]
         )
@@ -109,22 +106,19 @@ def _anime_info_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="⏳ Qismlar hali qo'shilmagan",
+                    text="◌ Qismlar hali qo'shilmagan",
                     callback_data="no_episodes",
-                    style="primary",
                 )
             ]
         )
 
     sub_icon = "🔔" if subscribed else "🔕"
     sub_txt = "Obunani bekor qilish" if subscribed else "Obuna bo'lish"
-    sub_style = "danger" if subscribed else "success"
     rows.append(
         [
             InlineKeyboardButton(
-                text=f"{sub_icon} {sub_txt}",
+                text=f"{sym(sub_icon)} {sub_txt}",
                 callback_data=f"toggle_sub_{anime_id}",
-                style=sub_style,
             )
         ]
     )
@@ -132,14 +126,13 @@ def _anime_info_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔗 Ulashish",
+                text="↗ Ulashish",
                 url=share_anime_url(anime_id),
-                style="primary",
             )
         ]
     )
 
-    rows.append([InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")])
+    rows.append([InlineKeyboardButton(text="⌂ Asosiy menyu", callback_data="main_menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -160,17 +153,15 @@ def _player_kb(
     if episode > 1:
         nav.append(
             InlineKeyboardButton(
-                text="⬅️ Oldingi",
+                text="ᐊ Oldingi",
                 callback_data=f"ep_{anime_id}_{episode - 1}",
-                style="primary",
             )
         )
     if episode < max_ep:
         nav.append(
             InlineKeyboardButton(
-                text="Keyingi ➡️",
+                text="Keyingi ᐅ",
                 callback_data=f"ep_{anime_id}_{episode + 1}",
-                style="primary",
             )
         )
     if nav:
@@ -180,33 +171,29 @@ def _player_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="📋 Qismlar",
+                text="≡ Qismlar",
                 callback_data=f"episodes_{anime_id}_{ep_page}",
-                style="primary",
             ),
-            InlineKeyboardButton(text="🏠 Asosiy", callback_data="main_menu", style="primary"),
+            InlineKeyboardButton(text="⌂ Asosiy", callback_data="main_menu"),
         ]
     )
 
     rows.append(
         [
             InlineKeyboardButton(
-                text="⚠️ Muammo bormi?",
+                text="! Muammo bormi?",
                 callback_data=f"problems_{anime_id}_{episode}_-1",
-                style="danger",
             )
         ]
     )
 
     sub_icon = "🔔" if subscribed else "🔕"
     sub_txt = "Obunani bekor qilish" if subscribed else "Obuna bo'lish"
-    sub_style = "danger" if subscribed else "success"
     rows.append(
         [
             InlineKeyboardButton(
-                text=f"{sub_icon} {sub_txt}",
+                text=f"{sym(sub_icon)} {sub_txt}",
                 callback_data=f"toggle_sub_{anime_id}",
-                style=sub_style,
             )
         ]
     )
@@ -214,17 +201,16 @@ def _player_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔗 Ulashish",
+                text="↗ Ulashish",
                 url=share_anime_url(anime_id),
-                style="primary",
             )
         ]
     )
 
     if is_last and not user_rated:
-        rows.append([InlineKeyboardButton(text="⭐ Baho berish", callback_data=f"rate_{anime_id}", style="success")])
+        rows.append([InlineKeyboardButton(text="★ Baho berish", callback_data=f"rate_{anime_id}")])
     elif is_last and user_rated:
-        rows.append([InlineKeyboardButton(text="✅ Baho berilgan", callback_data=f"rated_{anime_id}", style="success")])
+        rows.append([InlineKeyboardButton(text="✓ Baho berilgan", callback_data=f"rated_{anime_id}")])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -250,7 +236,6 @@ def _episodes_kb(
             InlineKeyboardButton(
                 text=str(ep.episode),
                 callback_data=f"ep_{anime_id}_{ep.episode}",
-                style="success",
             )
         )
         if len(row) == 4:
@@ -264,23 +249,21 @@ def _episodes_kb(
         if page > 0:
             nav.append(
                 InlineKeyboardButton(
-                    text=f"⬅️ {page}",
+                    text=f"ᐊ {page}",
                     callback_data=f"episodes_{anime_id}_{page - 1}",
-                    style="primary",
                 )
             )
-        nav.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="noop", style="primary"))
+        nav.append(InlineKeyboardButton(text=f"≡ {page + 1}/{total_pages}", callback_data="noop"))
         if page < total_pages - 1:
             nav.append(
                 InlineKeyboardButton(
-                    text=f"{page + 2} ➡️",
+                    text=f"{page + 2} ᐅ",
                     callback_data=f"episodes_{anime_id}_{page + 1}",
-                    style="primary",
                 )
             )
         rows.append(nav)
 
-    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"anime_info_{anime_id}", style="primary")])
+    rows.append([InlineKeyboardButton(text="ᐊ Orqaga", callback_data=f"anime_info_{anime_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -657,14 +640,14 @@ def _problems_kb(anime_id: int, episode: int, page: int) -> InlineKeyboardMarkup
         else f"watch_{anime_id}_{episode}"
     )
     rows = [
-        [InlineKeyboardButton(text=label, callback_data=f"probfix_{key}_{anime_id}_{episode}_{page}", style="primary")]
+        [InlineKeyboardButton(text=sym(label), callback_data=f"probfix_{key}_{anime_id}_{episode}_{page}")]
         for key, label in _PROBLEM_ISSUES.items()
     ]
     rows.append(
-        [InlineKeyboardButton(text="📝 Boshqa muammo", callback_data=f"probother_{anime_id}_{episode}_{page}", style="primary")]
+        [InlineKeyboardButton(text="✎ Boshqa muammo", callback_data=f"probother_{anime_id}_{episode}_{page}")]
     )
     rows.append(
-        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=back_cb, style="primary")]
+        [InlineKeyboardButton(text="ᐊ Orqaga", callback_data=back_cb)]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -792,7 +775,7 @@ async def problem_fix_selected(call: CallbackQuery):
     label = _PROBLEM_ISSUES.get(issue, issue)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"problems_{anime_id}_{episode}_{page}", style="primary")],
+            [InlineKeyboardButton(text="ᐊ Orqaga", callback_data=f"problems_{anime_id}_{episode}_{page}")],
         ]
     )
     await _edit_or_answer(call, _problem_fix_text(label), kb)
@@ -809,7 +792,7 @@ async def problem_other_start(call: CallbackQuery):
     _PENDING_PROBLEM[call.from_user.id] = (anime_id, episode, time.monotonic() + _PENDING_PROBLEM_TTL)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"probback_{anime_id}_{episode}_{page}", style="primary")],
+            [InlineKeyboardButton(text="ᐊ Orqaga", callback_data=f"probback_{anime_id}_{episode}_{page}")],
         ]
     )
     await _edit_or_answer(
@@ -867,13 +850,13 @@ async def rate_anime(call: CallbackQuery):
     rows = []
     row = []
     for i in range(1, 11):
-        row.append(InlineKeyboardButton(text=str(i), callback_data=f"score_{anime_id}_{i}", style="primary"))
+        row.append(InlineKeyboardButton(text=str(i), callback_data=f"score_{anime_id}_{i}"))
         if len(row) == 5:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
-    rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data=f"ep_{anime_id}_cancel", style="danger")])
+    rows.append([InlineKeyboardButton(text="✕ Bekor", callback_data=f"ep_{anime_id}_cancel")])
 
     await call.message.edit_text(
         f"⭐ <b>Baho bering</b>\n\n"

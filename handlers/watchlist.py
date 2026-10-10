@@ -95,7 +95,7 @@ async def _show_watchlist_page(call: CallbackQuery, page: int = 0):
     if not all_items:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")]
+                [InlineKeyboardButton(text="⌂ Asosiy menyu", callback_data="main_menu")]
             ]
         )
         try:
@@ -130,11 +130,11 @@ async def _show_watchlist_page(call: CallbackQuery, page: int = 0):
 
         kb.row(
             InlineKeyboardButton(
-                text=f"▶️ {anime.title[:25]}",
+                text=f"ᐅ {anime.title[:25]}",
                 callback_data=f"anime_info_{anime.id}",
             ),
             InlineKeyboardButton(
-                text="🗑",
+                text="✕",
                 callback_data=f"wl_remove_{anime.id}",
             ),
         )
@@ -142,13 +142,13 @@ async def _show_watchlist_page(call: CallbackQuery, page: int = 0):
     # Navigatsiya
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"wl_page_{page - 1}"))
+        nav.append(InlineKeyboardButton(text="ᐊ Oldingi", callback_data=f"wl_page_{page - 1}"))
     if page < total_pages:
-        nav.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"wl_page_{page + 1}"))
+        nav.append(InlineKeyboardButton(text="Keyingi ᐅ", callback_data=f"wl_page_{page + 1}"))
     if nav:
         kb.row(*nav)
 
-    kb.row(InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu"))
+    kb.row(InlineKeyboardButton(text="⌂ Asosiy menyu", callback_data="main_menu"))
 
     try:
         await call.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
@@ -168,10 +168,10 @@ def get_watchlist_toggle_button(anime_id: int, in_watchlist: bool) -> InlineKeyb
     """
     if in_watchlist:
         return InlineKeyboardButton(
-            text="🗑 Ro'yxatdan olib tashlash",
+            text="✕ Ro'yxatdan olib tashlash",
             callback_data=f"wl_add_{anime_id}",
         )
     return InlineKeyboardButton(
-        text="📋 Keyinroq ko'rish",
+        text="≡ Keyinroq ko'rish",
         callback_data=f"wl_add_{anime_id}",
     )

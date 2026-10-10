@@ -51,3 +51,14 @@ def test_links_carry_referrer_only_when_known():
     share, link = ctx.run(inside)
     assert share.endswith("anime_5_r42") and link.endswith("anime_5_r42")
     assert referral_link(42).endswith("?start=ref_42")
+
+
+def test_sym_replaces_emoji_with_symbols():
+    from utils.ui import genre_sym, sym
+
+    assert sym("✅ Tasdiqlash") == "✓ Tasdiqlash"
+    assert sym("⬅️ Orqaga") == "ᐊ Orqaga"
+    assert sym("▫️ Janr") == "○ Janr"
+    assert sym("Oddiy matn 12") == "Oddiy matn 12"
+    assert "️" not in sym("⚠️ Muammo")           # variation selector qolmasin
+    assert genre_sym("⚔️ Action") == "๏ Action"

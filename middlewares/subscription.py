@@ -69,19 +69,18 @@ def get_sub_keyboard(channels: list):
 
     buttons = []
     for ch in channels:
-        buttons.append([InlineKeyboardButton(text=f"📢 {ch.channel_name}", url=ch.channel_url)])
+        buttons.append([InlineKeyboardButton(text=f"ᐅ {ch.channel_name}", url=ch.channel_url)])
     buttons.append(
         [
-            InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_subs"),
-            InlineKeyboardButton(text="❌ Chiqish", callback_data="cancel_sub_check"),
+            InlineKeyboardButton(text="✓ Tekshirish", callback_data="check_subs"),
+            InlineKeyboardButton(text="✕ Chiqish", callback_data="cancel_sub_check"),
         ]
     )
     buttons.append(
         [
             InlineKeyboardButton(
-                text="⚡ Pro olish — kanalsiz kirish",
+                text="ϟ Pro olish — kanalsiz kirish",
                 callback_data="kawaii_pass",
-                style="success",
             )
         ]
     )

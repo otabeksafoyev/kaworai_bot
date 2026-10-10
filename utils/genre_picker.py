@@ -19,6 +19,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from handlers.genres import GENRES
+from utils.ui import sym, genre_sym
 
 
 def genre_picker_kb(selected: list[str], prefix: str) -> InlineKeyboardMarkup:
@@ -40,7 +41,7 @@ def genre_picker_kb(selected: list[str], prefix: str) -> InlineKeyboardMarkup:
         mark = "✅" if key in sel_set else "▫️"
         row.append(
             InlineKeyboardButton(
-                text=f"{mark} {label}",
+                text=f"{sym(mark)} {genre_sym(label)}",
                 callback_data=f"{prefix}_tog:{key}",
             )
         )
@@ -53,10 +54,10 @@ def genre_picker_kb(selected: list[str], prefix: str) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text=f"✅ Tasdiqlash ({len(sel_set)})",
+                text=f"✓ Tasdiqlash ({len(sel_set)})",
                 callback_data=f"{prefix}_done",
             ),
-            InlineKeyboardButton(text="🚫 Bekor qilish", callback_data=f"{prefix}_cancel"),
+            InlineKeyboardButton(text="✕ Bekor qilish", callback_data=f"{prefix}_cancel"),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)

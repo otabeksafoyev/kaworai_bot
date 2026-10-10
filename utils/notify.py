@@ -54,7 +54,7 @@ async def notify_new_episode(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"▶️ {episode_number}-qismni ko'rish", url=f"https://t.me/{BOT_USERNAME}?start=anime_{anime_id}"
+                    text=f"ᐅ {episode_number}-qismni ko'rish", url=f"https://t.me/{BOT_USERNAME}?start=anime_{anime_id}"
                 )
             ]
         ]

@@ -36,6 +36,7 @@ from handlers.genres import GENRES
 from states.admin_states import AddAnime, AddAnimeAI
 from utils.ai_anime import build_content_info
 from utils.security import esc
+from utils.ui import sym
 
 logger = logging.getLogger(__name__)
 ai_admin_router = Router()
@@ -48,13 +49,13 @@ STATUS_LABEL = {"ongoing": "📡 Davom etmoqda", "completed": "✅ Tugagan", "an
 def _confirm_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ To'g'ri, saqlash", callback_data="aiadd_ok", style="success")],
-            [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="aiadd_edit", style="primary")],
+            [InlineKeyboardButton(text="✓ To'g'ri, saqlash", callback_data="aiadd_ok")],
+            [InlineKeyboardButton(text="✎ Tahrirlash", callback_data="aiadd_edit")],
             [
-                InlineKeyboardButton(text="🔄 AI qaytadan", callback_data="aiadd_retry", style="primary"),
-                InlineKeyboardButton(text="✍️ Noldan qo'lda", callback_data="aiadd_manual", style="primary"),
+                InlineKeyboardButton(text="↻ AI qaytadan", callback_data="aiadd_retry"),
+                InlineKeyboardButton(text="✎ Noldan qo'lda", callback_data="aiadd_manual"),
             ],
-            [InlineKeyboardButton(text="🚫 Bekor qilish", callback_data="aiadd_cancel", style="danger")],
+            [InlineKeyboardButton(text="✕ Bekor qilish", callback_data="aiadd_cancel")],
         ]
     )
 
@@ -494,21 +495,21 @@ EDIT_HINTS = {
 def _edit_menu_kb() -> InlineKeyboardMarkup:
     rows, row = [], []
     for key, label in EDIT_FIELDS:
-        row.append(InlineKeyboardButton(text=label, callback_data=f"aiedit:{key}", style="primary"))
+        row.append(InlineKeyboardButton(text=sym(label), callback_data=f"aiedit:{key}"))
         if len(row) == 2:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
-    rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="aiedit_back")])
+    rows.append([InlineKeyboardButton(text="ᐊ Orqaga", callback_data="aiedit_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _enum_kb(field: str) -> InlineKeyboardMarkup:
     options = TYPE_LABEL if field == "content_type" else STATUS_LABEL
-    rows = [[InlineKeyboardButton(text=label, callback_data=f"aival:{field}:{val}", style="primary")]
+    rows = [[InlineKeyboardButton(text=sym(label), callback_data=f"aival:{field}:{val}")]
             for val, label in options.items()]
-    rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="aiadd_edit")])
+    rows.append([InlineKeyboardButton(text="ᐊ Orqaga", callback_data="aiadd_edit")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

@@ -16,6 +16,7 @@ shu ro'yxatga bitta tuple qo'shsangiz kifoya — hamma joyda paydo bo'ladi.
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from utils.ui import sym
 
 # (code, label)
 REGIONS: list[tuple[str, str]] = [
@@ -65,17 +66,17 @@ def region_picker_kb(
     """
     rows: list[list[InlineKeyboardButton]] = []
     if with_all:
-        rows.append([InlineKeyboardButton(text=all_label, callback_data=f"{callback_prefix}{all_code}")])
+        rows.append([InlineKeyboardButton(text=sym(all_label), callback_data=f"{callback_prefix}{all_code}")])
     pair: list[InlineKeyboardButton] = []
     for code, label in REGIONS:
-        pair.append(InlineKeyboardButton(text=label, callback_data=f"{callback_prefix}{code}"))
+        pair.append(InlineKeyboardButton(text=sym(label), callback_data=f"{callback_prefix}{code}"))
         if len(pair) == 2:
             rows.append(pair)
             pair = []
     if pair:
         rows.append(pair)
     if with_cancel:
-        rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data=cancel_cb)])
+        rows.append([InlineKeyboardButton(text="✕ Bekor", callback_data=cancel_cb)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
