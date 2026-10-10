@@ -2004,15 +2004,16 @@ async def add_anime_start(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
         logger.warning("add_anime_start: user %s is not admin (ADMINS=%s)", msg.from_user.id, ADMINS)
         return
-    await state.set_state(AddAnime.waiting_id)
+    await state.clear()
     await msg.answer(
-        "➕ <b>Yangi kontent qo'shish</b>\n\n"
-        "Qadamlar: ID → Nom → Tur (anime/kino/serial/dorama) → "
-        "Tavsif → Rasm → Holat\n\n"
-        "🆔 <b>Kontent ID</b>sini kiriting (faqat raqam):\n"
-        "<i>Masalan: <code>4345</code></i>",
+        "➕ <b>Yangi kontent qo'shish</b>\n\nQanday qo'shamiz?",
         parse_mode="HTML",
-        reply_markup=cancel_kb,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🤖 AI bilan (tez)", callback_data="addmode_ai", style="success")],
+                [InlineKeyboardButton(text="✍️ Qo'lda", callback_data="addmode_manual", style="primary")],
+            ]
+        ),
     )
 
 
@@ -2605,7 +2606,8 @@ async def process_hidden_gem(call: types.CallbackQuery, state: FSMContext):
 
 @admin_router.callback_query(F.data == "skip_poster", AddAnime.waiting_poster)
 async def skip_poster(call: types.CallbackQuery, state: FSMContext):
-    await state.update_data(poster_file_id=None)
+    # AI rejimidan «qo'lda davom» qilingan bo'lsa — oldin saqlangan poster o'chmasin
+    await state.update_data(poster_file_id=(await state.get_data()).get("poster_file_id"))
     await state.set_state(AddAnime.waiting_trailer)
     await call.message.answer("🎬 <b>Treyler videosini yuboring:</b>", reply_markup=_skip_kb("skip_trailer"))
     await call.answer()
@@ -2721,7 +2723,7 @@ async def process_poster(msg: Message, state: FSMContext):
 
 @admin_router.callback_query(F.data == "skip_inline_url", AddAnime.waiting_inline_url)
 async def skip_inline_url(call: types.CallbackQuery, state: FSMContext):
-    await state.update_data(inline_thumbnail_url=None)
+    await state.update_data(inline_thumbnail_url=(await state.get_data()).get("inline_thumbnail_url"))
     await state.set_state(AddAnime.waiting_trailer)
     await call.message.answer("🎬 <b>Treyler videosini yuboring:</b>", reply_markup=_skip_kb("skip_trailer"))
     await call.answer()
@@ -2744,7 +2746,7 @@ async def process_inline_url(msg: Message, state: FSMContext):
 
 @admin_router.callback_query(F.data == "skip_trailer", AddAnime.waiting_trailer)
 async def skip_trailer(call: types.CallbackQuery, state: FSMContext):
-    await state.update_data(trailer_file_id=None)
+    await state.update_data(trailer_file_id=(await state.get_data()).get("trailer_file_id"))
     await call.message.answer("⏳ Saqlanmoqda...")
     await _save_anime(call.message, state, call.bot)
     await call.answer()

@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from data.config import BACKUP_CHANNEL_ID
 from database.engine import engine, init_db
 from handlers.admin import admin_router
+from handlers.admin_ai import ai_admin_router
 from handlers.admin_pro import pro_admin_router
 from handlers.callbacks import callback_router
 from handlers.errors import error_router
@@ -174,6 +175,7 @@ async def main():
 
     # Routerlar (pro_payment ENG BIRINCHI — kawaii_pass ni ushlaydi)
     dp.include_router(pro_payment_router)
+    dp.include_router(ai_admin_router)
     dp.include_router(admin_router)
     dp.include_router(pro_admin_router)
     dp.include_router(pro_user_router)

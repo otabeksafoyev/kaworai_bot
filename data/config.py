@@ -51,3 +51,8 @@ ADMIN_USERNAME = env.str("ADMIN_USERNAME", "")
 # https://api.imgbb.com dan olinadi (bepul, doimiy).
 # Bo'sh bo'lsa — ImgBB o'chiqlari, Telegram CDN fallback ishlatiladi.
 IMGBB_API_KEY = env.str("IMGBB_API_KEY", "")
+
+# AI bilan kontent qo'shish (bepul): Gemini API kaliti — https://aistudio.google.com/apikey
+# Bo'sh bo'lsa — faqat Jikan (MyAnimeList) ishlaydi, tavsif inglizcha qoladi.
+GEMINI_API_KEY = env.str("GEMINI_API_KEY", "")
+GEMINI_MODEL = env.str("GEMINI_MODEL", "gemini-flash-latest")
