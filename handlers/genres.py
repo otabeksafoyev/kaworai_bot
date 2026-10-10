@@ -13,26 +13,26 @@ from utils.ui import sym, genre_sym
 genre_router = Router()
 
 GENRES = {
-    "Jang": "⚔️ Action",
-    "Sarguzasht": "🗺️ Adventure",
-    "Komediya": "😂 Comedy",
-    "Drama": "🎭 Drama",
-    "Fantaziya": "🧙 Fantasy",
-    "Qo'rqinchli": "👻 Horror",
-    "Sirli": "🔍 Mystery",
-    "Romantika": "❤️ Romance",
-    "Ilmiy fantastika": "🚀 SciFi",
-    "Oddiy hayot": "☕ SliceOfLife",
-    "Sport": "⚽ Sports",
-    "G'ayritabiiy": "✨ Supernatural",
-    "Triller": "😱 Thriller",
-    "Mexanik": "🤖 Mecha",
-    "Sehr": "🪄 Magic",
-    "Maktab": "🏫 School",
-    "Shonen": "👦 Shounen",
-    "Shojo": "👧 Shoujo",
-    "Isekai": "🌀 Isekai",
-    "Psixologik": "🧠 Psychological",
+    "Jang": "๏ Action",
+    "Sarguzasht": "◎ Adventure",
+    "Komediya": "☺ Comedy",
+    "Drama": "๏ Drama",
+    "Fantaziya": "๏ Fantasy",
+    "Qo'rqinchli": "๏ Horror",
+    "Sirli": "⌕ Mystery",
+    "Romantika": "♡ Romance",
+    "Ilmiy fantastika": "ᐅ SciFi",
+    "Oddiy hayot": "๏ SliceOfLife",
+    "Sport": "๏ Sports",
+    "G'ayritabiiy": "✦ Supernatural",
+    "Triller": "☹ Thriller",
+    "Mexanik": "◈ Mecha",
+    "Sehr": "✦ Magic",
+    "Maktab": "๏ School",
+    "Shonen": "☻ Shounen",
+    "Shojo": "☻ Shoujo",
+    "Isekai": "๏ Isekai",
+    "Psixologik": "◈ Psychological",
 }
 
 # Aliases — har qanday tilda/formatda yozilgan janrni GENRES kalitiga
@@ -155,7 +155,7 @@ def anime_list_keyboard(animes: list, genre_key: str, from_page: int, page: int 
 
     buttons = []
     for anime in page_animes:
-        lock = "🔒 " if anime.is_pro_locked else ""
+        lock = "⊘ " if anime.is_pro_locked else ""
         buttons.append(
             [
                 InlineKeyboardButton(
@@ -245,12 +245,12 @@ async def get_animes_by_genre(genre_key: str, is_pro: bool = False) -> list:
 async def show_genres(call: CallbackQuery):
     kb = genres_keyboard(page=0)
     try:
-        await call.message.edit_caption(caption="🎭 <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+        await call.message.edit_caption(caption="๏ <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
     except Exception:
         try:
-            await call.message.edit_text(text="🎭 <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+            await call.message.edit_text(text="๏ <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
         except Exception:
-            await call.message.answer("🎭 <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+            await call.message.answer("๏ <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
     await call.answer()
 
 
@@ -262,9 +262,9 @@ async def genre_page(call: CallbackQuery):
         await call.message.edit_reply_markup(reply_markup=kb)
     except Exception:
         try:
-            await call.message.edit_caption(caption="🎭 <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+            await call.message.edit_caption(caption="๏ <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
         except Exception:
-            await call.message.answer("🎭 <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+            await call.message.answer("๏ <b>Janr tanlang:</b>", reply_markup=kb, parse_mode="HTML")
     await call.answer()
 
 
@@ -280,11 +280,11 @@ async def show_genre_animes(call: CallbackQuery):
     genre_uz = GENRES.get(genre_key, genre_key)
 
     if not matched:
-        await call.answer(f"😔 {genre_uz} janrida anime topilmadi!", show_alert=True)
+        await call.answer(f"{genre_uz} janrida hozircha kontent yo'q. Tez orada qo'shamiz!", show_alert=True)
         return
 
     kb = anime_list_keyboard(matched, genre_key, from_page, page=0)
-    text = f"🎭 <b>{genre_uz}</b> — {len(matched)} ta anime:"
+    text = f"๏ <b>{genre_uz}</b> — {len(matched)} ta anime:"
 
     try:
         await call.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
@@ -309,7 +309,7 @@ async def genre_anime_page(call: CallbackQuery):
     genre_uz = GENRES.get(genre_key, genre_key)
 
     kb = anime_list_keyboard(matched, genre_key, from_page, page=page)
-    text = f"🎭 <b>{genre_uz}</b> — {len(matched)} ta anime:"
+    text = f"๏ <b>{genre_uz}</b> — {len(matched)} ta anime:"
 
     try:
         await call.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")

@@ -23,6 +23,7 @@ from database.engine import AsyncSessionLocal
 from database.models import Admin, User
 from loader import bot
 from utils.security import esc, parse_admin_ids
+from utils.ui import send_with_effect
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +42,11 @@ ADMIN_ID = getattr(config, "ADMIN_ID", None)
 
 # ── Narxlar ────────────────────────────────────────────────
 PLANS = {
-    "1": {"label": "❤️ 1 oylik", "price": "9.000", "months": 1},
-    "2": {"label": "🔥 2 oylik", "price": "16.000", "months": 2},
-    "3": {"label": "❤️‍🔥 3 oylik", "price": "21.000", "months": 3},
-    "6": {"label": "⚡ 6 oylik", "price": "39.000", "months": 6},
-    "12": {"label": "🌙 1 yillik", "price": "69.000", "months": 12},
+    "1": {"label": "♡ 1 oylik", "price": "9.000", "months": 1},
+    "2": {"label": "✦ 2 oylik", "price": "16.000", "months": 2},
+    "3": {"label": "♡ 3 oylik", "price": "21.000", "months": 3},
+    "6": {"label": "ϟ 6 oylik", "price": "39.000", "months": 6},
+    "12": {"label": "☾ 1 yillik", "price": "69.000", "months": 12},
 }
 
 
@@ -110,25 +111,25 @@ from utils.pro_utils import is_pro_active as _check_pro
 
 
 _DEFAULT_PAGE1_TEXT = (
-    "⚡ <b>Kaworai Pro</b>\n"
-    "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
+    "ϟ <b>Kaworai Pro</b>\n"
+    "✧───────✧\n\n"
     "Pro obuna bilan siz quyidagilarga ega bo'lasiz:\n\n"
-    "🤖 <b>AI tavsiyalar</b> — faqat siz uchun\n"
-    "😌 <b>Kayfiyat filtri</b> — hissiyotingizga mos\n"
-    "💎 <b>Hidden Gems</b> — kam tanilgan, lekin zo'r\n"
-    "🔥 <b>Trending & Rising</b> — tez ommalashayotganlar\n"
-    "▶️ <b>Smart Continue</b> — qolgan joydan davom\n"
-    "🔒 <b>Maxsus kontentlar</b> — faqat Pro uchun\n\n"
-    "💖 <i>Kaworai'ni qo'llab-quvvatlang va\n"
+    "◈ <b>AI tavsiyalar</b> — faqat siz uchun\n"
+    "☺ <b>Kayfiyat filtri</b> — hissiyotingizga mos\n"
+    "◆ <b>Hidden Gems</b> — kam tanilgan, lekin zo'r\n"
+    "✦ <b>Trending & Rising</b> — tez ommalashayotganlar\n"
+    "ᐅ <b>Smart Continue</b> — qolgan joydan davom\n"
+    "⊘ <b>Maxsus kontentlar</b> — faqat Pro uchun\n\n"
+    "♡ <i>Kaworai'ni qo'llab-quvvatlang va\n"
     "premium tajribadan bahramand bo'ling!</i>\n\n"
-    "👇 Boshlash uchun <b>Sotib olish</b> tugmasini bosing"
+    "ᐁ Boshlash uchun <b>Sotib olish</b> tugmasini bosing"
 )
 
 
 async def _page1_text() -> str:
     """Pro sahifa-1 matni — admin saqlagan "Pro yozuvi" mavjud bo'lsa, shundan
     foydalanadi; aks holda default reklama matnini qaytaradi. Admin panelida
-    "📝 Pro yozuvi" tugmasi orqali matn DB.bot_settings.pro_ad_text ga
+    "✎ Pro yozuvi" tugmasi orqali matn DB.bot_settings.pro_ad_text ga
     yoziladi va shu yerdan o'qiladi (ad_helpers keshlanadi).
     """
     try:
@@ -154,15 +155,15 @@ def _page1_kb() -> InlineKeyboardMarkup:
 
 def _page2_text() -> str:
     return (
-        "💎 <b>Kaworai Pro narxlari</b>\n"
-        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
-        "❤️  <b>1 oylik</b>  —  9.000 so'm\n"
-        "🔥  <b>2 oylik</b>  —  16.000 so'm  <i>(-11%)</i>\n"
-        "❤️‍🔥  <b>3 oylik</b>  —  21.000 so'm  <i>(-22%)</i>\n"
-        "⚡  <b>6 oylik</b>  —  39.000 so'm  <i>(-28%)</i>\n"
-        "🌙  <b>1 yillik</b>  —  69.000 so'm  <i>(-40%)</i>\n\n"
+        "◆ <b>Kaworai Pro narxlari</b>\n"
+        "✧───────✧\n\n"
+        "♡  <b>1 oylik</b>  —  9.000 so'm\n"
+        "✦  <b>2 oylik</b>  —  16.000 so'm  <i>(-11%)</i>\n"
+        "♡  <b>3 oylik</b>  —  21.000 so'm  <i>(-22%)</i>\n"
+        "ϟ  <b>6 oylik</b>  —  39.000 so'm  <i>(-28%)</i>\n"
+        "☾  <b>1 yillik</b>  —  69.000 so'm  <i>(-40%)</i>\n\n"
         "<blockquote>Ko'proq ol — kamroq to'la!\nQancha uzoq muddat — shuncha tejaysiz.</blockquote>\n\n"
-        "👇 Muddatni tanlang"
+        "ᐁ Muddatni tanlang"
     )
 
 
@@ -186,24 +187,24 @@ def _page2_kb() -> InlineKeyboardMarkup:
 
 def _page3_text(plan_key: str) -> str:
     plan = PLANS[plan_key]
-    card_line = f"💳 Karta raqam: <code>{esc(CARD_NUMBER)}</code>\n" if CARD_NUMBER else ""
-    owner_line = f"👤 Qabul qiluvchi: {esc(CARD_OWNER)}\n" if CARD_OWNER else ""
+    card_line = f"◆ Karta raqam: <code>{esc(CARD_NUMBER)}</code>\n" if CARD_NUMBER else ""
+    owner_line = f"◉ Qabul qiluvchi: {esc(CARD_OWNER)}\n" if CARD_OWNER else ""
     admin_line = (
-        f"📩 Savollar bormi?\n👉 @{esc(ADMIN_USERNAME)} ga murojaat qiling"
+        f"ᐅ Savollar bormi?\nᐅ @{esc(ADMIN_USERNAME)} ga murojaat qiling"
         if ADMIN_USERNAME
-        else "📩 Savollar bormi?\n👉 Adminga murojaat qiling"
+        else "ᐅ Savollar bormi?\nᐅ Adminga murojaat qiling"
     )
     return (
-        f"💳 <b>To'lov ma'lumotlari</b>\n"
-        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
-        f"📦 Tanlangan: <b>{plan['label']}</b>\n"
-        f"💰 To'lov summasi: <b>{plan['price']} so'm</b>\n\n"
+        f"◆ <b>To'lov ma'lumotlari</b>\n"
+        f"✧───────✧\n\n"
+        f"≡ Tanlangan: <b>{plan['label']}</b>\n"
+        f"◆ To'lov summasi: <b>{plan['price']} so'm</b>\n\n"
         f"{card_line}{owner_line}\n"
         f"<b>Qadamlar:</b>\n"
         f"1️⃣ Yuqoridagi kartaga to'lovni o'tkazing\n"
         f"2️⃣ Chek skrinshotini yuboring\n"
         f"3️⃣ Admin tasdiqlasa Pro avtomatik yoqiladi\n\n"
-        f"<blockquote>⚠️ Soxta cheklar uchun javobgarlik belgilangan!</blockquote>\n\n"
+        f"<blockquote>! Soxta cheklar uchun javobgarlik belgilangan!</blockquote>\n\n"
         f"{admin_line}"
     )
 
@@ -224,11 +225,11 @@ def _page3_kb(plan_key: str) -> InlineKeyboardMarkup:
 
 def _page4_text() -> str:
     return (
-        "📸 <b>Chek yuborish</b>\n"
-        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
+        "▣ <b>Chek yuborish</b>\n"
+        "✧───────✧\n\n"
         "To'lov chekini <b>rasm</b> yoki <b>skrinshot</b> shaklida\n"
-        "shu chatga yuboring 👇\n\n"
-        '<blockquote>⚠️ Soxta cheklar uchun <a href="https://lex.uz/docs/-111453">JK 168-modda</a> bo\'yicha javobgarlik belgilangan.</blockquote>'
+        "shu chatga yuboring ᐁ\n\n"
+        '<blockquote>! Soxta cheklar uchun <a href="https://lex.uz/docs/-111453">JK 168-modda</a> bo\'yicha javobgarlik belgilangan.</blockquote>'
     )
 
 
@@ -247,13 +248,13 @@ def _admin_caption(user_id: int, username, full_name: str, plan_key: str) -> str
     # ularni ekran qilamiz.
     uname = f"@{esc(username)}" if username else "—"
     return (
-        "💳 <b>Yangi Pro obuna so'rovi!</b>\n\n"
-        f"👤 Foydalanuvchi: <b>{esc(full_name)}</b>\n"
-        f"🆔 ID: <code>{user_id}</code>\n"
-        f"📱 Username: {uname}\n"
-        f"📦 Muddat: <b>{plan['label']}</b>\n"
-        f"💰 Summa: <b>{plan['price']} so'm</b>\n\n"
-        "👇 Tasdiqlash yoki rad etish:"
+        "◆ <b>Yangi Pro obuna so'rovi!</b>\n\n"
+        f"◉ Foydalanuvchi: <b>{esc(full_name)}</b>\n"
+        f"№ ID: <code>{user_id}</code>\n"
+        f"◈ Username: {uname}\n"
+        f"≡ Muddat: <b>{plan['label']}</b>\n"
+        f"◆ Summa: <b>{plan['price']} so'm</b>\n\n"
+        "ᐁ Tasdiqlash yoki rad etish:"
     )
 
 
@@ -315,7 +316,7 @@ async def _show_pro_active_menu(call: CallbackQuery):
         user = await session.get(User, call.from_user.id)
         until_str = ""
         if user and user.pro_until:
-            until_str = f"\n📅 Pro tugash sanasi: <b>{user.pro_until.strftime('%d.%m.%Y')}</b>"
+            until_str = f"\n◎ Pro tugash sanasi: <b>{user.pro_until.strftime('%d.%m.%Y')}</b>"
 
     # Pro aktiv menyu — barchasi success (yashil), chiqish primary (ko'k).
     kb = InlineKeyboardMarkup(
@@ -341,7 +342,7 @@ async def _show_pro_active_menu(call: CallbackQuery):
         ]
     )
 
-    text = f"⚡ <b>Kaworai Pro</b>\n\n✅ Siz Pro foydalanuvchisiz!{until_str}\n\nNima qilmoqchisiz?"
+    text = f"ϟ <b>Kaworai Pro</b>\n\n✓ Siz Pro foydalanuvchisiz!{until_str}\n\nNima qilmoqchisiz?"
 
     try:
         await call.message.edit_text(
@@ -402,7 +403,7 @@ async def pro_page2(call: CallbackQuery, state: FSMContext):
 async def pro_page3(call: CallbackQuery, state: FSMContext):
     plan_key = call.data.replace("pro_plan_", "")
     if plan_key not in PLANS:
-        return await call.answer("❌ Noto'g'ri muddat!", show_alert=True)
+        return await call.answer("✕ Noto'g'ri muddat!", show_alert=True)
 
     await state.update_data(plan_key=plan_key)
 
@@ -447,7 +448,7 @@ async def pro_page4(call: CallbackQuery, state: FSMContext):
             reply_markup=_page4_kb(plan_key),
             parse_mode="HTML",
         )
-    await call.answer("📸 Chek rasmini yuboring")
+    await call.answer("▣ Chek rasmini yuboring")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -541,8 +542,8 @@ async def receipt_received(msg: Message, state: FSMContext):
     except Exception:
         logger.exception("receipt_received: DB admin ro'yxatini olishda xato")
 
-    info_suffix = "\n\n📌 <i>Tasdiqlash uchun kanal-postdagi tugmalardan foydalaning.</i>"
-    fallback_info_suffix = "\n\n📌 <i>Bu nusxa — info uchun. Tugmalar boshqa admin DM'iga yuborildi.</i>"
+    info_suffix = "\n\n# <i>Tasdiqlash uchun kanal-postdagi tugmalardan foydalaning.</i>"
+    fallback_info_suffix = "\n\n# <i>Bu nusxa — info uchun. Tugmalar boshqa admin DM'iga yuborildi.</i>"
 
     admin_ok = False
     if channel_ok:
@@ -571,12 +572,12 @@ async def receipt_received(msg: Message, state: FSMContext):
             username,
         )
 
-    admin_line = f"\n\n📩 Savollar uchun: @{esc(ADMIN_USERNAME)}" if ADMIN_USERNAME else ""
+    admin_line = f"\n\nᐅ Savollar uchun: @{esc(ADMIN_USERNAME)}" if ADMIN_USERNAME else ""
     await msg.answer(
-        "✅ <b>Chek qabul qilindi!</b>\n"
-        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
-        f"📦 Muddat: <b>{plan['label']}</b>\n"
-        f"💰 Summa: <b>{plan['price']} so'm</b>\n\n"
+        "✓ <b>Chek qabul qilindi!</b>\n"
+        "✧───────✧\n\n"
+        f"≡ Muddat: <b>{plan['label']}</b>\n"
+        f"◆ Summa: <b>{plan['price']} so'm</b>\n\n"
         "<i>Admin tekshirib, tez orada Pro'ni yoqadi.\n"
         "Odatda <b>5–30 daqiqa</b> ichida aktivlanadi.</i>" + admin_line,
         parse_mode="HTML",
@@ -586,7 +587,7 @@ async def receipt_received(msg: Message, state: FSMContext):
 @pro_payment_router.message(ProPaymentState.waiting_receipt)
 async def receipt_wrong_format(msg: Message):
     await msg.answer(
-        "❌ Iltimos, <b>rasm</b> yoki <b>fayl</b> yuboring!\n\n📸 To'lov chekining skrinshoti bo'lishi kerak.",
+        "✕ Iltimos, <b>rasm</b> yoki <b>fayl</b> yuboring!\n\n▣ To'lov chekining skrinshoti bo'lishi kerak.",
         parse_mode="HTML",
     )
 
@@ -599,7 +600,7 @@ async def receipt_wrong_format(msg: Message):
 @pro_payment_router.callback_query(F.data.startswith("pro_confirm_"))
 async def admin_confirm_pro(call: CallbackQuery):
     if not await _is_admin(call.from_user.id):
-        return await call.answer("❌ Faqat adminlar!", show_alert=True)
+        return await call.answer("✕ Faqat adminlar!", show_alert=True)
 
     parts = call.data.replace("pro_confirm_", "").split("_")
     user_id = int(parts[0])
@@ -609,7 +610,7 @@ async def admin_confirm_pro(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
         if not user:
-            return await call.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
+            return await call.answer("✕ Foydalanuvchi topilmadi!", show_alert=True)
 
         now = datetime.utcnow()
         if user.pro_until and user.pro_until > now:
@@ -623,15 +624,15 @@ async def admin_confirm_pro(call: CallbackQuery):
 
     # Foydalanuvchiga xabar
     try:
-        await bot.send_message(
-            chat_id=user_id,
-            text=(
-                "🎉 <b>Kaworai Pro faollashtirildi!</b>\n"
-                "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n\n"
-                f"📦 Muddat: <b>{plan['label']}</b>\n"
-                f"📅 Tugash sanasi: <b>{until_str}</b>\n\n"
-                "⚡ Barcha Pro imkoniyatlar endi sizniki!\n\n"
-                "👉 /start → <b>⚡ Kaworai Pro</b>"
+        await send_with_effect(
+            bot, user_id,
+            (
+                "✧ <b>Kaworai Pro faollashtirildi!</b>\n"
+                "✧───────✧\n\n"
+                f"≡ Muddat: <b>{plan['label']}</b>\n"
+                f"◎ Tugash sanasi: <b>{until_str}</b>\n\n"
+                "ϟ Barcha Pro imkoniyatlar endi sizniki!\n\n"
+                "ᐅ /start → <b>ϟ Kaworai Pro</b>"
             ),
             parse_mode="HTML",
         )
@@ -655,7 +656,7 @@ async def admin_confirm_pro(call: CallbackQuery):
         old = call.message.caption or call.message.text or ""
         # Admin username / ID — HTML injection'dan himoya uchun ekran qilinadi.
         approver = f"@{esc(call.from_user.username)}" if call.from_user.username else esc(call.from_user.id)
-        new = old + f"\n\n✅ <b>TASDIQLANDI</b> — {approver}"
+        new = old + f"\n\n✓ <b>TASDIQLANDI</b> — {approver}"
         if call.message.caption:
             await call.message.edit_caption(caption=new, parse_mode="HTML")
         else:
@@ -667,7 +668,7 @@ async def admin_confirm_pro(call: CallbackQuery):
             user_id,
         )
 
-    await call.answer(f"✅ Pro faollashtirildi! ({until_str})", show_alert=True)
+    await call.answer(f"✓ Pro faollashtirildi! ({until_str})", show_alert=True)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -678,7 +679,7 @@ async def admin_confirm_pro(call: CallbackQuery):
 @pro_payment_router.callback_query(F.data.startswith("pro_reject_"))
 async def admin_reject_start(call: CallbackQuery, state: FSMContext):
     if not await _is_admin(call.from_user.id):
-        return await call.answer("❌ Faqat adminlar!", show_alert=True)
+        return await call.answer("✕ Faqat adminlar!", show_alert=True)
 
     parts = call.data.replace("pro_reject_", "").split("_")
     user_id = int(parts[0])
@@ -693,7 +694,7 @@ async def admin_reject_start(call: CallbackQuery, state: FSMContext):
     await dm_state.set_state(AdminRejectState.waiting_reason)
 
     prompt = (
-        "❌ <b>Rad etish sababi:</b>\n\n"
+        "✕ <b>Rad etish sababi:</b>\n\n"
         f"User ID: <code>{user_id}</code>\n"
         "Sababni yozing (foydalanuvchiga yuboriladi).\n"
         "Sabab yo'q bo'lsa — <b>yo'q</b> deb yozing."
@@ -709,14 +710,14 @@ async def admin_reject_start(call: CallbackQuery, state: FSMContext):
         # DM yopiq bo'lsa — kanal-postga ham fallback prompt qo'yamiz.
         try:
             await call.message.answer(
-                "⚠️ Avval botga ("
+                "! Avval botga ("
                 + (f"@{esc(call.from_user.username)}" if call.from_user.username else "private")
                 + ") <b>/start</b> deb yozing, so'ng sababni yuboring.",
                 parse_mode="HTML",
             )
         except Exception:
             pass
-    await call.answer("✍️ Botga sabab yozing", show_alert=False)
+    await call.answer("✎ Botga sabab yozing", show_alert=False)
 
 
 @pro_payment_router.message(AdminRejectState.waiting_reason)
@@ -728,12 +729,12 @@ async def reject_reason_received(msg: Message, state: FSMContext):
     reason = msg.text.strip() if msg.text and msg.text.lower() not in ("yo'q", "yoq") else None
 
     try:
-        admin_line = f"📩 Savollar uchun: @{esc(ADMIN_USERNAME)}" if ADMIN_USERNAME else ""
+        admin_line = f"ᐅ Savollar uchun: @{esc(ADMIN_USERNAME)}" if ADMIN_USERNAME else ""
         text = (
-            "❌ <b>Kaworai Pro so'rovingiz rad etildi.</b>\n\n"
+            "✕ <b>Kaworai Pro so'rovingiz rad etildi.</b>\n\n"
             # Admin kiritgan sabab — HTML teglarini ehtiyot choralari bilan
             # foydalanuvchiga yuborishdan oldin ekran qilamiz.
-            + (f"📝 Sabab: {esc(reason)}\n\n" if reason else "")
+            + (f"✎ Sabab: {esc(reason)}\n\n" if reason else "")
             + admin_line
         )
         await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
@@ -751,7 +752,7 @@ async def reject_reason_received(msg: Message, state: FSMContext):
         bool(reason),
     )
 
-    await msg.answer(f"✅ Foydalanuvchi ({user_id}) xabardor qilindi.")
+    await msg.answer(f"✓ Foydalanuvchi ({user_id}) xabardor qilindi.")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -762,7 +763,7 @@ async def reject_reason_received(msg: Message, state: FSMContext):
 @pro_payment_router.callback_query(F.data.startswith("pro_msg_"))
 async def admin_msg_start(call: CallbackQuery, state: FSMContext):
     if not await _is_admin(call.from_user.id):
-        return await call.answer("❌ Faqat adminlar!", show_alert=True)
+        return await call.answer("✕ Faqat adminlar!", show_alert=True)
 
     user_id = int(call.data.replace("pro_msg_", ""))
 
@@ -774,7 +775,7 @@ async def admin_msg_start(call: CallbackQuery, state: FSMContext):
     await dm_state.update_data(msg_target_user=user_id)
     await dm_state.set_state(AdminMsgState.waiting_msg)
 
-    prompt = f"✉️ <b>Foydalanuvchi ({user_id}) ga xabar yozing:</b>\n\nMatn, rasm, video — barchasi bo'lishi mumkin."
+    prompt = f"ᐅ <b>Foydalanuvchi ({user_id}) ga xabar yozing:</b>\n\nMatn, rasm, video — barchasi bo'lishi mumkin."
     sent_to_dm = False
     try:
         await bot.send_message(admin_id, prompt, parse_mode="HTML")
@@ -785,12 +786,12 @@ async def admin_msg_start(call: CallbackQuery, state: FSMContext):
     if not sent_to_dm:
         try:
             await call.message.answer(
-                "⚠️ Avval botga <b>/start</b> deb yozing, so'ng xabarni shu yerda yuboring.",
+                "! Avval botga <b>/start</b> deb yozing, so'ng xabarni shu yerda yuboring.",
                 parse_mode="HTML",
             )
         except Exception:
             pass
-    await call.answer("✍️ Botga xabarni yozing", show_alert=False)
+    await call.answer("✎ Botga xabarni yozing", show_alert=False)
 
 
 @pro_payment_router.message(AdminMsgState.waiting_msg)
@@ -799,7 +800,7 @@ async def admin_msg_send(msg: Message, state: FSMContext):
     user_id = data.get("msg_target_user")
     await state.clear()
 
-    prefix = "✉️ <b>Admin xabari:</b>\n\n"
+    prefix = "ᐅ <b>Admin xabari:</b>\n\n"
 
     try:
         if msg.photo:
@@ -834,11 +835,11 @@ async def admin_msg_send(msg: Message, state: FSMContext):
             msg.from_user.id,
             user_id,
         )
-        await msg.answer(f"✅ Xabar yuborildi (ID: {user_id})")
+        await msg.answer(f"✓ Xabar yuborildi (ID: {user_id})")
     except Exception as e:
         logger.exception(
             "admin_msg_send: failed to deliver admin message admin=%s target=%s",
             msg.from_user.id,
             user_id,
         )
-        await msg.answer(f"❌ Xabar yuborib bo'lmadi: {e}")
+        await msg.answer(f"✕ Xabar yuborib bo'lmadi: {e}")

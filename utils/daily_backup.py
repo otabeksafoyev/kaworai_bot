@@ -134,10 +134,10 @@ async def send_daily_backup(bot: Bot) -> bool:
             chat_id=BACKUP_CHANNEL_ID,
             document=BufferedInputFile(data, filename=fname),
             caption=(
-                "🗄 <b>Kunlik avtomatik zaxira</b>\n"
-                f"🎬 Anime: {n_anime}\n"
-                f"📢 Kanal: {n_ch}\n"
-                f"🕒 {_dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+                "≡ <b>Kunlik avtomatik zaxira</b>\n"
+                f"๏ Anime: {n_anime}\n"
+                f"ᐅ Kanal: {n_ch}\n"
+                f"◷ {_dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
             ),
             parse_mode="HTML",
         )

@@ -190,7 +190,7 @@ async def update_taste_profile(session: AsyncSession, user_id: int, anime: Anime
 
 def build_identity_label(profile: UserTasteProfile) -> str:
     if not profile or not profile.fav_genres:
-        return "🎌 Anime muxlisi"
+        return "๏ Anime muxlisi"
 
     genres = dict(profile.fav_genres or {})
     tags = dict(profile.fav_tags or {})
@@ -201,28 +201,28 @@ def build_identity_label(profile: UserTasteProfile) -> str:
 
     type_labels = {"anime": "anime", "movie": "kino", "serial": "serial", "dorama": "dorama"}
     tag_labels = {
-        "dark": "🌑 Qorong'u",
-        "psychological": "🧠 Psixologik",
-        "romance": "💕 Romantik",
-        "action": "⚔️ Jangari",
-        "comedy": "😂 Kulgili",
-        "supernatural": "👻 G'ayritabiiy",
-        "sports": "🏆 Sport",
-        "horror": "😱 Qo'rqinchli",
-        "wholesome": "🌸 Iliq",
-        "survival": "🔥 Omon qolish",
-        "emotional": "💔 Hissiy",
-        "mystery": "🔍 Sirli",
+        "dark": "☾ Qorong'u",
+        "psychological": "◈ Psixologik",
+        "romance": "♡ Romantik",
+        "action": "๏ Jangari",
+        "comedy": "☺ Kulgili",
+        "supernatural": "๏ G'ayritabiiy",
+        "sports": "★ Sport",
+        "horror": "☹ Qo'rqinchli",
+        "wholesome": "๏ Iliq",
+        "survival": "✦ Omon qolish",
+        "emotional": "♡ Hissiy",
+        "mystery": "⌕ Sirli",
     }
 
     t_label = tag_labels.get(top_tag, top_tag) if top_tag else None
     type_str = type_labels.get(fav_type, fav_type)
 
     if t_label and top_genre:
-        return f"{t_label} {top_genre} {type_str} muxlisisan! 🔥"
+        return f"{t_label} {top_genre} {type_str} muxlisisan! ✦"
     elif top_genre:
-        return f"🎯 Sen {top_genre} {type_str} muxlisisan!"
-    return f"🎌 {type_str.capitalize()} muxlisi"
+        return f"◎ Sen {top_genre} {type_str} muxlisisan!"
+    return f"๏ {type_str.capitalize()} muxlisi"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -591,7 +591,7 @@ async def get_pro_locked_teaser(
     for anime in result.scalars().all():
         d = _anime_to_dict(anime)
         d["locked"] = True
-        d["description"] = "🔒 Bu kontent Kaworai Pro foydalanuvchilariga ochiq..."
+        d["description"] = "⊘ Bu kontent Kaworai Pro foydalanuvchilariga ochiq..."
         items.append(d)
     return items
 

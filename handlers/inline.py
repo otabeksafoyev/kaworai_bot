@@ -57,15 +57,15 @@ def _make_result(anime: Anime) -> InlineQueryResultArticle:
     genres_text = ", ".join((anime.genres or [])[:3]) or "Nomalum"
     ep_text = str(getattr(anime, "episodes_count", None) or anime.total_episodes or "?")
     thumb = anime.inline_thumbnail_url or DEFAULT_THUMB
-    lock_icon = "🔒 " if getattr(anime, "is_pro_locked", False) else ""
+    lock_icon = "⊘ " if getattr(anime, "is_pro_locked", False) else ""
 
     share_url = anime_start_link(anime.id)
 
-    desc = f"{lock_icon}⭐ {anime.rating:.1f}  📅 {anime.year or '—'}  🎭 {genres_text[:25]}  📺 {ep_text} qism"
+    desc = f"{lock_icon}★ {anime.rating:.1f}  ◎ {anime.year or '—'}  ๏ {genres_text[:25]}  ๏ {ep_text} qism"
 
     return InlineQueryResultArticle(
         id=str(anime.id),
-        title=f"🎬 {lock_icon}{anime.title}",
+        title=f"๏ {lock_icon}{anime.title}",
         description=desc,
         thumbnail_url=thumb,
         # Foydalanuvchi tanlasa — shu link chatga yuboriladi

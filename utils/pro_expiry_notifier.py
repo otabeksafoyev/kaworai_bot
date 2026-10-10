@@ -55,10 +55,10 @@ async def check_and_notify_pro_expiry(bot) -> None:
                 await bot.send_message(
                     chat_id=user.telegram_id,
                     text=(
-                        "😔 <b>Kaworai Pro obunangiz tugadi.</b>\n\n"
+                        "☹ <b>Kaworai Pro obunangiz tugadi.</b>\n\n"
                         "Pro imkoniyatlaridan foydalanishda davom etish uchun "
-                        "obunani yangilang 👇\n\n"
-                        "👉 /start → <b>💎 Kaworai Pro</b>"
+                        "obunani yangilang ᐁ\n\n"
+                        "ᐅ /start → <b>◆ Kaworai Pro</b>"
                     ),
                     parse_mode="HTML",
                 )
@@ -88,10 +88,10 @@ async def check_and_notify_pro_expiry(bot) -> None:
                 await bot.send_message(
                     chat_id=user.telegram_id,
                     text=(
-                        f"⚠️ <b>Kaworai Pro obunangiz {days_left} kunda tugaydi!</b>\n\n"
-                        f"📅 Tugash sanasi: <b>{user.pro_until.strftime('%d.%m.%Y')}</b>\n\n"
-                        "Uzluksiz foydalanish uchun yangilang 👇\n"
-                        "👉 /start → <b>💎 Kaworai Pro</b>"
+                        f"! <b>Kaworai Pro obunangiz {days_left} kunda tugaydi!</b>\n\n"
+                        f"◎ Tugash sanasi: <b>{user.pro_until.strftime('%d.%m.%Y')}</b>\n\n"
+                        "Uzluksiz foydalanish uchun yangilang ᐁ\n"
+                        "ᐅ /start → <b>◆ Kaworai Pro</b>"
                     ),
                     parse_mode="HTML",
                 )
@@ -121,10 +121,10 @@ async def check_and_notify_pro_expiry(bot) -> None:
                 await bot.send_message(
                     chat_id=user.telegram_id,
                     text=(
-                        f"🚨 <b>Kaworai Pro obunangiz {hours_left} soatda tugaydi!</b>\n\n"
-                        f"📅 Tugash sanasi: <b>{user.pro_until.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
-                        "⚡ Hoziroq yangilang — Pro imkoniyatlaringizni yo'qotmang!\n"
-                        "👉 /start → <b>💎 Kaworai Pro</b>"
+                        f"! <b>Kaworai Pro obunangiz {hours_left} soatda tugaydi!</b>\n\n"
+                        f"◎ Tugash sanasi: <b>{user.pro_until.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
+                        "ϟ Hoziroq yangilang — Pro imkoniyatlaringizni yo'qotmang!\n"
+                        "ᐅ /start → <b>◆ Kaworai Pro</b>"
                     ),
                     parse_mode="HTML",
                 )

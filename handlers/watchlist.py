@@ -1,8 +1,8 @@
 """
 handlers/watchlist.py — "Keyinroq ko'rish" (Watchlist) handler
 
-Foydalanuvchi anime kartochkasidagi "📋 Keyinroq ko'rish" tugmasini bosib
-anime saqlaydi. Asosiy menyuda "📋 Ro'yxatim" tugmasi bilan ko'radi.
+Foydalanuvchi anime kartochkasidagi "≡ Keyinroq ko'rish" tugmasini bosib
+anime saqlaydi. Asosiy menyuda "≡ Ro'yxatim" tugmasi bilan ko'radi.
 """
 
 import logging
@@ -37,21 +37,21 @@ async def watchlist_add(call: CallbackQuery):
         if await is_in_watchlist(session, user_id, anime_id):
             # Allaqachon bor — o'chiramiz
             await remove_from_watchlist(session, user_id, anime_id)
-            await call.answer("🗑 Ro'yxatdan olib tashlandi", show_alert=False)
+            await call.answer("✕ Ro'yxatdan olib tashlandi", show_alert=False)
         else:
             # Qo'shamiz — max 50 ta
             count = await get_watchlist_count(session, user_id)
             if count >= 50:
                 await call.answer(
-                    "❌ Ro'yxatda 50 ta limit. Birortasini o'chirib yangi qo'shing.",
+                    "✕ Ro'yxatda 50 ta limit. Birortasini o'chirib yangi qo'shing.",
                     show_alert=True,
                 )
                 return
             added = await add_to_watchlist(session, user_id, anime_id)
             if added:
-                await call.answer("✅ Keyinroq ko'rish ro'yxatiga qo'shildi!", show_alert=False)
+                await call.answer("✓ Keyinroq ko'rish ro'yxatiga qo'shildi!", show_alert=False)
             else:
-                await call.answer("ℹ️ Allaqachon ro'yxatda", show_alert=False)
+                await call.answer("ⓘ Allaqachon ro'yxatda", show_alert=False)
 
 
 @watchlist_router.callback_query(F.data == "my_watchlist")
@@ -77,11 +77,11 @@ async def watchlist_remove(call: CallbackQuery):
         removed = await remove_from_watchlist(session, user_id, anime_id)
 
     if removed:
-        await call.answer("🗑 O'chirildi", show_alert=False)
+        await call.answer("✕ O'chirildi", show_alert=False)
         # Ro'yxatni yangilash
         await _show_watchlist_page(call, page=0)
     else:
-        await call.answer("❌ Topilmadi", show_alert=True)
+        await call.answer("✕ Topilmadi", show_alert=True)
 
 
 async def _show_watchlist_page(call: CallbackQuery, page: int = 0):
@@ -95,20 +95,20 @@ async def _show_watchlist_page(call: CallbackQuery, page: int = 0):
     if not all_items:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="⌂ Asosiy menyu", callback_data="main_menu")]
+                [InlineKeyboardButton(text="๏ Janr bo'yicha", callback_data="genres")],
+                [InlineKeyboardButton(text="⌂ Asosiy menyu", callback_data="main_menu")],
             ]
         )
         try:
             await call.message.edit_text(
-                "📋 <b>Keyinroq ko'rish ro'yxati</b>\n\n"
-                "😕 Ro'yxatingiz bo'sh.\n\n"
-                "Anime kartochkasidagi <b>📋 Keyinroq ko'rish</b> tugmasini bosib qo'shing!",
+                "≡ <b>Keyinroq ko'rish ro'yxati</b>\n\n"
+                "Hozircha bo'sh. Qiziq kontent topsangiz, kartochkadagi <b>Keyinroq ko'rish</b> tugmasi bilan shu yerga saqlab qo'ying!",
                 reply_markup=kb,
                 parse_mode="HTML",
             )
         except Exception:
             await call.message.answer(
-                "📋 Ro'yxatingiz bo'sh.",
+                "≡ Ro'yxatingiz bo'sh.",
                 reply_markup=kb,
                 parse_mode="HTML",
             )
@@ -120,11 +120,11 @@ async def _show_watchlist_page(call: CallbackQuery, page: int = 0):
     start = page * WATCHLIST_PAGE_SIZE
     page_items = all_items[start: start + WATCHLIST_PAGE_SIZE]
 
-    text = f"📋 <b>Keyinroq ko'rish ro'yxati</b> ({total} ta)\n\n"
+    text = f"≡ <b>Keyinroq ko'rish ro'yxati</b> ({total} ta)\n\n"
     kb = InlineKeyboardBuilder()
 
     for i, anime in enumerate(page_items, start=start + 1):
-        lock = "🔒 " if anime.is_pro_locked else ""
+        lock = "⊘ " if anime.is_pro_locked else ""
         ep_info = f" ({anime.episodes_count} qism)" if anime.episodes_count else ""
         text += f"{i}. {lock}<b>{anime.title}</b>{ep_info}\n"
 

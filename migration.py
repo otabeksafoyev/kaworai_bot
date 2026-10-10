@@ -49,10 +49,10 @@ async def run():
     # Railway `postgres://` variantini ham beradi — asyncpg buni qabul qiladi.
 
     if not db_url:
-        print("❌ DATABASE_URL .env da topilmadi!")
+        print("✕ DATABASE_URL .env da topilmadi!")
         return
 
-    print(f"🔌 Ulanilmoqda: {db_url[:40]}...")
+    print(f"ϟ Ulanilmoqda: {db_url[:40]}...")
     conn = await asyncpg.connect(dsn=db_url)
 
     try:
@@ -65,16 +65,16 @@ async def run():
             try:
                 await conn.execute(stmt)
                 short = stmt.replace("\n", " ").strip()[:70]
-                print(f"  ✅ {short}")
+                print(f"  ✓ {short}")
                 ok += 1
             except Exception as e:
                 err = str(e).lower()
                 if any(x in err for x in ("already exists", "duplicate", "does not exist")):
                     skip += 1
                 else:
-                    print(f"  ⚠️  {str(e)[:100]}")
+                    print(f"  !  {str(e)[:100]}")
 
-        print(f"\n✅ Migration tugadi! ({ok} bajarildi, {skip} o'tkazib yuborildi)")
+        print(f"\n✓ Migration tugadi! ({ok} bajarildi, {skip} o'tkazib yuborildi)")
         print("\nEndi models.py ga quyidagi ustunlarni qo'shing (migration dan keyin):")
         print("  Admin: added_by = Column(BigInteger, nullable=True)")
         print("  Admin: added_at = Column(DateTime, server_default=func.now())")

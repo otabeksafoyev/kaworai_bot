@@ -17,7 +17,7 @@ def main_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="๏ Barcha animelar", callback_data="list_anime_1"),
         InlineKeyboardButton(text="★ Eng mashhur", callback_data="top_anime"),
     )
-    builder.row(InlineKeyboardButton(text="ℹ️ Yordam / Qo‘llanma", callback_data="help"))
+    builder.row(InlineKeyboardButton(text="ⓘ Yordam / Qo‘llanma", callback_data="help"))
 
     return builder.as_markup()
 
@@ -44,8 +44,8 @@ def genres_keyboard() -> InlineKeyboardMarkup:
     for genre in genres:
         builder.button(text=genre, callback_data=f"genre_select:{genre.lower()}")
 
-    builder.button(text="✅ Tanlashni tugatish", callback_data="genres_done")
-    builder.button(text="◀ Orqaga", callback_data="main_menu")
+    builder.button(text="✓ Tanlashni tugatish", callback_data="genres_done")
+    builder.button(text="ᐊ Orqaga", callback_data="main_menu")
 
     builder.adjust(3)
     return builder.as_markup()

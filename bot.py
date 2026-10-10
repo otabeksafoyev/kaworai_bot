@@ -10,6 +10,7 @@ from data.config import BACKUP_CHANNEL_ID
 from database.engine import engine, init_db
 from handlers.admin import admin_router
 from handlers.admin_ai import ai_admin_router
+from handlers.profile import profile_router
 from handlers.referral import referral_router
 from handlers.admin_pro import pro_admin_router
 from handlers.callbacks import callback_router
@@ -182,6 +183,7 @@ async def main():
     dp.include_router(pro_admin_router)
     dp.include_router(pro_user_router)
     dp.include_router(referral_router)
+    dp.include_router(profile_router)
     dp.include_router(user_router)
     dp.include_router(callback_router)
     dp.include_router(watchlist_router)

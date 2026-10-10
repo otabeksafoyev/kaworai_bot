@@ -28,20 +28,20 @@ async def check_subscription_handler(call: CallbackQuery, session_maker: async_s
 
     if not_subscribed:
         text = (
-            "📢 <b>Kanalga obuna bo'ling</b>\n\n"
-            "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+            "ᐅ <b>Kanalga obuna bo'ling</b>\n\n"
+            "✧───────✧\n"
             "Quyidagi kanallarga hali obuna\nbo'lmagansiz:\n\n"
             + "\n".join(f"  • <b>{p.channel_name}</b>" for p in not_subscribed)
-            + "\n\n✅ Obuna bo'lib, qayta tekshiring 👇"
+            + "\n\n✓ Obuna bo'lib, qayta tekshiring ᐁ"
         )
         kb = get_subscription_keyboard(not_subscribed)
         await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-        await call.answer("❌ Hali obuna bo'lmagansiz!", show_alert=True)
+        await call.answer("✕ Hali obuna bo'lmagansiz!", show_alert=True)
     else:
         await call.message.delete()
         await call.message.answer(
-            "✅ <b>Rahmat! Obuna tasdiqlandi.</b>\n\n"
-            "🎌 /start — botni boshlash",
+            "✓ <b>Rahmat! Obuna tasdiqlandi.</b>\n\n"
+            "๏ /start — botni boshlash",
             parse_mode="HTML",
         )
-        await call.answer("✅ Obuna tasdiqlandi!", show_alert=True)
+        await call.answer("✓ Obuna tasdiqlandi!", show_alert=True)

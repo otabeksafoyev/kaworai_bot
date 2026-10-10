@@ -82,14 +82,23 @@ async def reward_referrer_if_due(bot, user_id: int) -> bool:
         referrer.pro_until = base + timedelta(days=REWARD_DAYS)
         referrer.is_pro = True
         await session.commit()
+        try:
+            from utils.gamification import on_invite
+
+            await on_invite(session, referrer_id, earned)
+        except Exception:
+            logger.warning("on_invite xato", exc_info=True)
         until_str = referrer.pro_until.strftime("%d.%m.%Y")
 
     try:
-        await bot.send_message(
+        from utils.ui import DIV1, send_with_effect
+
+        await send_with_effect(
+            bot,
             referrer_id,
-            f"🎉 <b>Do'stingiz botga qo'shildi!</b>\n\n"
-            f"🎁 Sizga <b>{REWARD_DAYS} kun Kaworai Pro</b> sovg'a qilindi.\n"
-            f"📅 Pro tugash sanasi: <b>{until_str}</b>",
+            f"{DIV1}\n✧ <b>Do'stingiz botga qo'shildi!</b>\n{DIV1}\n\n"
+            f"✦ Sizga <b>{REWARD_DAYS} kun Kaworai Pro</b> sovg'a qilindi.\n"
+            f"◎ Pro tugash sanasi: <b>{until_str}</b>",
             parse_mode="HTML",
         )
     except Exception:

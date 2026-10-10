@@ -1,4 +1,4 @@
-"""handlers/referral.py — «🎁 Do'st taklif qilish» bo'limi."""
+"""handlers/referral.py — «✦ Do'st taklif qilish» bo'limi."""
 
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ referral_router = Router()
 async def _build(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
     link = referral_link(user_id)
     invited, rewarded = await referral_stats(user_id)
-    share_text = quote("🎌 Kaworai — anime va dorama botiga qo'shiling!")
+    share_text = quote("๏ Kaworai — anime va dorama botiga qo'shiling!")
     text = (
-        "🎁 <b>Do'st taklif qilish</b>\n"
-        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        "✦ <b>Do'st taklif qilish</b>\n"
+        "✧───────✧\n"
         f"Do'stingiz sizning havolangiz orqali botga kirsa, siz <b>{REWARD_DAYS} kun Kaworai Pro</b> olasiz!\n\n"
-        f"🔗 <b>Sizning havolangiz:</b>\n<code>{link}</code>\n\n"
-        f"👥 Taklif qilganlar: <b>{invited}</b>\n"
-        f"✅ Mukofot olingan: <b>{rewarded}</b> (≈ {rewarded * REWARD_DAYS} kun Pro)\n\n"
+        f"↗ <b>Sizning havolangiz:</b>\n<code>{link}</code>\n\n"
+        f"◉ Taklif qilganlar: <b>{invited}</b>\n"
+        f"✓ Mukofot olingan: <b>{rewarded}</b> (≈ {rewarded * REWARD_DAYS} kun Pro)\n\n"
         f"<i>Mukofot do'stingiz kanallarga obuna bo'lib botga kirgach beriladi. "
         f"Eng ko'pi bilan {MAX_REWARDS} ta taklif uchun.</i>"
     )

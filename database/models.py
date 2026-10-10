@@ -3,6 +3,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -49,6 +50,14 @@ class User(Base):
     # Referal: kim taklif qilgan va mukofot berilganmi
     referred_by = Column(BigInteger, nullable=True, index=True)
     referral_rewarded = Column(Boolean, default=False)
+    # O'yin elementlari: ochko (XP), hisoblagichlar, kunlik seriya va nishonlar
+    xp = Column(Integer, default=0)
+    episodes_watched = Column(Integer, default=0)
+    ratings_given = Column(Integer, default=0)
+    streak_days = Column(Integer, default=0)
+    best_streak = Column(Integer, default=0)
+    last_streak_date = Column(Date, nullable=True)
+    achievements = Column(JSON, default=list)
 
     watch_history = relationship("UserWatchHistory", back_populates="user", cascade="all, delete-orphan")
     taste_profile = relationship("UserTasteProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -271,3 +280,16 @@ class BotSetting(Base):
     __tablename__ = "bot_settings"
     key = Column(String(100), primary_key=True)
     value = Column(Text, nullable=False)
+
+
+class UserEpisodeSeen(Base):
+    """Foydalanuvchi ko'rgan noyob qismlar — ochko faqat birinchi ko'rishga beriladi."""
+
+    __tablename__ = "user_episode_seen"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, index=True)
+    anime_id = Column(Integer, nullable=False)
+    episode = Column(Integer, nullable=False)
+    seen_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("user_id", "anime_id", "episode", name="uq_user_episode_seen"),)

@@ -44,9 +44,9 @@ async def notify_new_episode(
     BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
 
     text = (
-        f"🔔 <b>Yangi qism chiqdi!</b>\n\n"
-        f"🎬 <b>{anime.title}</b>\n"
-        f"▶️ {episode_number}-qism\n\n"
+        f"● <b>Yangi qism chiqdi!</b>\n\n"
+        f"๏ <b>{anime.title}</b>\n"
+        f"ᐅ {episode_number}-qism\n\n"
         f"Ko'rish uchun quyidagi tugmani bosing:"
     )
 

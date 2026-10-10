@@ -51,7 +51,7 @@ def region_picker_kb(
     callback_prefix: str,
     *,
     with_all: bool = False,
-    all_label: str = "🌍 Hammasi",
+    all_label: str = "◎ Hammasi",
     all_code: str = "all",
     with_cancel: bool = False,
     cancel_cb: str = "region_cancel",

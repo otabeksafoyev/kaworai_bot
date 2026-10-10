@@ -62,3 +62,13 @@ def test_sym_replaces_emoji_with_symbols():
     assert sym("Oddiy matn 12") == "Oddiy matn 12"
     assert "️" not in sym("⚠️ Muammo")           # variation selector qolmasin
     assert genre_sym("⚔️ Action") == "๏ Action"
+
+
+def test_sym_keeps_existing_symbols():
+    from utils.ui import sym
+
+    assert sym("✓ 3") == "✓ 3"
+    assert sym("▰▰▱▱ 4/12") == "▰▰▱▱ 4/12"
+    assert sym("★★☆☆☆") == "★★☆☆☆"
+    assert sym("→ keyingi") == "→ keyingi"
+    assert sym("🎉 Tabrik! 🆔 5") == "✧ Tabrik! № 5"

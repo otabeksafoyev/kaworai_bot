@@ -15,6 +15,17 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
 # Joriy update egasi — middleware o'rnatadi. Klaviatura quruvchilar (ulashish tugmasi)
 # shu orqali havolaga taklif qiluvchi ID sini qo'shadi, har bir chaqiruvga user_id uzatmasdan.
 current_user_id: ContextVar[int | None] = ContextVar("current_user_id", default=None)
+# Joriy update'ning boti — o'yin elementlari xabarlarini (daraja, nishon) yuborish uchun
+current_bot: ContextVar = ContextVar("current_bot", default=None)
+
+# Bezak ajratgichlar
+DIV1 = "✧───────✧"
+DIV2 = "⊰•─────•⊱"
+
+# Telegram xabar effektlari (faqat shaxsiy chatda ishlaydi)
+EFFECT_CONFETTI = "5046509860389126442"
+EFFECT_FIRE = "5104841245755180586"
+EFFECT_LIKE = "5107584321108051014"
 
 
 def rating_stars(rating: float | None, scale: int = 10) -> str:
@@ -182,12 +193,37 @@ _SYMBOLS = {
     "ℹ": "ⓘ",
 }
 
+_SYMBOLS.update({
+    "✔": "✓", "✖": "✕", "➖": "−", "🆔": "№", "👇": "ᐁ", "👉": "ᐅ", "🔔": "●", "🔕": "○",
+    "📁": "≡", "🗂": "≡", "🗄": "≡", "🎉": "✧", "👑": "◆", "💤": "☾", "📌": "#", "🏆": "★",
+    "🔐": "⊘", "🔓": "○", "📐": "◈", "🧠": "◈", "🛠": "✱", "🎯": "◎", "💡": "✦", "💳": "◆", "💰": "◆",
+    "😄": "☺", "😊": "☺", "😂": "☺", "🤣": "☺", "🙏": "☺", "😕": "☹", "😢": "☹", "😔": "☹", "😵": "☹", "😱": "☹",
+    "📩": "ᐅ", "📨": "ᐅ", "📥": "ᐅ", "🚀": "ᐅ", "👋": "ᐅ", "🚶": "ᐅ", "🛒": "ᐅ", "🔚": "ᐊ",
+    "🏁": "◎", "🗺": "◎", "💕": "♡", "💖": "♡", "💘": "♡", "🚨": "!", "📛": "✕", "💪": "ϟ", "🔌": "ϟ",
+    "🌑": "☾", "🛌": "☾", "🔹": "◈", "📭": "○", "📱": "◈", "🖥": "◈", "🪄": "✦", "🌟": "★",
+    "👦": "☻", "👧": "☻", "⏱": "◷", "⏰": "◷", "🕒": "◷", "🖊": "✎",
+})
+# Allaqachon belgi bo'lganlar emoji emas — tegilmaydi (✓ ✕ ▰▱ ☆ → va h.k.)
+_KEEP = set(_SYMBOLS.values()) | set("→←➤♾−◷☹☺☆▰▱▪○●◇◌№±✱")
+
 
 def sym(text: str) -> str:
     """Tugma matnidagi emojilarni ᐅ ๏ ✓ ✕ kabi oddiy belgilarga almashtiradi (xaritada yo'qlari — ๏)."""
-    return _EMOJI_RE.sub(lambda m: _SYMBOLS.get(m.group(0).replace("\uFE0F", ""), "๏"), text)
+    return _EMOJI_RE.sub(
+        lambda m: m.group(0) if m.group(0) in _KEEP else _SYMBOLS.get(m.group(0).replace("\uFE0F", ""), "๏"), text
+    )
 
 
 def genre_sym(text: str) -> str:
     """Janr nomlari uchun: har qanday emoji o'rniga bir xil ๏ belgisi."""
-    return _EMOJI_RE.sub("๏", text)
+    return _EMOJI_RE.sub(lambda m: m.group(0) if m.group(0) in _KEEP else "๏", text)
+
+
+async def send_with_effect(bot, chat_id: int, text: str, effect: str | None = EFFECT_CONFETTI, **kwargs):
+    """Xabarni effekt (konfetti) bilan yuboradi; effekt o'tmasa — oddiy xabar."""
+    if effect:
+        try:
+            return await bot.send_message(chat_id, text, message_effect_id=effect, **kwargs)
+        except Exception:
+            pass
+    return await bot.send_message(chat_id, text, **kwargs)

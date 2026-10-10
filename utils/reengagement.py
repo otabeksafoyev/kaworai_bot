@@ -19,8 +19,8 @@ Bu modul ikki qismdan iborat:
    boshlanadi.
 
 2. **Router** (`reengagement_router`) — eslatma ostidagi inline tugmalar:
-       `rmd_yes` — "👍 Ha, ishlatyapman" — rahmat xabari.
-       `rmd_no`  — "😴 Keyinroq ko'raman" — jim tasdiq.
+       `rmd_yes` — "✓ Ha, ishlatyapman" — rahmat xabari.
+       `rmd_no`  — "☾ Keyinroq ko'raman" — jim tasdiq.
 """
 
 from __future__ import annotations
@@ -77,24 +77,24 @@ def _reminder_kb() -> InlineKeyboardMarkup:
 
 _STAGE_TEXT = {
     1: (
-        "👋 <b>Sog'indik sizni!</b>\n\n"
+        "ᐅ <b>Sog'indik sizni!</b>\n\n"
         "Sizni botda 3 haftadan beri ko'rmadik. Yangi animelar har hafta qo'shilib turadi — "
         "yoqtirgan janringizdan yangiliklarni o'tkazib yubormang.\n\n"
         "Qanday ahvoldasiz?"
     ),
     2: (
-        "🎬 <b>Yangi kontentlar qo'shildi</b>\n\n"
+        "๏ <b>Yangi kontentlar qo'shildi</b>\n\n"
         "Oxirgi haftada katalogga yangi epizodlar va filmlar qo'shildi. Kirib ko'ring — "
         "balki sizga yoqadigani chiqqandir.\n\n"
         "Hali ham qiziqasizmi?"
     ),
     3: (
-        "✨ <b>Bir oy bo'ldi</b>\n\n"
+        "✦ <b>Bir oy bo'ldi</b>\n\n"
         "Sizdan ancha xabar yo'q. Agar bot sizga kerak bo'lmasa — hech narsa qilmang, "
         "biz bezovta qilmaymiz. Lekin qaytmoqchi bo'lsangiz — bitta tugma bosing."
     ),
     4: (
-        "🙏 <b>So'nggi eslatma</b>\n\n"
+        "☺ <b>So'nggi eslatma</b>\n\n"
         "Bu oxirgi xabarimiz. Quyidagi tugmalardan birini bossangiz — biz bilishimiz uchun, "
         "agar javob bermasangiz — sizga boshqa eslatma yubormaymiz."
     ),
@@ -261,7 +261,7 @@ async def reminder_yes(call: CallbackQuery) -> None:
     """User tasdiqladi — eslatma sonini reset qilamiz (middleware ham qiladi)."""
     try:
         await call.message.edit_text(
-            "🔥 <b>Zo'r!</b> Yangi animelar har kuni qo'shilmoqda. Yoqtirgan janringizni ochib, yangiliklarni ko'ring.",
+            "✦ <b>Zo'r!</b> Yangi animelar har kuni qo'shilmoqda. Yoqtirgan janringizni ochib, yangiliklarni ko'ring.",
             parse_mode="HTML",
         )
     except Exception:
@@ -274,7 +274,7 @@ async def reminder_no(call: CallbackQuery) -> None:
     """User hozir ko'rmoqchi emas — keyingi bosqichgacha jim turamiz."""
     try:
         await call.message.edit_text(
-            "😌 Tushunarli. Tayyor bo'lganingizda qayting — biz kutamiz.",
+            "☺ Tushunarli. Tayyor bo'lganingizda qayting — biz kutamiz.",
         )
     except Exception:
         logger.debug("rmd_no: edit_text failed", exc_info=True)

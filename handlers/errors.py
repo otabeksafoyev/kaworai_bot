@@ -82,11 +82,11 @@ async def _safe_reply_to_user(event: ErrorEvent) -> None:
     try:
         msg = getattr(update, "message", None)
         if isinstance(msg, Message):
-            await msg.answer("⚠️ Kechirasiz, ichki xato. Admin xabardor qilindi.")
+            await msg.answer("! Kechirasiz, ichki xato. Admin xabardor qilindi.")
             return
         cb = getattr(update, "callback_query", None)
         if isinstance(cb, CallbackQuery):
-            await cb.answer("⚠️ Xato. Admin xabardor qilindi.", show_alert=False)
+            await cb.answer("! Xato. Admin xabardor qilindi.", show_alert=False)
     except Exception:
         # Shu yerda ham yiqilmasligimiz kerak — unutilmasin, biz error
         # handler ichidamiz. Tashqariga exception chiqarib yuborish
@@ -116,7 +116,7 @@ async def _notify_admin(event: ErrorEvent) -> None:
     # Telegram parserga noto'g'ri tag ko'rinib send_message xato beradi va
     # admin xabarni umuman olmaydi.
     text = (
-        "🚨 <b>Bot xatosi</b>\n"
+        "! <b>Bot xatosi</b>\n"
         f"<code>{html.escape(type(exc).__name__)}</code>: "
         f"{html.escape(str(exc)[:300])}\n\n"
         f"<i>Event:</i> <code>{html.escape(where[:200])}</code>\n\n"

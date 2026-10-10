@@ -50,61 +50,61 @@ def is_night_time() -> bool:
 
 GENRE_MESSAGES: dict[str, list[str]] = {
     "romantic": [
-        "💕 Romantik qismlarni ko'p ko'rdingiz — ko'zlaringiz ham biroz dam olsin! 😄",
-        "🌸 Sevgi dramalarida g'arq bo'libsiz, lekin endi yostig'ingiz bilan muomala qiling! 🛌",
-        "💘 Ekrandagi muhabbat chiroyli, lekin tush ko'rish ham yaxshi — uxlang! 😴",
+        "♡ Romantik qismlarni ko'p ko'rdingiz — ko'zlaringiz ham biroz dam olsin! ☺",
+        "๏ Sevgi dramalarida g'arq bo'libsiz, lekin endi yostig'ingiz bilan muomala qiling! ☾",
+        "♡ Ekrandagi muhabbat chiroyli, lekin tush ko'rish ham yaxshi — uxlang! ☾",
     ],
     "action": [
-        "⚔️ Ko'p jang ko'rdingiz, endi o'zingiz dam oling — jangchi ham uxlaydi! 😄",
-        "💪 Qahramonlar ham uxlaydi, siz-chi? Biroz dam oling! 🌙",
-        "🥊 Adrenaliningiz tushsin endi — ko'zlaringizni yuming! 😴",
+        "๏ Ko'p jang ko'rdingiz, endi o'zingiz dam oling — jangchi ham uxlaydi! ☺",
+        "ϟ Qahramonlar ham uxlaydi, siz-chi? Biroz dam oling! ☾",
+        "๏ Adrenaliningiz tushsin endi — ko'zlaringizni yuming! ☾",
     ],
     "comedy": [
-        "😂 Qotib kulib charchadingizmi? Kulib-kulib uxlang endi! 🌙",
-        "🤣 Yetarli kuldingiz, endi yostiqqa bosh qo'yish vaqti! 😴",
-        "😄 Kulgidan ko'zlaringizda yosh — endi rohat bilan uxlang! 💤",
+        "☺ Qotib kulib charchadingizmi? Kulib-kulib uxlang endi! ☾",
+        "☺ Yetarli kuldingiz, endi yostiqqa bosh qo'yish vaqti! ☾",
+        "☺ Kulgidan ko'zlaringizda yosh — endi rohat bilan uxlang! ☾",
     ],
     "horror": [
-        "😱 Ko'rgan narsalaringizni unutish uchun uxlang — tushingiz boshqacha bo'ladi! 🌙",
-        "🕷️ Qo'rqinchli qismlar ko'rdingiz, endi chiroqni yoqib uxlang! 😄",
-        "👻 Arvohlar ham uxlaydi — siz ham uxlang! 💤",
+        "☹ Ko'rgan narsalaringizni unutish uchun uxlang — tushingiz boshqacha bo'ladi! ☾",
+        "๏ Qo'rqinchli qismlar ko'rdingiz, endi chiroqni yoqib uxlang! ☺",
+        "๏ Arvohlar ham uxlaydi — siz ham uxlang! ☾",
     ],
     "fantasy": [
-        "🧙 Sehrli dunyodan qaytish vaqti — real dunyoda ham tush ko'rasiz! 🌙",
-        "✨ Fantastik sayohatingiz tugadi, endi sirli tushlar vaqti! 😴",
-        "🐉 Ajdarho ham uxlaydi — siz ham qilichingizni qo'ying! 💤",
+        "๏ Sehrli dunyodan qaytish vaqti — real dunyoda ham tush ko'rasiz! ☾",
+        "✦ Fantastik sayohatingiz tugadi, endi sirli tushlar vaqti! ☾",
+        "๏ Ajdarho ham uxlaydi — siz ham qilichingizni qo'ying! ☾",
     ],
     "drama": [
-        "🎭 Ko'p drama ko'rdingiz — endi o'zingizning dramangizni boshlamang, uxlang! 😄",
-        "😢 Ko'z yoshlari qurisin — yaxshi uxlash eng yaxshi dori! 🌙",
-        "🎬 Dramatik kecha bo'ldi — endi tinch uxlash vaqti! 💤",
+        "๏ Ko'p drama ko'rdingiz — endi o'zingizning dramangizni boshlamang, uxlang! ☺",
+        "☹ Ko'z yoshlari qurisin — yaxshi uxlash eng yaxshi dori! ☾",
+        "๏ Dramatik kecha bo'ldi — endi tinch uxlash vaqti! ☾",
     ],
     "thriller": [
-        "🔍 Sirlarni hal qildingizmi? Endi miyangizga dam bering! 🌙",
-        "⏰ Suspens tugadi — endi relax qiling va uxlang! 😴",
-        "🕵️ Detektiv miya ko'p ishladi — dam olish vaqti! 💤",
+        "⌕ Sirlarni hal qildingizmi? Endi miyangizga dam bering! ☾",
+        "◷ Suspens tugadi — endi relax qiling va uxlang! ☾",
+        "๏ Detektiv miya ko'p ishladi — dam olish vaqti! ☾",
     ],
 }
 
 # Umumiy xabarlar (janr aniqlanmasa)
 GENERAL_MESSAGES: list[str] = [
-    "🌙 Ancha vaqt bo'ldi — ko'zlaringizga biroz dam bering! 😊",
-    "✨ Zo'r kontentlar ko'rdingiz! Endi tush ko'rish vaqti — uxlang! 💤",
-    "🎬 Film rejissyori ham uxlaydi — siz ham uxlang! 😄",
-    "🍿 Popcorn tugadimi? Demak dam olish vaqti! 🌙",
-    "😴 Ko'zlaringiz og'irlaşgan bo'lsa — bu signal! Uxlang! 💤",
-    "🌟 Ajoyib kecha bo'ldi — endi chiroyli tushlar ko'ring! 🌙",
-    "🎭 Bugunlik shuncha — ertaga yangi qismlar kutadi! 😊💤",
-    "🛌 Ekran o'chsin, ko'zlar yumilsin — xayrli tun! 🌙",
+    "☾ Ancha vaqt bo'ldi — ko'zlaringizga biroz dam bering! ☺",
+    "✦ Zo'r kontentlar ko'rdingiz! Endi tush ko'rish vaqti — uxlang! ☾",
+    "๏ Film rejissyori ham uxlaydi — siz ham uxlang! ☺",
+    "๏ Popcorn tugadimi? Demak dam olish vaqti! ☾",
+    "☾ Ko'zlaringiz og'irlaşgan bo'lsa — bu signal! Uxlang! ☾",
+    "★ Ajoyib kecha bo'ldi — endi chiroyli tushlar ko'ring! ☾",
+    "๏ Bugunlik shuncha — ertaga yangi qismlar kutadi! ☺☾",
+    "☾ Ekran o'chsin, ko'zlar yumilsin — xayrli tun! ☾",
 ]
 
 # Kunduz uchun boshqacha xabarlar (dam olish emas, pauza)
 DAY_MESSAGES: list[str] = [
-    "☀️ Ancha ko'rdingiz! Biroz ko'zlaringizni dam oldirib keling 👁️",
-    "🍵 Ko'p qism ko'rdingiz — bir piyola choy iching, ko'zlaringizni dam oldiring! ☕",
-    "🚶 Ko'zlaringizga biroz pauza — 5 daqiqa yurish foydali! 😊",
-    "🌿 Ekrandan uzoqlashib, uzoqdagi narsaga 20 soniya qarang — ko'z mashqi! 👁️✨",
-    "😄 Juda zo'r tanladsiz! Lekin ko'zlaringiz ham siz bilan birga dam olsin!",
+    "☼ Ancha ko'rdingiz! Biroz ko'zlaringizni dam oldirib keling ◉",
+    "๏ Ko'p qism ko'rdingiz — bir piyola choy iching, ko'zlaringizni dam oldiring! ๏",
+    "ᐅ Ko'zlaringizga biroz pauza — 5 daqiqa yurish foydali! ☺",
+    "๏ Ekrandan uzoqlashib, uzoqdagi narsaga 20 soniya qarang — ko'z mashqi! ◉✦",
+    "☺ Juda zo'r tanladsiz! Lekin ko'zlaringiz ham siz bilan birga dam olsin!",
 ]
 
 

@@ -79,28 +79,28 @@ def format_card(item: dict) -> str:
     tags = ", ".join(item.get("tags", [])[:3]) or "—"
     mood = ", ".join(item.get("mood", [])[:2]) or "—"
 
-    type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
-    emoji = type_emoji.get(item.get("type", "anime"), "🎬")
+    type_emoji = {"anime": "๏", "movie": "๏", "serial": "๏", "dorama": "๏"}
+    emoji = type_emoji.get(item.get("type", "anime"), "๏")
 
     status_map = {
-        "completed": "✅ Tugagan",
-        "ongoing": "📡 Davom etmoqda",
-        "announced": "📢 Kutilmoqda",
+        "completed": "✓ Tugagan",
+        "ongoing": "◌ Davom etmoqda",
+        "announced": "ᐅ Kutilmoqda",
     }
     status = status_map.get(item.get("status", ""), "")
-    ep_text = f"🎞 {item['episodes']} qism" if item.get("episodes") else ""
+    ep_text = f"๏ {item['episodes']} qism" if item.get("episodes") else ""
     year = f" ({item['year']})" if item.get("year") else ""
 
     lines = [f"{emoji} <b>{item['title']}</b>{year}"]
-    lines.append("╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")
+    lines.append("✧───────✧")
     if genres != "—":
-        lines.append(f"🎭 {genres}")
+        lines.append(f"๏ {genres}")
     if tags != "—":
-        lines.append(f"🏷 {tags}")
+        lines.append(f"# {tags}")
     if mood != "—":
-        lines.append(f"😌 {mood}")
+        lines.append(f"☺ {mood}")
 
-    rating_line = f"⭐ {item.get('rating', 0):.1f}"
+    rating_line = f"★ {item.get('rating', 0):.1f}"
     if ep_text:
         rating_line += f" | {ep_text}"
     if status:
@@ -108,9 +108,9 @@ def format_card(item: dict) -> str:
     lines.append(rating_line)
 
     if item.get("is_hidden_gem"):
-        lines.append("💎 <b>Hidden Gem!</b>")
+        lines.append("◆ <b>Hidden Gem!</b>")
     if item.get("locked"):
-        lines.append("🔒 <i>Faqat Pro uchun</i>")
+        lines.append("⊘ <i>Faqat Pro uchun</i>")
 
     return "\n".join(lines)
 
@@ -126,7 +126,7 @@ async def show_pro_main_menu(call: types.CallbackQuery):
         user = await session.get(User, call.from_user.id)
         until_str = ""
         if user and user.pro_until:
-            until_str = f"\n📅 Tugash: <b>{user.pro_until.strftime('%d.%m.%Y')}</b>"
+            until_str = f"\n◎ Tugash: <b>{user.pro_until.strftime('%d.%m.%Y')}</b>"
 
     # Pro asosiy menyu — ranglar Bot API 9.4: success (yashil) = harakatlar, primary (ko'k) = menyu.
     kb = InlineKeyboardMarkup(
@@ -152,7 +152,7 @@ async def show_pro_main_menu(call: types.CallbackQuery):
         ]
     )
 
-    text = f"⚡ <b>Kaworai Pro</b>\n╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n✅ Siz Pro foydalanuvchisiz!{until_str}\n\n<i>Quyidan kerakli bo'limni tanlang 👇</i>"
+    text = f"ϟ <b>Kaworai Pro</b>\n✧───────✧\n✓ Siz Pro foydalanuvchisiz!{until_str}\n\n<i>Quyidan kerakli bo'limni tanlang ᐁ</i>"
     await safe_edit(call, text, kb)
     await call.answer()
 
@@ -165,9 +165,9 @@ async def show_pro_main_menu(call: types.CallbackQuery):
 @pro_user_router.callback_query(F.data == "pro_recommend")
 async def pro_recommend(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
-    await safe_edit(call, "🤖 Sizga mos kontentlar hisoblanmoqda...")
+    await safe_edit(call, "◈ Sizga mos kontentlar hisoblanmoqda...")
 
     try:
         from utils.recommendation import build_identity_label, get_or_create_taste_profile, get_recommendations
@@ -177,7 +177,7 @@ async def pro_recommend(call: types.CallbackQuery):
 
         # Redis keshdan o'qish
         recs = await get_cached_recommendations(user_id)
-        identity = "🎌 Anime muxlisi"
+        identity = "๏ Anime muxlisi"
 
         if recs is None:
             # Keshda yo'q — DB dan olib, keshga yozamiz
@@ -194,13 +194,13 @@ async def pro_recommend(call: types.CallbackQuery):
                 identity = build_identity_label(profile)
     except Exception:
         recs = []
-        identity = "🎌 Anime muxlisi"
+        identity = "๏ Anime muxlisi"
 
     if not recs:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="ᐊ Orqaga", callback_data="kawaii_pass")]]
         )
-        await safe_edit(call, "😕 Hozircha tavsiya yo'q.\nKo'proq kontent ko'ring — tizim sizni o'rganib boradi!", kb)
+        await safe_edit(call, "☹ Hozircha tavsiya yo'q.\nKo'proq kontent ko'ring — tizim sizni o'rganib boradi!", kb)
         return await call.answer()
 
     await _show_rec_item(call, recs, 0, identity)
@@ -211,10 +211,10 @@ async def _show_rec_item(call: types.CallbackQuery, recs: list, idx: int, identi
     item = recs[idx]
     desc = (item.get("description") or "")[:150]
     text = (
-        f"🤖 <b>AI Tavsiya</b> ({idx + 1}/{len(recs)})\n"
+        f"◈ <b>AI Tavsiya</b> ({idx + 1}/{len(recs)})\n"
         + (f"<i>{identity}</i>\n" if idx == 0 and identity else "")
         + f"\n{format_card(item)}\n\n"
-        + (f"📖 {desc}..." if desc else "")
+        + (f"๏ {desc}..." if desc else "")
     )
 
     kb = InlineKeyboardBuilder()
@@ -236,7 +236,7 @@ async def _show_rec_item(call: types.CallbackQuery, recs: list, idx: int, identi
 @pro_user_router.callback_query(F.data.startswith("pro_rec_"))
 async def pro_rec_next(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     idx = int(call.data.replace("pro_rec_", ""))
 
@@ -249,7 +249,7 @@ async def pro_rec_next(call: types.CallbackQuery):
         recs = []
 
     if not recs or idx >= len(recs):
-        return await call.answer("🔚 Tavsiyalar tugadi!", show_alert=True)
+        return await call.answer("ᐊ Tavsiyalar tugadi!", show_alert=True)
 
     await _show_rec_item(call, recs, idx)
     await call.answer()
@@ -260,23 +260,23 @@ async def pro_rec_next(call: types.CallbackQuery):
 # ═══════════════════════════════════════════════════════════
 
 MOOD_LABELS = {
-    "sad": "😢 G'amgin",
-    "romantic": "💕 Romantik",
-    "dark": "🌑 Dark",
-    "motivational": "💪 Motivatsion",
-    "action": "⚔️ Jangari",
-    "funny": "😂 Kulgili",
-    "mystery": "🔍 Sirli",
-    "chill": "🌸 Chill",
-    "fantasy": "🧙 Fantastik",
-    "scary": "😱 Qo'rqinchli",
+    "sad": "☹ G'amgin",
+    "romantic": "♡ Romantik",
+    "dark": "☾ Dark",
+    "motivational": "ϟ Motivatsion",
+    "action": "๏ Jangari",
+    "funny": "☺ Kulgili",
+    "mystery": "⌕ Sirli",
+    "chill": "๏ Chill",
+    "fantasy": "๏ Fantastik",
+    "scary": "☹ Qo'rqinchli",
 }
 
 
 @pro_user_router.callback_query(F.data == "pro_mood")
 async def pro_mood_menu(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     kb = InlineKeyboardBuilder()
     for mood, label in MOOD_LABELS.items():
@@ -285,9 +285,9 @@ async def pro_mood_menu(call: types.CallbackQuery):
 
     await safe_edit(
         call,
-        "😌 <b>Kayfiyatingiz qanday?</b>\n\n"
-        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
-        "<i>Kayfiyatingizga mos kontentlarni\ntopib beraman 🎯</i>",
+        "☺ <b>Kayfiyatingiz qanday?</b>\n\n"
+        "✧───────✧\n"
+        "<i>Kayfiyatingizga mos kontentlarni\ntopib beraman ◎</i>",
         kb.as_markup(),
     )
     await call.answer()
@@ -296,12 +296,12 @@ async def pro_mood_menu(call: types.CallbackQuery):
 @pro_user_router.callback_query(F.data.startswith("pmood_"))
 async def mood_selected(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     mood = call.data.replace("pmood_", "")
     label = MOOD_LABELS.get(mood, mood.capitalize())
 
-    await safe_edit(call, f"🔍 {label} kayfiyatga mos kontentlar qidirilmoqda...")
+    await safe_edit(call, f"⌕ {label} kayfiyatga mos kontentlar qidirilmoqda...")
 
     try:
         from utils.recommendation import get_recommendations
@@ -315,7 +315,7 @@ async def mood_selected(call: types.CallbackQuery):
         kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="ᐊ Orqaga", callback_data="pro_mood")]]
         )
-        await safe_edit(call, f"😕 {label} kayfiyatga mos kontent topilmadi.", kb)
+        await safe_edit(call, f"☹ {label} kayfiyatga mos kontent topilmadi.", kb)
         return await call.answer()
 
     await _show_mood_item(call, recs, 0, mood, label)
@@ -326,7 +326,7 @@ async def _show_mood_item(call, recs, idx, mood, label):
     item = recs[idx]
     desc = (item.get("description") or "")[:150]
     text = f"{label} <b>Kayfiyatga Mos</b> ({idx + 1}/{len(recs)})\n\n{format_card(item)}\n\n" + (
-        f"📖 {desc}..." if desc else ""
+        f"๏ {desc}..." if desc else ""
     )
 
     kb = InlineKeyboardBuilder()
@@ -344,7 +344,7 @@ async def _show_mood_item(call, recs, idx, mood, label):
 @pro_user_router.callback_query(F.data.startswith("pmood_next_"))
 async def mood_next(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     # pmood_next_{mood}_{idx}
     raw = call.data.replace("pmood_next_", "")
@@ -362,7 +362,7 @@ async def mood_next(call: types.CallbackQuery):
         recs = []
 
     if not recs or idx >= len(recs):
-        return await call.answer("🔚 Tugadi!", show_alert=True)
+        return await call.answer("ᐊ Tugadi!", show_alert=True)
 
     await _show_mood_item(call, recs, idx, mood, label)
     await call.answer()
@@ -378,7 +378,7 @@ async def _show_list(call: types.CallbackQuery, items: list, title: str, back_cb
         kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="ᐊ Orqaga", callback_data=back_cb)]]
         )
-        await safe_edit(call, f"{title}\n\n😕 Hozircha ma'lumot yo'q.", kb)
+        await safe_edit(call, f"{title}\n\n☹ Hozircha ma'lumot yo'q.", kb)
         await call.answer()
         return
 
@@ -387,9 +387,9 @@ async def _show_list(call: types.CallbackQuery, items: list, title: str, back_cb
 
     for i, item in enumerate(items[:6], 1):
         genres = ", ".join(item.get("genres", [])[:2]) or "—"
-        lock = "🔒 " if item.get("locked") else ""
+        lock = "⊘ " if item.get("locked") else ""
         text += f"{i}. {lock}<b>{item['title']}</b> ({item.get('year', '—')})\n"
-        text += f"   ⭐ {item.get('rating', 0):.1f}  🎭 {genres}\n\n"
+        text += f"   ★ {item.get('rating', 0):.1f}  ๏ {genres}\n\n"
 
         if item.get("locked"):
             kb.row(
@@ -410,7 +410,7 @@ async def _show_list(call: types.CallbackQuery, items: list, title: str, back_cb
 @pro_user_router.callback_query(F.data == "pro_trending")
 async def pro_trending(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
     try:
         from utils.recommendation import get_trending
         from utils.redis_pro import get_cached_trending, set_cached_trending
@@ -422,13 +422,13 @@ async def pro_trending(call: types.CallbackQuery):
             await set_cached_trending(items)
     except Exception:
         items = []
-    await _show_list(call, items, "🔥 <b>Trending — Bu hafta eng ko'p ko'rilganlar</b>")
+    await _show_list(call, items, "✦ <b>Trending — Bu hafta eng ko'p ko'rilganlar</b>")
 
 
 @pro_user_router.callback_query(F.data == "pro_top")
 async def pro_top(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
     try:
         from utils.recommendation import get_top_rated
         from utils.redis_pro import get_cached_top, set_cached_top
@@ -440,13 +440,13 @@ async def pro_top(call: types.CallbackQuery):
             await set_cached_top(items)
     except Exception:
         items = []
-    await _show_list(call, items, "⭐ <b>Top Reyting — Eng yuqori baholangan</b>")
+    await _show_list(call, items, "★ <b>Top Reyting — Eng yuqori baholangan</b>")
 
 
 @pro_user_router.callback_query(F.data == "pro_rising")
 async def pro_rising(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
     try:
         from utils.recommendation import get_rising
         from utils.redis_pro import get_cached_rising, set_cached_rising
@@ -458,13 +458,13 @@ async def pro_rising(call: types.CallbackQuery):
             await set_cached_rising(items)
     except Exception:
         items = []
-    await _show_list(call, items, "📈 <b>Rising — Tez o'sayotgan kontentlar</b>")
+    await _show_list(call, items, "◈ <b>Rising — Tez o'sayotgan kontentlar</b>")
 
 
 @pro_user_router.callback_query(F.data == "pro_hidden")
 async def pro_hidden_gems(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
     try:
         from utils.recommendation import get_hidden_gems
         from utils.redis_pro import get_cached_hidden, set_cached_hidden
@@ -476,7 +476,7 @@ async def pro_hidden_gems(call: types.CallbackQuery):
             await set_cached_hidden(items)
     except Exception:
         items = []
-    await _show_list(call, items, "💎 <b>Hidden Gems — Kam mashhur, lekin oltin!</b>")
+    await _show_list(call, items, "◆ <b>Hidden Gems — Kam mashhur, lekin oltin!</b>")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -501,9 +501,9 @@ async def show_related(call: types.CallbackQuery):
         title = "Bu kontent"
 
     if not items:
-        return await call.answer("😕 O'xshash kontent topilmadi.", show_alert=True)
+        return await call.answer("☹ O'xshash kontent topilmadi.", show_alert=True)
 
-    await _show_list(call, items, f"🔗 <b>{title}</b> bilan o'xshashlar")
+    await _show_list(call, items, f"↗ <b>{title}</b> bilan o'xshashlar")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -514,7 +514,7 @@ async def show_related(call: types.CallbackQuery):
 @pro_user_router.callback_query(F.data == "pro_continue")
 async def pro_smart_continue(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     try:
         from utils.recommendation import get_smart_continue
@@ -530,15 +530,15 @@ async def pro_smart_continue(call: types.CallbackQuery):
         kb.row(InlineKeyboardButton(text="ᐊ Orqaga", callback_data="kawaii_pass"))
         await safe_edit(
             call,
-            "▶️ <b>Smart Continue</b>\n\nHozircha davom ettiriladigan kontent yo'q.\nBiror nima ko'rishni boshlang! 😊",
+            "ᐅ <b>Smart Continue</b>\n\nHozircha davom ettiriladigan kontent yo'q.\nBiror nima ko'rishni boshlang! ☺",
             kb.as_markup(),
         )
         return await call.answer()
 
-    text = "▶️ <b>Smart Continue — Qolgan joydan davom eting</b>\n\n"
+    text = "ᐅ <b>Smart Continue — Qolgan joydan davom eting</b>\n\n"
     for item in items:
         ep = item.get("resume_from", 1)
-        text += f"🎬 <b>{item['title']}</b> — {ep}-qismdan\n"
+        text += f"๏ <b>{item['title']}</b> — {ep}-qismdan\n"
         kb.row(
             InlineKeyboardButton(
                 text=f"≡ {item['title'][:22]} — {ep}-qismdan", callback_data=f"anime_info_{item['id']}"
@@ -558,7 +558,7 @@ async def pro_smart_continue(call: types.CallbackQuery):
 @pro_user_router.callback_query(F.data == "pro_taste")
 async def pro_taste_profile(call: types.CallbackQuery):
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     try:
         from utils.recommendation import build_identity_label, get_or_create_taste_profile
@@ -579,14 +579,14 @@ async def pro_taste_profile(call: types.CallbackQuery):
         top_m = sorted(moods.items(), key=lambda x: x[1], reverse=True)[:2]
         m_text = ", ".join(m for m, _ in top_m) or "Aniqlanmagan"
 
-        type_map = {"anime": "🎌 Anime", "movie": "🎥 Kino", "serial": "📺 Serial", "dorama": "🌸 Dorama"}
-        fav_type = type_map.get(profile.fav_type or "anime", "🎌 Anime")
+        type_map = {"anime": "๏ Anime", "movie": "๏ Kino", "serial": "๏ Serial", "dorama": "๏ Dorama"}
+        fav_type = type_map.get(profile.fav_type or "anime", "๏ Anime")
     except Exception:
-        identity = "🎌 Anime muxlisi"
+        identity = "๏ Anime muxlisi"
         g_text = "  Hali ma'lumot yo'q"
         t_text = "  Hali ma'lumot yo'q"
         m_text = "Aniqlanmagan"
-        fav_type = "🎌 Anime"
+        fav_type = "๏ Anime"
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -598,13 +598,13 @@ async def pro_taste_profile(call: types.CallbackQuery):
     )
 
     text = (
-        f"👤 <b>Sizning Did Profilingiz</b>\n"
-        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
-        f"🎯 <b>{identity}</b>\n\n"
-        f"🎭 <b>Sevimli janrlar:</b>\n{g_text}\n\n"
-        f"🏷 <b>Sevimli teglar:</b>\n{t_text}\n\n"
-        f"😌 <b>Sevimli mood:</b> {m_text}\n"
-        f"📁 <b>Sevimli tur:</b> {fav_type}\n\n"
+        f"◉ <b>Sizning Did Profilingiz</b>\n"
+        f"✧───────✧\n"
+        f"◎ <b>{identity}</b>\n\n"
+        f"๏ <b>Sevimli janrlar:</b>\n{g_text}\n\n"
+        f"# <b>Sevimli teglar:</b>\n{t_text}\n\n"
+        f"☺ <b>Sevimli mood:</b> {m_text}\n"
+        f"≡ <b>Sevimli tur:</b> {fav_type}\n\n"
         f"<blockquote>Ko'rgan kontentlaringiz asosida avtomatik yig'iladi.</blockquote>"
     )
     await safe_edit(call, text, kb)
@@ -619,7 +619,7 @@ async def pro_taste_profile(call: types.CallbackQuery):
 @pro_user_router.callback_query(F.data == "pro_upgrade_hint")
 async def pro_upgrade_hint(call: types.CallbackQuery):
     await call.answer(
-        "🔒 Bu kontent Kaworai Pro uchun!\nPro bo'lish uchun 🟢 Kaworai Pro tugmasini bosing.", show_alert=True
+        "⊘ Bu kontent Kaworai Pro uchun!\nPro bo'lish uchun ● Kaworai Pro tugmasini bosing.", show_alert=True
     )
 
 
@@ -630,8 +630,8 @@ async def pro_upgrade_hint(call: types.CallbackQuery):
 
 def _settings_root_kb(ux_mode: str) -> InlineKeyboardMarkup:
     """Sozlamalar ildiz menyusi — UX rejimi + /start menyu tuzatish."""
-    edit_label = ("✅ " if ux_mode == "edit" else "") + "📝 Tahrirlash (silliq)"
-    send_label = ("✅ " if ux_mode == "send" else "") + "📤 Har safar yangi xabar"
+    edit_label = ("✓ " if ux_mode == "edit" else "") + "✎ Tahrirlash (silliq)"
+    send_label = ("✓ " if ux_mode == "send" else "") + "↗ Har safar yangi xabar"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=sym(edit_label), callback_data="pro_ux_set_edit")],
@@ -649,14 +649,14 @@ def _settings_root_kb(ux_mode: str) -> InlineKeyboardMarkup:
 
 # Pro shortcut — ko'rinadigan nomlari.
 _PRO_SHORTCUT_LABELS = {
-    "pro_recommend": "🤖 AI Tavsiyalar",
-    "pro_mood": "😌 Kayfiyatim",
-    "pro_trending": "🔥 Trending",
-    "pro_top": "⭐ Top reyting",
-    "pro_rising": "📈 Rising",
-    "pro_hidden": "💎 Hidden Gems",
-    "pro_continue": "▶️ Davom ettirish",
-    "pro_taste": "👤 Mening didim",
+    "pro_recommend": "◈ AI Tavsiyalar",
+    "pro_mood": "☺ Kayfiyatim",
+    "pro_trending": "✦ Trending",
+    "pro_top": "★ Top reyting",
+    "pro_rising": "◈ Rising",
+    "pro_hidden": "◆ Hidden Gems",
+    "pro_continue": "ᐅ Davom ettirish",
+    "pro_taste": "◉ Mening didim",
 }
 
 
@@ -672,7 +672,7 @@ def _start_menu_edit_kb(selected: list[str]) -> InlineKeyboardMarkup:
     for idx, key in enumerate(selected, start=1):
         if key not in ALLOWED_START_EXTRAS:
             continue
-        label = f"{idx}. ✅ {_PRO_SHORTCUT_LABELS.get(key, key)}"
+        label = f"{idx}. ✓ {_PRO_SHORTCUT_LABELS.get(key, key)}"
         row.append(InlineKeyboardButton(text=sym(label), callback_data=f"pro_sm_t_{key}"))
         shown.add(key)
         if len(row) == 2:
@@ -694,7 +694,7 @@ def _start_menu_edit_kb(selected: list[str]) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="ᐊ Sozlamalar", callback_data="pro_settings"),
             InlineKeyboardButton(
-                text=f"ℹ️ {len(selected)}/{MAX_START_EXTRAS}", callback_data="pro_sm_info"
+                text=f"ⓘ {len(selected)}/{MAX_START_EXTRAS}", callback_data="pro_sm_info"
             ),
         ]
     )
@@ -705,7 +705,7 @@ def _start_menu_edit_kb(selected: list[str]) -> InlineKeyboardMarkup:
 async def pro_settings(call: types.CallbackQuery):
     """Pro sozlamalar ildizi — UX rejimi + bosh menyu tuzatish."""
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     from database.queries import get_user_ux_mode
 
@@ -713,12 +713,12 @@ async def pro_settings(call: types.CallbackQuery):
         mode = await get_user_ux_mode(session, call.from_user.id)
 
     text = (
-        "⚙️ <b>Pro sozlamalar</b>\n"
-        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
-        "🎬 <b>Ko'rish rejimi:</b>\n"
+        "◈ <b>Pro sozlamalar</b>\n"
+        "✧───────✧\n"
+        "๏ <b>Ko'rish rejimi:</b>\n"
         "<i>Xabar yangilansinmi yoki yangi kelsinmi?</i>\n\n"
-        "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>") + "\n\n"
-        "🎨 <b>Bosh menyu</b> — Pro tugmalarni sozlang"
+        "Hozirgi: " + ("<b>✎ Tahrirlash</b>" if mode == "edit" else "<b>↗ Yangi xabar</b>") + "\n\n"
+        "▣ <b>Bosh menyu</b> — Pro tugmalarni sozlang"
     )
     await safe_edit(call, text, _settings_root_kb(mode))
     await call.answer()
@@ -728,7 +728,7 @@ async def pro_settings(call: types.CallbackQuery):
 async def pro_ux_set(call: types.CallbackQuery):
     """Rejimni saqlash: pro_ux_set_edit / pro_ux_set_send."""
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     mode = call.data.replace("pro_ux_set_", "")
     if mode not in ("edit", "send"):
@@ -740,25 +740,25 @@ async def pro_ux_set(call: types.CallbackQuery):
         ok = await set_user_ux_mode(session, call.from_user.id, mode)
 
     if not ok:
-        return await call.answer("❌ Saqlanmadi", show_alert=True)
+        return await call.answer("✕ Saqlanmadi", show_alert=True)
 
     text = (
-        "⚙️ <b>Pro sozlamalar</b>\n"
-        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
-        "🎬 <b>Ko'rish rejimi:</b>\n"
+        "◈ <b>Pro sozlamalar</b>\n"
+        "✧───────✧\n"
+        "๏ <b>Ko'rish rejimi:</b>\n"
         "<i>Xabar yangilansinmi yoki yangi kelsinmi?</i>\n\n"
-        "Hozirgi: " + ("<b>📝 Tahrirlash</b>" if mode == "edit" else "<b>📤 Yangi xabar</b>") + "\n\n"
-        "🎨 <b>Bosh menyu</b> — Pro tugmalarni sozlang"
+        "Hozirgi: " + ("<b>✎ Tahrirlash</b>" if mode == "edit" else "<b>↗ Yangi xabar</b>") + "\n\n"
+        "▣ <b>Bosh menyu</b> — Pro tugmalarni sozlang"
     )
     await safe_edit(call, text, _settings_root_kb(mode))
-    await call.answer("✅ Saqlandi", show_alert=False)
+    await call.answer("✓ Saqlandi", show_alert=False)
 
 
 @pro_user_router.callback_query(F.data == "pro_start_menu_edit")
 async def pro_start_menu_edit(call: types.CallbackQuery):
     """Bosh menyu (start) ni tuzatish oynasi — Pro shortcut'larni toggle qilish."""
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     from database.queries import MAX_START_EXTRAS, get_user_start_extras
 
@@ -766,8 +766,8 @@ async def pro_start_menu_edit(call: types.CallbackQuery):
         selected = await get_user_start_extras(session, call.from_user.id)
 
     text = (
-        "🎨 <b>Bosh menyu sozlash</b>\n"
-        "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        "▣ <b>Bosh menyu sozlash</b>\n"
+        "✧───────✧\n"
         "<i>/start da tez-tez ishlatadigan\n"
         "bo'limlarni qo'shing.</i>\n\n"
         f"Chegara: <b>{MAX_START_EXTRAS}</b> ta tugma"
@@ -780,7 +780,7 @@ async def pro_start_menu_edit(call: types.CallbackQuery):
 async def pro_start_menu_toggle(call: types.CallbackQuery):
     """Shortcut kalitini qo'shish/olib tashlash (toggle)."""
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     key = call.data.replace("pro_sm_t_", "")
     from database.queries import ALLOWED_START_EXTRAS, MAX_START_EXTRAS, toggle_user_start_extra
@@ -793,11 +793,11 @@ async def pro_start_menu_toggle(call: types.CallbackQuery):
 
     if not ok and len(current) >= MAX_START_EXTRAS:
         return await call.answer(
-            f"❌ Chegaraga yetdingiz ({MAX_START_EXTRAS}). Birortasini olib tashlang.",
+            f"✕ Chegaraga yetdingiz ({MAX_START_EXTRAS}). Birortasini olib tashlang.",
             show_alert=True,
         )
     if not ok:
-        return await call.answer("❌ Saqlanmadi", show_alert=True)
+        return await call.answer("✕ Saqlanmadi", show_alert=True)
 
     # UI ni yangilaymiz — faqat klaviatura.
     try:
@@ -806,14 +806,14 @@ async def pro_start_menu_toggle(call: types.CallbackQuery):
         pass
     label = _PRO_SHORTCUT_LABELS.get(key, key)
     added = key in current
-    await call.answer(("➕ " if added else "➖ ") + label, show_alert=False)
+    await call.answer(("+ " if added else "− ") + label, show_alert=False)
 
 
 @pro_user_router.callback_query(F.data == "pro_sm_clear")
 async def pro_start_menu_clear(call: types.CallbackQuery):
     """Bosh menyudagi barcha qo'shilgan shortcut'larni tozalash."""
     if not await check_pro(call.from_user.id):
-        return await call.answer("🔒 Pro kerak!", show_alert=True)
+        return await call.answer("⊘ Pro kerak!", show_alert=True)
 
     from database.queries import set_user_start_extras
 
@@ -824,7 +824,7 @@ async def pro_start_menu_clear(call: types.CallbackQuery):
         await call.message.edit_reply_markup(reply_markup=_start_menu_edit_kb([]))
     except Exception:
         pass
-    await call.answer("🧹 Tozalandi", show_alert=False)
+    await call.answer("✕ Tozalandi", show_alert=False)
 
 
 @pro_user_router.callback_query(F.data == "pro_sm_info")

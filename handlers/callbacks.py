@@ -41,28 +41,28 @@ async def _is_pro(user_id: int) -> bool:
 
 # ── Caption ──────────────────────────────────────────────────
 def _anime_caption(anime: Anime) -> str:
-    type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
-    emoji = type_emoji.get(getattr(anime, "content_type", None) or "anime", "🎬")
+    type_emoji = {"anime": "๏", "movie": "๏", "serial": "๏", "dorama": "๏"}
+    emoji = type_emoji.get(getattr(anime, "content_type", None) or "anime", "๏")
     genres_text = ", ".join(anime.genres or []) or "Nomalum"
     tags = getattr(anime, "tags", None) or []
     tags_text = ", ".join(tags[:3])
-    lock_str = " 🔒 Pro" if getattr(anime, "is_pro_locked", False) else ""
+    lock_str = " ⊘ Pro" if getattr(anime, "is_pro_locked", False) else ""
     status_map = {
-        "completed": "✅ Tugagan",
-        "ongoing": "📡 Davom etmoqda",
-        "announced": "📢 Kutilmoqda",
+        "completed": "✓ Tugagan",
+        "ongoing": "◌ Davom etmoqda",
+        "announced": "ᐅ Kutilmoqda",
     }
     status_str = status_map.get(getattr(anime, "status", "") or "", "")
 
     return (
         f"{emoji} <b>{anime.title}</b>" + (f" <i>({anime.year})</i>" if anime.year else "") + lock_str + "\n"
-        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
-        f"🎭 {genres_text}\n"
-        + (f"🏷 {tags_text}\n" if tags_text else "")
-        + f"{rating_stars(anime.rating)} <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
-        + (f"📊 {status_str}\n" if status_str else "")
-        + f"🆔 <code>{anime.id}</code>\n\n"
-        f"📖 <blockquote>{(anime.description or '')[:300]}</blockquote>"
+        f"✧───────✧\n"
+        f"๏ {genres_text}\n"
+        + (f"# {tags_text}\n" if tags_text else "")
+        + f"{rating_stars(anime.rating)} <b>{anime.rating:.1f}</b>  •  ◉ {anime.rating_count} ovoz\n"
+        + (f"◈ {status_str}\n" if status_str else "")
+        + f"№ <code>{anime.id}</code>\n\n"
+        f"๏ <blockquote>{(anime.description or '')[:300]}</blockquote>"
     )
 
 
@@ -112,7 +112,7 @@ def _anime_info_kb(
             ]
         )
 
-    sub_icon = "🔔" if subscribed else "🔕"
+    sub_icon = "●" if subscribed else "○"
     sub_txt = "Obunani bekor qilish" if subscribed else "Obuna bo'lish"
     rows.append(
         [
@@ -187,7 +187,7 @@ def _player_kb(
         ]
     )
 
-    sub_icon = "🔔" if subscribed else "🔕"
+    sub_icon = "●" if subscribed else "○"
     sub_txt = "Obunani bekor qilish" if subscribed else "Obuna bo'lish"
     rows.append(
         [
@@ -394,11 +394,11 @@ async def show_anime_info(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Anime topilmadi!", show_alert=True)
+            return await call.answer("✕ Anime topilmadi!", show_alert=True)
 
         if getattr(anime, "is_pro_locked", False) and not is_pro:
             return await call.answer(
-                "🔒 Bu kontent faqat Kaworai Pro uchun!\nPro olish uchun 🟢 Kaworai Pro tugmasini bosing.",
+                "⊘ Bu kontent faqat Kaworai Pro uchun!\nPro olish uchun ● Kaworai Pro tugmasini bosing.",
                 show_alert=True,
             )
 
@@ -440,9 +440,9 @@ async def watch_start(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
         if getattr(anime, "is_pro_locked", False) and not is_pro:
-            return await call.answer("🔒 Faqat Pro uchun!", show_alert=True)
+            return await call.answer("⊘ Faqat Pro uchun!", show_alert=True)
 
         result = await session.execute(select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc()))
         episodes = result.scalars().all()
@@ -450,7 +450,7 @@ async def watch_start(call: CallbackQuery):
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
 
     if not episodes:
-        return await call.answer("❌ Hali qismlar qo'shilmagan!", show_alert=True)
+        return await call.answer("✕ Hali qismlar qo'shilmagan!", show_alert=True)
 
     ep = episodes[0]
     total = len(episodes)
@@ -459,7 +459,7 @@ async def watch_start(call: CallbackQuery):
     user_rated = user_rating is not None
 
     kb = _player_kb(anime_id, ep.episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
-    caption = f"▶️ <b>{anime.title}</b>\n🎞 {ep.episode}-qism  •  Jami: {total} qism"
+    caption = f"ᐅ <b>{anime.title}</b>\n๏ {ep.episode}-qism  •  Jami: {total} qism"
 
     async with AsyncSessionLocal() as session:
         await add_to_watch_history(session, user_id, anime_id, ep.episode)
@@ -495,9 +495,9 @@ async def show_episode(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
         if getattr(anime, "is_pro_locked", False) and not is_pro:
-            return await call.answer("🔒 Faqat Pro uchun!", show_alert=True)
+            return await call.answer("⊘ Faqat Pro uchun!", show_alert=True)
 
         result = await session.execute(select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc()))
         episodes = result.scalars().all()
@@ -506,7 +506,7 @@ async def show_episode(call: CallbackQuery):
 
     ep = next((e for e in episodes if e.episode == episode), None)
     if not ep:
-        return await call.answer("❌ Bu qism topilmadi!", show_alert=True)
+        return await call.answer("✕ Bu qism topilmadi!", show_alert=True)
 
     total = len(episodes)
     max_ep = max(e.episode for e in episodes)
@@ -514,7 +514,7 @@ async def show_episode(call: CallbackQuery):
     user_rated = user_rating is not None
 
     kb = _player_kb(anime_id, episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
-    caption = f"▶️ <b>{anime.title}</b>\n🎞 {episode}-qism  •  Jami: {total} qism"
+    caption = f"ᐅ <b>{anime.title}</b>\n๏ {episode}-qism  •  Jami: {total} qism"
 
     async with AsyncSessionLocal() as session:
         await add_to_watch_history(session, user_id, anime_id, episode, is_completed=(episode == max_ep))
@@ -550,15 +550,15 @@ async def show_episodes_list(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
         if getattr(anime, "is_pro_locked", False) and not is_pro:
-            return await call.answer("🔒 Faqat Pro uchun!", show_alert=True)
+            return await call.answer("⊘ Faqat Pro uchun!", show_alert=True)
 
         result = await session.execute(select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc()))
         episodes = result.scalars().all()
 
     if not episodes:
-        return await call.answer("❌ Qismlar yo'q!", show_alert=True)
+        return await call.answer("✕ Qismlar yo'q!", show_alert=True)
 
     total = len(episodes)
     total_pages = max(1, (total + EP_PAGE_SIZE - 1) // EP_PAGE_SIZE)
@@ -566,11 +566,11 @@ async def show_episodes_list(call: CallbackQuery):
 
     kb = _episodes_kb(anime_id, episodes, page)
     text = (
-        f"🎞 <b>{anime.title}</b>\n"
-        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
-        f"📋 Jami {total} qism"
-        + (f"  •  📄 {page + 1}/{total_pages}" if total_pages > 1 else "")
-        + "\n\n<i>Qaysi qismdan boshlashni tanlang 👇</i>"
+        f"๏ <b>{anime.title}</b>\n"
+        f"✧───────✧\n"
+        f"≡ Jami {total} qism"
+        + (f"  •  ≡ {page + 1}/{total_pages}" if total_pages > 1 else "")
+        + "\n\n<i>Qaysi qismdan boshlashni tanlang ᐁ</i>"
     )
 
     try:
@@ -599,10 +599,10 @@ async def toggle_subscription(call: CallbackQuery):
         already = await is_subscribed_anime(session, anime_id, user_id)
         if already:
             await unsubscribe_anime(session, anime_id, user_id)
-            await call.answer("🔕 Obuna bekor qilindi!", show_alert=True)
+            await call.answer("Obuna bekor qilindi", show_alert=False)
         else:
             await subscribe_anime(session, anime_id, user_id)
-            await call.answer("🔔 Obuna bo'ldingiz!\nYangi qismlar chiqsa xabar beramiz.", show_alert=True)
+            await call.answer("Sevimlilarga qo'shildi ♡\nYangi qism chiqsa xabar beramiz.", show_alert=False)
 
     await show_anime_info(
         CallbackQuery(
@@ -622,10 +622,10 @@ _PENDING_PROBLEM: dict[int, tuple[int, int, float]] = {}
 _PENDING_PROBLEM_TTL = 300.0  # 5 daqiqa ichida yozmasa bekor
 
 _PROBLEM_ISSUES: dict[str, str] = {
-    "speed": "🎙 Ovoz tezlashib ketgan",
-    "quiet": "🚀 Ovoz ingichka yoki eshitilmayapti",
-    "notopen": "😵 Epizod ochilmayapti",
-    "black": "🖥 Epizod qop-qora bo'lib qolgan",
+    "speed": "๏ Ovoz tezlashib ketgan",
+    "quiet": "ᐅ Ovoz ingichka yoki eshitilmayapti",
+    "notopen": "☹ Epizod ochilmayapti",
+    "black": "◈ Epizod qop-qora bo'lib qolgan",
 }
 
 _ADMIN_ID_RAW = (os.getenv("ADMIN_ID", "") or "").split(",")[0].strip()
@@ -654,7 +654,7 @@ def _problems_kb(anime_id: int, episode: int, page: int) -> InlineKeyboardMarkup
 
 def _problem_fix_text(issue_label: str) -> str:
     return (
-        f"📌 <b>{issue_label}</b>\n\n"
+        f"# <b>{issue_label}</b>\n\n"
         "Muammoni hal qilish uchun Telegramning keshini tozalab ko'ring.\n\n"
         "Agar muammo hal bo'lmasa shu epizodni qurilmangizning "
         "galereyasiga saqlab olib tomosha qiling. Shunda muammo 90% holatda hal bo'ladi."
@@ -685,13 +685,13 @@ async def _send_problem_report(bot, user, anime_id: int, episode: int, extra_lin
         title = anime.title if anime else f"ID {anime_id}"
     uname = f"@{user.username}" if user.username else "—"
     lines = [
-        "⚠️ <b>Muammo xabari</b>",
+        "! <b>Muammo xabari</b>",
         "",
-        f"🎬 Kontent: {title}",
-        f"🆔 ID: {anime_id}",
-        f"📺 Qism: {episode}",
-        f"👤 User: <code>{user.id}</code> {uname}",
-        f'🔗 <a href="tg://user?id={user.id}">profil</a>',
+        f"๏ Kontent: {title}",
+        f"№ ID: {anime_id}",
+        f"๏ Qism: {episode}",
+        f"◉ User: <code>{user.id}</code> {uname}",
+        f'↗ <a href="tg://user?id={user.id}">profil</a>',
         *extra_lines,
     ]
     try:
@@ -709,7 +709,7 @@ async def show_problems_menu(call: CallbackQuery):
     anime_id, episode, page = int(parts[1]), int(parts[2]), int(parts[3])
     await _edit_or_answer(
         call,
-        "⚠️ <b>Epizodda muammo bormi?</b>\nPastdagi menyudan tanlang 👇",
+        "! <b>Epizodda muammo bormi?</b>\nPastdagi menyudan tanlang ᐁ",
         _problems_kb(anime_id, episode, page),
     )
     await call.answer()
@@ -733,7 +733,7 @@ async def problem_back_to_grid(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
         res = await session.execute(
             select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
         )
@@ -746,7 +746,7 @@ async def problem_back_to_grid(call: CallbackQuery):
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
     if not ep_numbers or episode not in ep_numbers:
-        return await call.answer("❌ Qism topilmadi!", show_alert=True)
+        return await call.answer("✕ Qism topilmadi!", show_alert=True)
 
     page = max(0, min(page, (len(ep_numbers) - 1) // GRID_SIZE))
     kb = _build_episode_keyboard(
@@ -797,7 +797,7 @@ async def problem_other_start(call: CallbackQuery):
     )
     await _edit_or_answer(
         call,
-        "📝 <b>Muammoni yozing:</b>\n\n<i>Nima bo'layotganini qisqa yozib yuboring — admin ko'rib chiqadi.</i>",
+        "✎ <b>Muammoni yozing:</b>\n\n<i>Nima bo'layotganini qisqa yozib yuboring — admin ko'rib chiqadi.</i>",
         kb,
     )
     await call.answer()
@@ -806,7 +806,7 @@ async def problem_other_start(call: CallbackQuery):
 async def consume_pending_problem(message) -> bool:
     """users.py handle_text ichidan chaqiriladi.
 
-    User "📝 Boshqa muammo" dan keyin matn yozgan bo'lsa — admin ga
+    User "✎ Boshqa muammo" dan keyin matn yozgan bo'lsa — admin ga
     yuboradi va True qaytaradi (xabar o'chirilmaydi). Aks holda False.
     """
     entry = _PENDING_PROBLEM.pop(message.from_user.id, None)
@@ -823,10 +823,10 @@ async def consume_pending_problem(message) -> bool:
         message.from_user,
         anime_id,
         episode,
-        ["", f"📝 <b>Muammo:</b> {text}"],
+        ["", f"✎ <b>Muammo:</b> {text}"],
     )
     await message.answer(
-        "✅ <b>Muammongiz yuborildi!</b>\n\nAdmin tez orada ko'rib chiqadi. Rahmat 🙏",
+        "✓ <b>Muammongiz yuborildi!</b>\n\nAdmin tez orada ko'rib chiqadi. Rahmat ☺",
         parse_mode="HTML",
     )
     return True
@@ -845,7 +845,7 @@ async def rate_anime(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         user_rating = await get_user_rating(session, anime_id, call.from_user.id)
     if user_rating:
-        return await call.answer("✅ Siz allaqachon baho bergansiz!", show_alert=True)
+        return await call.answer("✓ Siz allaqachon baho bergansiz!", show_alert=True)
 
     rows = []
     row = []
@@ -859,10 +859,10 @@ async def rate_anime(call: CallbackQuery):
     rows.append([InlineKeyboardButton(text="✕ Bekor", callback_data=f"ep_{anime_id}_cancel")])
 
     await call.message.edit_text(
-        f"⭐ <b>Baho bering</b>\n\n"
-        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+        f"★ <b>Baho bering</b>\n\n"
+        f"✧───────✧\n"
         f"<i>1 — yomon, 10 — zo'r</i>\n\n"
-        f"Quyidagi raqamlardan birini tanlang 👇",
+        f"Quyidagi raqamlardan birini tanlang ᐁ",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
         parse_mode="HTML",
     )
@@ -878,25 +878,25 @@ async def save_score(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         existing = await get_user_rating(session, anime_id, call.from_user.id)
         if existing:
-            return await call.answer("✅ Allaqachon baho bergansiz!", show_alert=True)
+            return await call.answer("✓ Allaqachon baho bergansiz!", show_alert=True)
         new_avg = await add_or_update_rating(session, anime_id, call.from_user.id, score)
         anime = await session.get(Anime, anime_id)
 
     await call.message.edit_text(
-        f"✅ <b>Baho qabul qilindi!</b>\n\n"
-        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
-        f"🎬 <b>{anime.title if anime else anime_id}</b>\n\n"
-        f"⭐ Sizning bahoyingiz: <b>{score}/10</b>\n"
-        f"📊 O'rtacha baho: <b>{new_avg}/10</b>\n\n"
-        f"<i>Rahmat! Fikringiz boshqalarga yordam beradi 🙏</i>",
+        f"✓ <b>Baho qabul qilindi!</b>\n\n"
+        f"✧───────✧\n"
+        f"๏ <b>{anime.title if anime else anime_id}</b>\n\n"
+        f"★ Sizning bahoyingiz: <b>{score}/10</b>\n"
+        f"◈ O'rtacha baho: <b>{new_avg}/10</b>\n\n"
+        f"<i>Rahmat! Fikringiz boshqalarga yordam beradi ☺</i>",
         parse_mode="HTML",
     )
-    await call.answer(f"⭐ {score}/10 — Rahmat!", show_alert=True)
+    await call.answer(f"★ {score}/10 — Rahmat!", show_alert=True)
 
 
 @callback_router.callback_query(F.data.startswith("rated_"))
 async def already_rated(call: CallbackQuery):
-    await call.answer("✅ Siz allaqachon baho bergansiz!", show_alert=True)
+    await call.answer("✓ Siz allaqachon baho bergansiz!", show_alert=True)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -915,7 +915,7 @@ async def back_to_main(call: CallbackQuery):
     extras = await _get_user_start_extras(call.from_user.id)
     await call.message.answer_photo(
         photo=PHOTO_URL,
-        caption="🎌 <b>Kaworai</b> — Anime & Dorama\n\n✨ <i>Sevimli kontentingizni toping</i>",
+        caption="๏ <b>Kaworai</b> — Anime & Dorama\n\n✦ <i>Sevimli kontentingizni toping</i>",
         reply_markup=get_main_menu_keyboard(extras),
         parse_mode="HTML",
     )
@@ -924,7 +924,7 @@ async def back_to_main(call: CallbackQuery):
 
 @callback_router.callback_query(F.data == "no_episodes")
 async def no_episodes_cb(call: CallbackQuery):
-    await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
+    await call.answer("◌ Qismlar hali qo'shilmagan!", show_alert=True)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -944,9 +944,9 @@ async def watch_anime(call: CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
         if getattr(anime, "is_pro_locked", False) and not is_pro:
-            return await call.answer("🔒 Faqat Pro uchun!", show_alert=True)
+            return await call.answer("⊘ Faqat Pro uchun!", show_alert=True)
 
         result = await session.execute(select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc()))
         episodes = result.scalars().all()
@@ -954,7 +954,7 @@ async def watch_anime(call: CallbackQuery):
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
 
     if not episodes:
-        return await call.answer("❌ Hali qismlar qo'shilmagan!", show_alert=True)
+        return await call.answer("✕ Hali qismlar qo'shilmagan!", show_alert=True)
 
     ep = next((e for e in episodes if e.episode == ep_num), episodes[0]) if ep_num else episodes[0]
     total = len(episodes)
@@ -963,7 +963,7 @@ async def watch_anime(call: CallbackQuery):
     user_rated = user_rating is not None
 
     kb = _player_kb(anime_id, ep.episode, total, max_ep, is_last, user_rated, subscribed, is_pro)
-    caption = f"▶️ <b>{anime.title}</b>\n🎞 {ep.episode}-qism  •  Jami: {total} qism"
+    caption = f"ᐅ <b>{anime.title}</b>\n๏ {ep.episode}-qism  •  Jami: {total} qism"
 
     async with AsyncSessionLocal() as session:
         await add_to_watch_history(session, user_id, anime_id, ep.episode)

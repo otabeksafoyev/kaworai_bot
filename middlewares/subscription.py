@@ -176,14 +176,14 @@ def _build_sub_payload(required_not_subbed: list, optional_channels: list) -> tu
     tekshirilmaydi).
     """
     lines: list[str] = [
-        "⚠️ <b>Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:</b>",
-        "<i>💡 Yoki ⚡ Kaworai Pro sotib olib, kanalsiz kiring!</i>",
+        "! <b>Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:</b>",
+        "<i>✦ Yoki ϟ Kaworai Pro sotib olib, kanalsiz kiring!</i>",
         "",
     ]
     lines.extend(f"• {ch.channel_name}" for ch in required_not_subbed)
     if optional_channels:
         lines.append("")
-        lines.append("🔹 <i>Ixtiyoriy kanallar (obuna shart emas):</i>")
+        lines.append("◈ <i>Ixtiyoriy kanallar (obuna shart emas):</i>")
         lines.extend(f"• {ch.channel_name}" for ch in optional_channels)
     # Klaviaturada required + optional hammasi ko'rinadi, lekin "Tekshirish"
     # faqat majburiylar bo'yicha ishlaydi (check_subscription region-aware).

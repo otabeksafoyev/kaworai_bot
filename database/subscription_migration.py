@@ -65,13 +65,13 @@ async def run_migration():
         for stmt in stmts:
             try:
                 await conn.execute(stmt)
-                print(f"✅ {stmt[:60]}...")
+                print(f"✓ {stmt[:60]}...")
             except Exception as e:
                 if "already exists" in str(e).lower():
                     pass
                 else:
-                    print(f"⚠️ {str(e)[:80]}")
-        print("\n✅ Migration tugadi!")
+                    print(f"! {str(e)[:80]}")
+        print("\n✓ Migration tugadi!")
     finally:
         await conn.close()
 

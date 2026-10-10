@@ -38,9 +38,9 @@ async def get_ad_text() -> str | None:
                 _ad_cached_ts = now
                 return None
             if ad.url:
-                text = f'\n\n📢 <a href="{ad.url}">{ad.text}</a>'
+                text = f'\n\nᐅ <a href="{ad.url}">{ad.text}</a>'
             else:
-                text = f"\n\n📢 {ad.text}"
+                text = f"\n\nᐅ {ad.text}"
             _ad_cached_text = text
             _ad_cached_ts = now
             return text

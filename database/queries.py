@@ -468,11 +468,19 @@ async def get_user_rating(session: AsyncSession, anime_id: int, user_id: int) ->
 
 async def add_or_update_rating(session: AsyncSession, anime_id: int, user_id: int, score: int) -> float:
     existing = await get_user_rating(session, anime_id, user_id)
+    first_time = existing is None
     if existing:
         existing.score = score
     else:
         session.add(AnimeRating(anime_id=anime_id, user_id=user_id, score=score))
     await session.commit()
+    if first_time:
+        try:
+            from utils.gamification import on_rating
+
+            await on_rating(session, user_id)
+        except Exception:
+            pass
 
     avg = (
         await session.execute(select(func.avg(AnimeRating.score)).where(AnimeRating.anime_id == anime_id))
@@ -521,6 +529,12 @@ async def subscribe_anime(session: AsyncSession, anime_id: int, user_id: int) ->
         return
     session.add(AnimeSubscription(anime_id=anime_id, user_id=user_id))
     await session.commit()
+    try:
+        from utils.gamification import on_favorite
+
+        await on_favorite(session, user_id)
+    except Exception:
+        pass
 
 
 async def unsubscribe_anime(session: AsyncSession, anime_id: int, user_id: int) -> None:
@@ -591,6 +605,14 @@ async def add_to_watch_history(
             )
 
         await session.commit()
+
+        # O'yin elementlari: ochko, seriya, nishon (best-effort)
+        try:
+            from utils.gamification import on_episode
+
+            await on_episode(session, user_id, anime_id, episode)
+        except Exception:
+            pass
 
         # Taste profile yangilash
         anime = await session.get(Anime, anime_id)

@@ -1,11 +1,11 @@
 """
-handlers/admin_ai.py — "➕ Kontent qo'shish" da AI rejimi.
+handlers/admin_ai.py — "+ Kontent qo'shish" da AI rejimi.
 
 Oqim:
-  ➕ Kontent qo'shish → [🤖 AI bilan] / [✍️ Qo'lda]
+  + Kontent qo'shish → [◈ AI bilan] / [✎ Qo'lda]
   AI: ID → poster → treyler → nom → inglizcha nom → AI ma'lumot yig'adi
-      → ko'rib chiqish: ✅ To'g'ri (saqlanadi + kanalga post so'raladi)
-                         🔄 AI qaytadan / ✍️ Qo'lda davom etish / 🚫 Bekor
+      → ko'rib chiqish: ✓ To'g'ri (saqlanadi + kanalga post so'raladi)
+                         ↻ AI qaytadan / ✎ Qo'lda davom etish / ✕ Bekor
 """
 
 from __future__ import annotations
@@ -41,9 +41,9 @@ from utils.ui import sym
 logger = logging.getLogger(__name__)
 ai_admin_router = Router()
 
-CANCEL_TEXT = "🚫 Bekor qilish"
-TYPE_LABEL = {"anime": "🎌 Anime", "movie": "🎥 Kino", "serial": "📺 Serial", "dorama": "🌸 Dorama"}
-STATUS_LABEL = {"ongoing": "📡 Davom etmoqda", "completed": "✅ Tugagan", "announced": "📢 Kutilmoqda"}
+CANCEL_TEXT = "✕ Bekor qilish"
+TYPE_LABEL = {"anime": "๏ Anime", "movie": "๏ Kino", "serial": "๏ Serial", "dorama": "๏ Dorama"}
+STATUS_LABEL = {"ongoing": "◌ Davom etmoqda", "completed": "✓ Tugagan", "announced": "ᐅ Kutilmoqda"}
 
 
 def _confirm_kb() -> InlineKeyboardMarkup:
@@ -73,9 +73,9 @@ async def mode_manual(call: types.CallbackQuery, state: FSMContext):
         return await call.answer()
     await state.set_state(AddAnime.waiting_id)
     await call.message.answer(
-        "✍️ <b>Qo'lda qo'shish</b>\n\n"
+        "✎ <b>Qo'lda qo'shish</b>\n\n"
         "Qadamlar: ID → Nom → Tur → Tavsif → Rasm → Holat\n\n"
-        "🆔 <b>Kontent ID</b>sini kiriting (faqat raqam):\n<i>Masalan: <code>4345</code></i>",
+        "№ <b>Kontent ID</b>sini kiriting (faqat raqam):\n<i>Masalan: <code>4345</code></i>",
         parse_mode="HTML",
         reply_markup=cancel_kb,
     )
@@ -89,10 +89,10 @@ async def mode_ai(call: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(AddAnimeAI.waiting_id)
     await call.message.answer(
-        "🤖 <b>AI bilan qo'shish</b>\n\n"
+        "◈ <b>AI bilan qo'shish</b>\n\n"
         "Qadamlar: ID → Poster → Treyler → Nom → Inglizcha nom\n"
         "Qolganini (tur, tavsif, janr, yil, reyting, qismlar...) AI to'ldiradi.\n\n"
-        "🆔 <b>Kontent ID</b>sini kiriting (faqat raqam):",
+        "№ <b>Kontent ID</b>sini kiriting (faqat raqam):",
         parse_mode="HTML",
         reply_markup=cancel_kb,
     )
@@ -108,16 +108,16 @@ async def ai_get_id(msg: Message, state: FSMContext):
     if msg.text == CANCEL_TEXT:
         return await _cancel(msg, state)
     if not (msg.text or "").isdigit():
-        return await msg.answer("❌ Faqat raqam!")
+        return await msg.answer("✕ Faqat raqam!")
     anime_id = int(msg.text)
     async with AsyncSessionLocal() as session:
         if await session.get(Anime, anime_id):
             sug = ((await session.execute(select(func.max(Anime.id)))).scalar() or 0) + 1
-            return await msg.answer(f"❌ ID {anime_id} mavjud!\n💡 Bo'sh ID: <code>{sug}</code>", parse_mode="HTML")
+            return await msg.answer(f"✕ ID {anime_id} mavjud!\n✦ Bo'sh ID: <code>{sug}</code>", parse_mode="HTML")
     await state.update_data(anime_id=anime_id)
     await state.set_state(AddAnimeAI.waiting_poster)
     await msg.answer(
-        "🖼 <b>Poster rasmini yuboring:</b>",
+        "▣ <b>Poster rasmini yuboring:</b>",
         parse_mode="HTML",
         reply_markup=_skip_kb("aiadd_skip_poster"),
     )
@@ -127,7 +127,7 @@ async def ai_get_id(msg: Message, state: FSMContext):
 
 async def _ask_trailer(target: Message) -> None:
     await target.answer(
-        "🎬 <b>Treyler videosini yuboring:</b>",
+        "๏ <b>Treyler videosini yuboring:</b>",
         parse_mode="HTML",
         reply_markup=_skip_kb("aiadd_skip_trailer"),
     )
@@ -169,7 +169,7 @@ async def ai_get_poster(msg: Message, state: FSMContext):
     await state.update_data(poster_file_id=photo.file_id, inline_thumbnail_url=None)
 
     if ratio <= 1.05:  # portret/kvadrat — inline qidiruv uchun yaroqli, avtomatik URL
-        wait = await msg.answer("⏳ Rasm URL'ga aylantirilmoqda...")
+        wait = await msg.answer("◌ Rasm URL'ga aylantirilmoqda...")
         url = await _photo_to_url(msg.bot, photo, f"poster_{anime_id}")
         try:
             await wait.delete()
@@ -183,8 +183,8 @@ async def ai_get_poster(msg: Message, state: FSMContext):
     # Landscape (yoki URL olinmadi) — inline qidiruv uchun alohida rasm/URL so'raymiz
     await state.set_state(AddAnimeAI.waiting_inline)
     await msg.answer(
-        f"⚠️ <b>Landscape rasm</b> ({w}×{h}) — kanalga poster sifatida saqlandi, "
-        "lekin inline qidiruvda xunuk ko'rinadi 😕\n\n"
+        f"! <b>Landscape rasm</b> ({w}×{h}) — kanalga poster sifatida saqlandi, "
+        "lekin inline qidiruvda xunuk ko'rinadi ☹\n\n"
         "Inline qidiruv uchun <b>kvadrat yoki portret rasm</b> yuboring "
         "(men o'zim URL qilaman) yoki <b>rasm URL</b>sini (https://...) yuboring.",
         parse_mode="HTML",
@@ -205,14 +205,14 @@ async def ai_get_inline_photo(msg: Message, state: FSMContext):
         return
     photo = msg.photo[-1]
     if photo.height and photo.width / photo.height > 1.05:
-        return await msg.answer("❌ Bu rasm ham keng. Kvadrat yoki portret rasm yuboring (yoki URL).")
+        return await msg.answer("✕ Bu rasm ham keng. Kvadrat yoki portret rasm yuboring (yoki URL).")
     anime_id = (await state.get_data())["anime_id"]
     url = await _photo_to_url(msg.bot, photo, f"inline_{anime_id}")
     if not url:
-        return await msg.answer("❌ Rasmdan URL olinmadi. URL yuboring yoki o'tkazib yuboring.")
+        return await msg.answer("✕ Rasmdan URL olinmadi. URL yuboring yoki o'tkazib yuboring.")
     await state.update_data(inline_thumbnail_url=url)
     await state.set_state(AddAnimeAI.waiting_trailer)
-    await msg.answer("✅ Inline rasm qabul qilindi.")
+    await msg.answer("✓ Inline rasm qabul qilindi.")
     await _ask_trailer(msg)
 
 
@@ -224,10 +224,10 @@ async def ai_get_inline_url(msg: Message, state: FSMContext):
         return await _cancel(msg, state)
     url = msg.text.strip()
     if not url.startswith("http"):
-        return await msg.answer("❌ Rasm yuboring yoki https:// bilan boshlanadigan URL yozing.")
+        return await msg.answer("✕ Rasm yuboring yoki https:// bilan boshlanadigan URL yozing.")
     await state.update_data(inline_thumbnail_url=url)
     await state.set_state(AddAnimeAI.waiting_trailer)
-    await msg.answer("✅ Inline URL qabul qilindi.")
+    await msg.answer("✓ Inline URL qabul qilindi.")
     await _ask_trailer(msg)
 
 
@@ -238,14 +238,14 @@ async def manual_inline_photo(msg: Message, state: FSMContext):
         return
     photo = msg.photo[-1]
     if photo.height and photo.width / photo.height > 1.05:
-        return await msg.answer("❌ Bu rasm ham keng. Kvadrat yoki portret rasm yuboring (yoki URL).")
+        return await msg.answer("✕ Bu rasm ham keng. Kvadrat yoki portret rasm yuboring (yoki URL).")
     anime_id = (await state.get_data()).get("anime_id", "x")
     url = await _photo_to_url(msg.bot, photo, f"inline_{anime_id}")
     if not url:
-        return await msg.answer("❌ Rasmdan URL olinmadi. URL yuboring.")
+        return await msg.answer("✕ Rasmdan URL olinmadi. URL yuboring.")
     await state.update_data(inline_thumbnail_url=url)
     await state.set_state(AddAnime.waiting_trailer)
-    await msg.answer("✅ Inline rasm qabul qilindi.\n\n🎬 <b>Treyler videosini yuboring:</b>",
+    await msg.answer("✓ Inline rasm qabul qilindi.\n\n๏ <b>Treyler videosini yuboring:</b>",
                      parse_mode="HTML", reply_markup=_skip_kb("skip_trailer"))
 
 
@@ -255,14 +255,14 @@ async def ai_poster_other(msg: Message, state: FSMContext):
         return
     if msg.text == CANCEL_TEXT:
         return await _cancel(msg, state)
-    await msg.answer("❌ Rasm yuboring (yoki «O'tkazib yuborish» ni bosing).")
+    await msg.answer("✕ Rasm yuboring (yoki «O'tkazib yuborish» ni bosing).")
 
 
 # ─── 3) Treyler ───────────────────────────────────────────────────────
 
 async def _ask_title(target: Message) -> None:
     await target.answer(
-        "📝 <b>Nomini yuboring:</b>\n<i>Botda ko'rinadigan nom. Masalan: Attack on Titan</i>",
+        "✎ <b>Nomini yuboring:</b>\n<i>Botda ko'rinadigan nom. Masalan: Attack on Titan</i>",
         parse_mode="HTML",
         reply_markup=cancel_kb,
     )
@@ -294,7 +294,7 @@ async def ai_trailer_other(msg: Message, state: FSMContext):
         return
     if msg.text == CANCEL_TEXT:
         return await _cancel(msg, state)
-    await msg.answer("❌ Video yuboring (yoki «O'tkazib yuborish» ni bosing).")
+    await msg.answer("✕ Video yuboring (yoki «O'tkazib yuborish» ni bosing).")
 
 
 # ─── 4) Nom ───────────────────────────────────────────────────────────
@@ -307,11 +307,11 @@ async def ai_get_title(msg: Message, state: FSMContext):
         return await _cancel(msg, state)
     title = msg.text.strip()
     if not title:
-        return await msg.answer("❌ Nom bo'sh bo'la olmaydi.")
+        return await msg.answer("✕ Nom bo'sh bo'la olmaydi.")
     await state.update_data(title=title)
     await state.set_state(AddAnimeAI.waiting_english)
     await msg.answer(
-        "🔎 <b>Inglizcha nomini yuboring</b> (AI topa olishi uchun):\n"
+        "⌕ <b>Inglizcha nomini yuboring</b> (AI topa olishi uchun):\n"
         "<i>Masalan: Jujutsu Kaisen, Fullmetal Alchemist: Brotherhood</i>",
         parse_mode="HTML",
         reply_markup=cancel_kb,
@@ -331,21 +331,21 @@ def _preview_text(d: dict) -> str:
     matched = d.get("matched_title")
     note = d.get("note")
     lines = [
-        f"🤖 <b>AI natijasi</b>  <i>({esc(src)})</i>",
-        f"🔗 Topilgan nom: <b>{esc(matched)}</b>" if matched else "⚠️ MyAnimeList'dan topilmadi — ma'lumotlarni tekshiring",
-        f"⚠️ {esc(note)}" if note else "",
+        f"◈ <b>AI natijasi</b>  <i>({esc(src)})</i>",
+        f"↗ Topilgan nom: <b>{esc(matched)}</b>" if matched else "! MyAnimeList'dan topilmadi — ma'lumotlarni tekshiring",
+        f"! {esc(note)}" if note else "",
         "",
-        f"🆔 <code>{d['anime_id']}</code>  •  📝 <b>{esc(d['title'])}</b>",
-        f"📁 Tur: {TYPE_LABEL.get(d.get('content_type'), d.get('content_type'))}",
-        f"🎭 Janr: {esc(genres)}",
-        f"🏷 Teglar: {esc(tags)}",
-        f"😌 Mood: {esc(mood)}",
-        f"📅 Yil: {d.get('year') or '—'}  •  ⭐ Reyting: {d.get('rating') or '—'}",
-        f"🎞 Qismlar: {d.get('episodes_count') or '—'}  •  ⏱ {d.get('duration') or '—'} daq",
-        f"📊 Status: {STATUS_LABEL.get(d.get('status'), d.get('status'))}",
-        "🖼 Inline rasm: " + ("✅ bor" if d.get("inline_thumbnail_url") else "⚠️ yo'q (qidiruvda rasm chiqmaydi)"),
+        f"№ <code>{d['anime_id']}</code>  •  ✎ <b>{esc(d['title'])}</b>",
+        f"≡ Tur: {TYPE_LABEL.get(d.get('content_type'), d.get('content_type'))}",
+        f"๏ Janr: {esc(genres)}",
+        f"# Teglar: {esc(tags)}",
+        f"☺ Mood: {esc(mood)}",
+        f"◎ Yil: {d.get('year') or '—'}  •  ★ Reyting: {d.get('rating') or '—'}",
+        f"๏ Qismlar: {d.get('episodes_count') or '—'}  •  ◷ {d.get('duration') or '—'} daq",
+        f"◈ Status: {STATUS_LABEL.get(d.get('status'), d.get('status'))}",
+        "▣ Inline rasm: " + ("✓ bor" if d.get("inline_thumbnail_url") else "! yo'q (qidiruvda rasm chiqmaydi)"),
         "",
-        f"📖 {esc(desc)}",
+        f"๏ {esc(desc)}",
         "",
         "<b>To'g'rimi?</b>",
     ]
@@ -367,9 +367,9 @@ async def ai_get_english(msg: Message, state: FSMContext):
         return await _cancel(msg, state)
     english = msg.text.strip()
     if not english:
-        return await msg.answer("❌ Nom bo'sh bo'la olmaydi.")
+        return await msg.answer("✕ Nom bo'sh bo'la olmaydi.")
 
-    wait = await msg.answer("⏳ AI ma'lumot yig'ayapti...")
+    wait = await msg.answer("◌ AI ma'lumot yig'ayapti...")
     try:
         info = await build_content_info(english)
     except Exception:
@@ -428,7 +428,7 @@ async def ai_confirm_retry(call: types.CallbackQuery, state: FSMContext):
         return await call.answer()
     await state.set_state(AddAnimeAI.waiting_english)
     await call.message.answer(
-        "🔎 <b>Inglizcha nomini qayta yuboring</b> (aniqroq yozing):",
+        "⌕ <b>Inglizcha nomini qayta yuboring</b> (aniqroq yozing):",
         parse_mode="HTML",
         reply_markup=cancel_kb,
     )
@@ -446,9 +446,9 @@ async def ai_confirm_manual(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(**keep, base_title=_strip_season_suffix(keep["title"]), season=1)
     await state.set_state(AddAnime.waiting_type)
     await call.message.answer(
-        "✍️ <b>Qo'lda davom etamiz.</b>\n"
+        "✎ <b>Qo'lda davom etamiz.</b>\n"
         "ID, nom, poster va treyler saqlandi (poster/treyler so'ralganda «O'tkazib yuborish» ni bossangiz o'sha qoladi).\n\n"
-        "📁 <b>Tur:</b>",
+        "≡ <b>Tur:</b>",
         parse_mode="HTML",
         reply_markup=TYPE_KB,
     )
@@ -464,19 +464,19 @@ async def ai_confirm_cancel(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
-    await call.message.answer("❌ Bekor qilindi.", reply_markup=admin_main_kb)
+    await call.message.answer("✕ Bekor qilindi.", reply_markup=admin_main_kb)
     await call.answer()
 
 
 # ─── 7) Tahrirlash ────────────────────────────────────────────────────
 
 EDIT_FIELDS = [
-    ("title", "📝 Nom"), ("content_type", "📁 Tur"),
-    ("genres", "🎭 Janr"), ("tags", "🏷 Teglar"),
-    ("mood", "😌 Mood"), ("status", "📊 Status"),
-    ("year", "📅 Yil"), ("rating", "⭐ Reyting"),
-    ("episodes_count", "🎞 Qismlar"), ("duration", "⏱ Davomiylik"),
-    ("desc", "📖 Tavsif"), ("inline_thumbnail_url", "🖼 Inline rasm"),
+    ("title", "✎ Nom"), ("content_type", "≡ Tur"),
+    ("genres", "๏ Janr"), ("tags", "# Teglar"),
+    ("mood", "☺ Mood"), ("status", "◈ Status"),
+    ("year", "◎ Yil"), ("rating", "★ Reyting"),
+    ("episodes_count", "๏ Qismlar"), ("duration", "◷ Davomiylik"),
+    ("desc", "๏ Tavsif"), ("inline_thumbnail_url", "▣ Inline rasm"),
 ]
 EDIT_HINTS = {
     "title": "Yangi nomni yuboring.",
@@ -548,11 +548,11 @@ async def ai_edit_pick(call: types.CallbackQuery, state: FSMContext):
     if isinstance(current, list):
         current = ", ".join(current)
     if field == "inline_thumbnail_url":
-        current = "✅ bor" if current else "yo'q"  # URL ichida maxfiy qism bo'lishi mumkin — ko'rsatmaymiz
+        current = "✓ bor" if current else "yo'q"  # URL ichida maxfiy qism bo'lishi mumkin — ko'rsatmaymiz
     await state.update_data(edit_field=field, preview_msg_id=call.message.message_id)
     await state.set_state(AddAnimeAI.editing)
     await call.message.answer(
-        f"✏️ <b>{dict(EDIT_FIELDS)[field]}</b>\n"
+        f"✎ <b>{dict(EDIT_FIELDS)[field]}</b>\n"
         f"Hozir: <code>{esc(str(current if current not in (None, '') else '—'))[:300]}</code>\n\n"
         f"{EDIT_HINTS[field]}",
         parse_mode="HTML",
@@ -571,7 +571,7 @@ async def ai_edit_enum(call: types.CallbackQuery, state: FSMContext):
         return await call.answer("Noto'g'ri qiymat")
     await state.update_data(**{field: value})
     await _refresh_preview(call.message, state)
-    await call.answer("✅ O'zgartirildi")
+    await call.answer("✓ O'zgartirildi")
 
 
 def _parse_edit(field: str, raw: str):
@@ -630,13 +630,13 @@ async def ai_edit_value(msg: Message, state: FSMContext):
     if msg.text != CANCEL_TEXT:
         value, error = _parse_edit(field, msg.text)
         if error:
-            return await msg.answer(f"❌ {error}\nQayta yuboring yoki «{CANCEL_TEXT}» ni bosing.", parse_mode="HTML")
+            return await msg.answer(f"✕ {error}\nQayta yuboring yoki «{CANCEL_TEXT}» ni bosing.", parse_mode="HTML")
         update = {field: value}
         if field == "episodes_count":
             update["total_episodes"] = value
         await state.update_data(**update)
     await state.set_state(AddAnimeAI.confirm)
-    await msg.answer("✅ Yangilandi." if msg.text != CANCEL_TEXT else "Bekor qilindi.", reply_markup=admin_main_kb)
+    await msg.answer("✓ Yangilandi." if msg.text != CANCEL_TEXT else "Bekor qilindi.", reply_markup=admin_main_kb)
     await msg.answer(_render_preview(await state.get_data()), parse_mode="HTML", reply_markup=_confirm_kb())
 
 
@@ -646,14 +646,14 @@ async def ai_edit_photo(msg: Message, state: FSMContext):
         return
     data = await state.get_data()
     if data.get("edit_field") != "inline_thumbnail_url":
-        return await msg.answer("❌ Bu maydon uchun matn yuboring.")
+        return await msg.answer("✕ Bu maydon uchun matn yuboring.")
     photo = msg.photo[-1]
     if photo.height and photo.width / photo.height > 1.05:
-        return await msg.answer("❌ Bu rasm keng. Kvadrat yoki portret rasm yuboring (yoki URL).")
+        return await msg.answer("✕ Bu rasm keng. Kvadrat yoki portret rasm yuboring (yoki URL).")
     url = await _photo_to_url(msg.bot, photo, f"inline_{data['anime_id']}")
     if not url:
-        return await msg.answer("❌ Rasmdan URL olinmadi. URL yuboring.")
+        return await msg.answer("✕ Rasmdan URL olinmadi. URL yuboring.")
     await state.update_data(inline_thumbnail_url=url)
     await state.set_state(AddAnimeAI.confirm)
-    await msg.answer("✅ Yangilandi.", reply_markup=admin_main_kb)
+    await msg.answer("✓ Yangilandi.", reply_markup=admin_main_kb)
     await msg.answer(_render_preview(await state.get_data()), parse_mode="HTML", reply_markup=_confirm_kb())

@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 
 user_router = Router()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
-from utils.ui import sym, greeting, parse_start_args, progress_bar, rating_stars, share_anime_url  # noqa: E402
+from utils.gamification import streak_line, touch_streak, uz_now
+from utils.season import current_season, season_banner
+from utils.ui import DIV1, sym, greeting, parse_start_args, progress_bar, rating_stars, share_anime_url  # noqa: E402
 PHOTO_URL = "https://i.postimg.cc/zDpjp9Mz/kawaro-(1)-(3).jpg"
 
 GRID_SIZE = 8
@@ -87,9 +89,9 @@ def _build_episode_keyboard(
     for ep in page_eps:
         is_filler_btn = ep in filler_set
         if ep == current_ep:
-            label = f"✅ {ep}" if not is_filler_btn else f"🎲 {ep}"
+            label = f"✓ {ep}" if not is_filler_btn else f"◇ {ep}"
         elif is_filler_btn:
-            label = f"🎲 {ep}"
+            label = f"◇ {ep}"
         else:
             label = str(ep)
         row_buttons.append(
@@ -154,15 +156,15 @@ def _build_episode_keyboard(
 
 
 def _build_episode_caption(anime: Anime, episode: int, total_eps: int) -> str:
-    type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
-    emoji = type_emoji.get(anime.content_type or "anime", "🎬")
+    type_emoji = {"anime": "๏", "movie": "๏", "serial": "๏", "dorama": "๏"}
+    emoji = type_emoji.get(anime.content_type or "anime", "๏")
     caption = (
-        f"▶️ <b>{anime.title}</b>  •  {episode}-qism\n"
-        f"🎞 {progress_bar(episode, total_eps)} {episode}/{total_eps} qism"
+        f"ᐅ <b>{anime.title}</b>  •  {episode}-qism\n"
+        f"๏ {progress_bar(episode, total_eps)} {episode}/{total_eps} qism"
     )
     filter_url = getattr(anime, "filter_url", None)
     if filter_url:
-        caption += f'\n\n🎨 <a href="{filter_url}">Filter</a>'
+        caption += f'\n\n▣ <a href="{filter_url}">Filter</a>'
     return caption
 
 
@@ -183,7 +185,7 @@ async def _deliver_episode_video(
             caption += ad
         pro_txt = await get_pro_ad_text()
         if pro_txt:
-            caption += f"\n\n💎 {pro_txt}"
+            caption += f"\n\n◆ {pro_txt}"
     media = InputMediaVideo(media=file_id, caption=caption, parse_mode="HTML")
     if ux_mode == "send":
         try:
@@ -250,13 +252,13 @@ async def _deliver_filler_episode(
     page: int,
     kb: InlineKeyboardMarkup,
 ) -> None:
-    type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
-    emoji = type_emoji.get(anime.content_type or "anime", "🎬")
+    type_emoji = {"anime": "๏", "movie": "๏", "serial": "๏", "dorama": "๏"}
+    emoji = type_emoji.get(anime.content_type or "anime", "๏")
     caption = (
         f"{emoji} <b>{anime.title}</b>\n"
-        f"🎲 <b>{episode}-qism</b> — FILLER\n\n"
+        f"◇ <b>{episode}-qism</b> — FILLER\n\n"
         "<i>Filler — anime asosiy syujetiga aloqasi yo'q to'ldiruvchi qism. "
-        "Asosiy voqealarni yo'qotmaslik uchun ▶️ Keyingi qism tugmasini bosing.</i>"
+        "Asosiy voqealarni yo'qotmaslik uchun ᐅ Keyingi qism tugmasini bosing.</i>"
     )
 
     builder = InlineKeyboardBuilder()
@@ -299,7 +301,7 @@ async def _deliver_filler_episode(
                 sent = True
         elif f_type == "link" and f_url:
             await call.message.answer(
-                caption + f'\n\n🎨 <a href="{f_url}">Filter</a>',
+                caption + f'\n\n▣ <a href="{f_url}">Filter</a>',
                 parse_mode="HTML",
                 reply_markup=final_kb,
                 disable_web_page_preview=False,
@@ -325,7 +327,7 @@ async def _send_filter_media(call: types.CallbackQuery, anime: Anime) -> None:
             await call.message.answer_video(video=f_file)
         elif f_type == "link" and f_url:
             await call.message.answer(
-                f'🎨 <a href="{f_url}">Filter</a>',
+                f'▣ <a href="{f_url}">Filter</a>',
                 parse_mode="HTML",
                 disable_web_page_preview=False,
             )
@@ -337,7 +339,7 @@ async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            sent = await message.answer("❌ Kontent topilmadi!")
+            sent = await message.answer("Bu kod bo'yicha hech narsa topilmadi ⌕\nKodni tekshirib qayta yuboring yoki Qidiruv tugmasidan foydalaning.")
             await asyncio.sleep(3)
             try:
                 await sent.delete()
@@ -365,28 +367,28 @@ async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id
             )
         ).scalar_one_or_none()
 
-    type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
-    emoji = type_emoji.get(anime.content_type or "anime", "🎬")
+    type_emoji = {"anime": "๏", "movie": "๏", "serial": "๏", "dorama": "๏"}
+    emoji = type_emoji.get(anime.content_type or "anime", "๏")
     genres_text = ", ".join((anime.genres or [])[:3]) or "Nomalum"
     tags_text = ", ".join((anime.tags or [])[:3])
-    lock_str = " 🔒 Pro" if (anime.is_pro_locked and not is_pro) else ""
+    lock_str = " ⊘ Pro" if (anime.is_pro_locked and not is_pro) else ""
     status_map = {
-        "completed": "✅ Tugagan",
-        "ongoing": "📡 Davom etmoqda",
-        "announced": "📢 Kutilmoqda",
+        "completed": "✓ Tugagan",
+        "ongoing": "◌ Davom etmoqda",
+        "announced": "ᐅ Kutilmoqda",
     }
     status_str = status_map.get(anime.status or "", "")
     desc_short = (anime.description or "")[:200]
 
     caption = (
         f"{emoji} <b>{anime.title}</b>" + (f" <i>({anime.year})</i>" if anime.year else "") + lock_str + "\n"
-        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
-        f"🎭 {genres_text}\n"
-        + (f"🏷 {tags_text}\n" if tags_text else "")
-        + f"{rating_stars(anime.rating)} <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
-        + (f"📊 {status_str}\n" if status_str else "")
-        + f"🆔 <code>{anime.id}</code>\n\n"
-        + (f"📖 <i>{desc_short}...</i>" if desc_short else "")
+        f"{DIV1}\n"
+        f"๏ {genres_text}\n"
+        + (f"# {tags_text}\n" if tags_text else "")
+        + f"{rating_stars(anime.rating)} <b>{anime.rating:.1f}</b>  •  ◉ {anime.rating_count} ovoz\n"
+        + (f"◈ {status_str}\n" if status_str else "")
+        + f"№ <code>{anime.id}</code>\n\n"
+        + (f"๏ <i>{desc_short}...</i>" if desc_short else "")
     )
 
     kb_rows = []
@@ -450,7 +452,7 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            sent = await message.answer("❌ Kontent topilmadi!")
+            sent = await message.answer("Bu kod bo'yicha hech narsa topilmadi ⌕\nKodni tekshirib qayta yuboring yoki Qidiruv tugmasidan foydalaning.")
             await asyncio.sleep(3)
             try:
                 await sent.delete()
@@ -470,28 +472,28 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
 
     genres_text = ", ".join(anime.genres or []) or "Nomalum"
     tags_text = ", ".join((anime.tags or [])[:3])
-    lock_str = " 🔒 Pro" if anime.is_pro_locked else ""
-    sub_icon = "🔔" if subscribed else "🔕"
-    sub_txt = "Obunani bekor qilish" if subscribed else "🔔 Obuna bo'lish"
-    type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
-    emoji = type_emoji.get(anime.content_type or "anime", "🎬")
+    lock_str = " ⊘ Pro" if anime.is_pro_locked else ""
+    sub_icon = "●" if subscribed else "○"
+    sub_txt = "Obunani bekor qilish" if subscribed else "● Obuna bo'lish"
+    type_emoji = {"anime": "๏", "movie": "๏", "serial": "๏", "dorama": "๏"}
+    emoji = type_emoji.get(anime.content_type or "anime", "๏")
     status_map = {
-        "completed": "✅ Tugagan",
-        "ongoing": "📡 Davom etmoqda",
-        "announced": "📢 Kutilmoqda",
+        "completed": "✓ Tugagan",
+        "ongoing": "◌ Davom etmoqda",
+        "announced": "ᐅ Kutilmoqda",
     }
     status_str = status_map.get(anime.status or "", "")
     share_url = share_anime_url(anime_id)
 
     caption = (
         f"{emoji} <b>{anime.title}</b>" + (f" <i>({anime.year})</i>" if anime.year else "") + lock_str + "\n"
-        f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
-        f"🎭 {genres_text}\n"
-        + (f"🏷 {tags_text}\n" if tags_text else "")
-        + f"{rating_stars(anime.rating)} <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
-        + (f"📊 {status_str}\n" if status_str else "")
-        + f"🆔 <code>{anime.id}</code>\n\n"
-        f"📖 <blockquote>{(anime.description or '')[:300]}</blockquote>"
+        f"{DIV1}\n"
+        f"๏ {genres_text}\n"
+        + (f"# {tags_text}\n" if tags_text else "")
+        + f"{rating_stars(anime.rating)} <b>{anime.rating:.1f}</b>  •  ◉ {anime.rating_count} ovoz\n"
+        + (f"◈ {status_str}\n" if status_str else "")
+        + f"№ <code>{anime.id}</code>\n\n"
+        f"๏ <blockquote>{(anime.description or '')[:300]}</blockquote>"
     )
 
     kb_rows = []
@@ -560,14 +562,14 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
 
 
 _PRO_START_SHORTCUTS: dict[str, str] = {
-    "pro_recommend": "🤖 AI Tavsiyalar",
-    "pro_mood": "😌 Kayfiyatim",
-    "pro_trending": "🔥 Trending",
-    "pro_top": "⭐ Top reyting",
-    "pro_rising": "📈 Rising",
-    "pro_hidden": "💎 Hidden Gems",
-    "pro_continue": "▶️ Davom ettirish",
-    "pro_taste": "👤 Mening didim",
+    "pro_recommend": "◈ AI Tavsiyalar",
+    "pro_mood": "☺ Kayfiyatim",
+    "pro_trending": "✦ Trending",
+    "pro_top": "★ Top reyting",
+    "pro_rising": "◈ Rising",
+    "pro_hidden": "◆ Hidden Gems",
+    "pro_continue": "ᐅ Davom ettirish",
+    "pro_taste": "◉ Mening didim",
 }
 
 
@@ -589,16 +591,17 @@ def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboar
     rows.extend(
         [
             [
-                InlineKeyboardButton(text="✦ Janr bo'yicha", callback_data="genres"),
+                InlineKeyboardButton(text="๏ Janr bo'yicha", callback_data="genres"),
                 InlineKeyboardButton(text="⌕ Qidiruv", switch_inline_query_current_chat=""),
             ],
             [
                 InlineKeyboardButton(text="№ Kod orqali qidirish", callback_data="search_by_code"),
                 InlineKeyboardButton(text="♡ Obunalarim", callback_data="my_subs"),
             ],
+            [InlineKeyboardButton(text="ϟ Kaworai Pro", callback_data="kawaii_pass")],
             [
-                InlineKeyboardButton(text="ϟ Kaworai Pro", callback_data="kawaii_pass"),
-                InlineKeyboardButton(text="✦ Do'st taklif qilish", callback_data="referral"),
+                InlineKeyboardButton(text="✦ Mening profilim", callback_data="my_profile"),
+                InlineKeyboardButton(text="✧ Do'st taklif qilish", callback_data="referral"),
             ],
         ]
     )
@@ -628,11 +631,21 @@ async def send_main_menu(target, delete_prev: bool = False):
     else:
         msg = target
         user_id = target.from_user.id if target.from_user else 0
-    caption = "🎌 <b>Kaworai</b> — Anime & Dorama\n\n✨ <i>Sevimli kontentingizni toping</i>"
+    caption = f"{DIV1}\n๏ <b>Kaworai</b> — Anime & Dorama\n{DIV1}\n✦ <i>Sevimli kontentingizni toping</i>"
     # Salomlashish: faqat haqiqiy foydalanuvchi bo'lsa (callback xabarining from_user'i bot bo'ladi)
     _u = target.from_user if isinstance(target, types.CallbackQuery) else (target.from_user if target.from_user and not target.from_user.is_bot else None)
+    head = []
     if _u and _u.first_name:
-        caption = f"<b>{greeting()}, {html.escape(_u.first_name)}!</b> Bugun nima ko'ramiz?\n\n" + caption
+        head.append(f"<b>{greeting()}, {html.escape(_u.first_name)}!</b> Bugun nima ko'ramiz?")
+    _streak = streak_line(user_id) if user_id else ""
+    if _streak:
+        head.append(_streak)
+    _season = current_season(uz_now().date())
+    if _season:
+        head.append(f"<i>{_season[1]}</i>")
+    if head:
+        caption = "\n".join(head) + "\n\n" + caption
+    photo = season_banner(_season[0] if _season else None) or PHOTO_URL
     extras = await _get_user_start_extras(user_id) if user_id else []
     kb = get_main_menu_keyboard(extras)
     try:
@@ -641,7 +654,7 @@ async def send_main_menu(target, delete_prev: bool = False):
                 await msg.delete()
             except Exception:
                 pass
-        await msg.answer_photo(photo=PHOTO_URL, caption=caption, reply_markup=kb, parse_mode="HTML")
+        await msg.answer_photo(photo=photo, caption=caption, reply_markup=kb, parse_mode="HTML")
     except Exception:
         await msg.answer(caption, reply_markup=kb, parse_mode="HTML")
 
@@ -663,12 +676,12 @@ async def _continue_after_start(
     if not_subbed:
         kb = get_sub_keyboard(not_subbed)
         text = (
-            "📢 <b>Kanalga obuna bo'ling</b>\n\n"
-            "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+            "ᐅ <b>Kanalga obuna bo'ling</b>\n\n"
+            "✧───────✧\n"
             "Botdan foydalanish uchun quyidagi\n"
             "kanallarga obuna bo'lishingiz kerak:\n\n"
             + "\n".join(f"  • <b>{ch.channel_name}</b>" for ch in not_subbed)
-            + "\n\n✅ Obuna bo'lgach, <b>Tekshirish</b> tugmasini bosing"
+            + "\n\n✓ Obuna bo'lgach, <b>Tekshirish</b> tugmasini bosing"
         )
         if edit:
             try:
@@ -709,6 +722,11 @@ async def cmd_start(message: types.Message, command: CommandObject):
             full_name=message.from_user.full_name,
             username=message.from_user.username,
         )
+        # Kunlik seriya (kuniga bir marta yoziladi)
+        try:
+            await touch_streak(session, user_id)
+        except Exception:
+            logger.warning("touch_streak xato", exc_info=True)
         # Referal: faqat YANGI foydalanuvchi taklif qiluvchiga bog'lanadi
         if created and referrer_id:
             try:
@@ -725,7 +743,7 @@ async def cmd_start(message: types.Message, command: CommandObject):
 async def user_region_pick(call: types.CallbackQuery):
     code = call.data.replace("userregion_", "", 1)
     if not is_valid_region(code):
-        return await call.answer("❌ Noto'g'ri region!", show_alert=True)
+        return await call.answer("✕ Noto'g'ri region!", show_alert=True)
     user_id = call.from_user.id
     async with AsyncSessionLocal() as session:
         user = await session.get(User, user_id)
@@ -740,12 +758,12 @@ async def user_region_pick(call: types.CallbackQuery):
         await session.commit()
     try:
         await call.message.edit_text(
-            f"✅ Viloyatingiz saqlandi: <b>{region_label(code)}</b>",
+            f"✓ Viloyatingiz saqlandi: <b>{region_label(code)}</b>",
             parse_mode="HTML",
         )
     except Exception:
         pass
-    await call.answer("✅ Saqlandi", show_alert=False)
+    await call.answer("✓ Saqlandi", show_alert=False)
     await _continue_after_start(call.message, user_id=user_id, anime_id=None)
 
 
@@ -758,14 +776,14 @@ async def watch_start(call: types.CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
         now = datetime.utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         if anime.is_pro_locked and not is_pro:
-            return await call.answer("🔒 Bu kontent Pro uchun!", show_alert=True)
+            return await call.answer("⊘ Bu kontent Pro uchun!", show_alert=True)
 
         eps_res = await session.execute(
             select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
@@ -775,7 +793,7 @@ async def watch_start(call: types.CallbackQuery):
         ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
 
     if not episodes:
-        return await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
+        return await call.answer("◌ Qismlar hali qo'shilmagan!", show_alert=True)
 
     first_ep = episodes[0]
     ep_numbers = [e.episode for e in episodes]
@@ -828,28 +846,28 @@ async def episode_select(call: types.CallbackQuery):
         episode = int(parts[2])
         page = int(parts[3])
     except (ValueError, IndexError):
-        return await call.answer("❌ Xatolik!", show_alert=True)
+        return await call.answer("✕ Xatolik!", show_alert=True)
 
     user_id = call.from_user.id
 
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
         now = datetime.utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         if anime.is_pro_locked and not is_pro:
-            return await call.answer("🔒 Bu kontent Pro uchun!", show_alert=True)
+            return await call.answer("⊘ Bu kontent Pro uchun!", show_alert=True)
 
         ep_res = await session.execute(
             select(Series).where(Series.anime_id == anime_id, Series.episode == episode).limit(1)
         )
         ep_obj = ep_res.scalar_one_or_none()
         if not ep_obj:
-            return await call.answer(f"❌ {episode}-qism topilmadi!", show_alert=True)
+            return await call.answer(f"✕ {episode}-qism topilmadi!", show_alert=True)
 
         all_episodes, filler_eps = await _load_episodes_and_filler(session, anime_id)
         subscribed = await is_subscribed_anime(session, anime_id, user_id)
@@ -902,7 +920,7 @@ async def episode_page_change(call: types.CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
         now = datetime.utcnow()
@@ -936,14 +954,14 @@ async def episode_navigate(call: types.CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
         now = datetime.utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         if anime.is_pro_locked and not is_pro:
-            return await call.answer("🔒 Bu kontent Pro uchun!", show_alert=True)
+            return await call.answer("⊘ Bu kontent Pro uchun!", show_alert=True)
 
         all_eps_res = await session.execute(
             select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
@@ -952,7 +970,7 @@ async def episode_navigate(call: types.CallbackQuery):
         ep_numbers = [e.episode for e in all_eps]
 
         if not ep_numbers:
-            return await call.answer("❌ Qismlar yo'q!", show_alert=True)
+            return await call.answer("✕ Qismlar yo'q!", show_alert=True)
 
         try:
             idx = ep_numbers.index(current_ep)
@@ -968,7 +986,7 @@ async def episode_navigate(call: types.CallbackQuery):
 
         if direction == "prev":
             if idx == 0:
-                return await call.answer("⛔ Bu birinchi qism!", show_alert=True)
+                return await call.answer("✕ Bu birinchi qism!", show_alert=True)
             new_idx = idx - 1
         else:
             if idx >= len(ep_numbers) - 1:
@@ -976,18 +994,18 @@ async def episode_navigate(call: types.CallbackQuery):
                 if next_anime is None:
                     already_subscribed = await is_subscribed_anime(session, anime_id, user_id)
                     if already_subscribed:
-                        msg = "✅ Bu oxirgi qism!\n🔔 Obunadasiz — yangi qism chiqsa sizga xabar beramiz."
+                        msg = "✓ Bu oxirgi qism!\n● Obunadasiz — yangi qism chiqsa sizga xabar beramiz."
                     else:
-                        msg = "✅ Bu oxirgi qism!\n❤️ Obuna bo'lib qo'ying — yangi qism chiqqanda xabar beramiz."
+                        msg = "✓ Bu oxirgi qism!\n♡ Obuna bo'lib qo'ying — yangi qism chiqqanda xabar beramiz."
                     return await call.answer(msg, show_alert=True)
                 if next_anime.is_pro_locked and not is_pro:
-                    return await call.answer("🔒 Keyingi fasl Pro foydalanuvchilar uchun!", show_alert=True)
+                    return await call.answer("⊘ Keyingi fasl Pro foydalanuvchilar uchun!", show_alert=True)
                 next_eps_res = await session.execute(
                     select(Series).where(Series.anime_id == next_anime.id).order_by(Series.episode.asc())
                 )
                 next_eps = next_eps_res.scalars().all()
                 if not next_eps:
-                    return await call.answer("📭 Keyingi fasl qismlari hali qo'shilmagan!", show_alert=True)
+                    return await call.answer("○ Keyingi fasl qismlari hali qo'shilmagan!", show_alert=True)
                 season_jump = True
                 next_ep_obj = next_eps[0]
                 next_ep_numbers = [e.episode for e in next_eps]
@@ -1012,7 +1030,7 @@ async def episode_navigate(call: types.CallbackQuery):
     new_page = new_idx // GRID_SIZE if not season_jump else 0
     caption = _build_episode_caption(target_anime, target_ep_num, len(target_ep_numbers))
     if season_jump:
-        caption = f"🎉 <b>Yangi fasl boshlanmoqda!</b>\n\n{caption}"
+        caption = f"✧ <b>Yangi fasl boshlanmoqda!</b>\n\n{caption}"
     kb = _build_episode_keyboard(
         target_anime.id,
         target_ep_numbers,
@@ -1024,7 +1042,7 @@ async def episode_navigate(call: types.CallbackQuery):
     )
 
     delivery_mode = "send" if season_jump else ux_mode
-    await call.answer("🎉 2-faslga o'tildi!" if season_jump else None, show_alert=season_jump)
+    await call.answer("✧ 2-faslga o'tildi!" if season_jump else None, show_alert=season_jump)
 
     if getattr(target_ep_obj, "is_filler", False):
         next_ep = _next_after_filler(target_ep_numbers, target_ep_num, target_filler_eps)
@@ -1070,14 +1088,14 @@ async def show_episodes_list(call: types.CallbackQuery):
     async with AsyncSessionLocal() as session:
         anime = await session.get(Anime, anime_id)
         if not anime:
-            return await call.answer("❌ Topilmadi!", show_alert=True)
+            return await call.answer("✕ Topilmadi!", show_alert=True)
 
         user = await session.get(User, user_id)
         now = datetime.utcnow()
         is_pro = bool(user and user.is_pro and (not user.pro_until or user.pro_until > now))
 
         if anime.is_pro_locked and not is_pro:
-            return await call.answer("🔒 Bu kontent Pro uchun!", show_alert=True)
+            return await call.answer("⊘ Bu kontent Pro uchun!", show_alert=True)
 
         eps_res = await session.execute(
             select(Series).where(Series.anime_id == anime_id).order_by(Series.episode.asc())
@@ -1087,7 +1105,7 @@ async def show_episodes_list(call: types.CallbackQuery):
         ux_mode = await get_user_ux_mode(session, user_id) if is_pro else "edit"
 
     if not episodes:
-        return await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
+        return await call.answer("◌ Qismlar hali qo'shilmagan!", show_alert=True)
 
     first_ep = episodes[0]
     ep_numbers = [e.episode for e in episodes]
@@ -1118,10 +1136,10 @@ async def toggle_subscription(call: types.CallbackQuery):
         already = await is_subscribed_anime(session, anime_id, user_id)
         if already:
             await unsubscribe_anime(session, anime_id, user_id)
-            await call.answer("🔕 Obuna bekor qilindi!", show_alert=True)
+            await call.answer("○ Obuna bekor qilindi!", show_alert=True)
         else:
             await subscribe_anime(session, anime_id, user_id)
-            await call.answer("🔔 Obuna bo'ldingiz!", show_alert=True)
+            await call.answer("● Obuna bo'ldingiz!", show_alert=True)
 
         anime = await session.get(Anime, anime_id)
         user = await session.get(User, user_id)
@@ -1135,8 +1153,8 @@ async def toggle_subscription(call: types.CallbackQuery):
     if call.message.caption:
         try:
             for part in call.message.caption.split("\n"):
-                if "qism" in part and "▶" in part:
-                    current_ep = int(part.split("▶")[1].split("-")[0].strip())
+                if "qism" in part and "ᐅ" in part:
+                    current_ep = int(part.split("ᐅ")[1].split("-")[0].strip())
                     break
         except Exception:
             pass
@@ -1160,7 +1178,7 @@ async def rate_anime_start(call: types.CallbackQuery):
         existing = await get_user_rating(session, anime_id, call.from_user.id)
 
     if existing:
-        return await call.answer(f"✅ Siz allaqachon baho bergansiz: {existing.score}/10", show_alert=True)
+        return await call.answer(f"✓ Siz allaqachon baho bergansiz: {existing.score}/10", show_alert=True)
 
     rows = []
     row = []
@@ -1175,7 +1193,7 @@ async def rate_anime_start(call: types.CallbackQuery):
 
     await call.answer()
     await call.message.answer(
-        "⭐ <b>Anime uchun baho bering (1-10):</b>\n\n1 = Yomon  |  5 = O'rtacha  |  10 = A'lo",
+        "★ <b>Anime uchun baho bering (1-10):</b>\n\n1 = Yomon  |  5 = O'rtacha  |  10 = A'lo",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
         parse_mode="HTML",
     )
@@ -1193,21 +1211,21 @@ async def rate_anime_set(call: types.CallbackQuery):
     async with AsyncSessionLocal() as session:
         existing = await get_user_rating(session, anime_id, call.from_user.id)
         if existing:
-            return await call.answer(f"✅ Siz allaqachon baho bergansiz: {existing.score}/10", show_alert=True)
+            return await call.answer(f"✓ Siz allaqachon baho bergansiz: {existing.score}/10", show_alert=True)
         new_avg = await add_or_update_rating(session, anime_id, call.from_user.id, score)
         anime = await session.get(Anime, anime_id)
         next_season = await find_next_season_anime(session, anime_id)
 
     title = anime.title if anime else f"ID {anime_id}"
     text = (
-        f"✅ <b>Baho qabul qilindi!</b>\n\n"
-        f"🎬 <b>{title}</b>\n"
-        f"⭐ Sizning bahoyingiz: <b>{score}/10</b>\n"
-        f"📊 O'rtacha reyting: <b>{new_avg}/10</b>"
+        f"✓ <b>Baho qabul qilindi!</b>\n\n"
+        f"๏ <b>{title}</b>\n"
+        f"★ Sizning bahoyingiz: <b>{score}/10</b>\n"
+        f"◈ O'rtacha reyting: <b>{new_avg}/10</b>"
     )
     kb_rows: list[list[InlineKeyboardButton]] = []
     if next_season is not None:
-        text += f"\n\n🎌 <b>Yaxshi xabar!</b> <i>{next_season.title}</i> ham mavjud.\nTomosha qilishni xohlaysizmi?"
+        text += f"\n\n๏ <b>Yaxshi xabar!</b> <i>{next_season.title}</i> ham mavjud.\nTomosha qilishni xohlaysizmi?"
         kb_rows.append(
             [
                 InlineKeyboardButton(
@@ -1225,7 +1243,7 @@ async def rate_anime_set(call: types.CallbackQuery):
         )
     except Exception:
         pass
-    await call.answer(f"⭐ {score}/10 — Rahmat!", show_alert=True)
+    await call.answer(f"★ {score}/10 — Rahmat!", show_alert=True)
 
 
 @user_router.callback_query(F.data == "rate_cancel")
@@ -1240,7 +1258,7 @@ async def rate_cancel(call: types.CallbackQuery):
 @user_router.callback_query(F.data == "main_menu")
 async def go_main_menu(call: types.CallbackQuery):
     await call.answer()
-    caption = "🎌 <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
+    caption = "๏ <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
     extras = await _get_user_start_extras(call.from_user.id)
     kb = get_main_menu_keyboard(extras)
 
@@ -1262,7 +1280,7 @@ async def go_main_menu(call: types.CallbackQuery):
 
 @user_router.callback_query(F.data == "no_episodes")
 async def no_episodes_cb(call: types.CallbackQuery):
-    await call.answer("⏳ Qismlar hali qo'shilmagan!", show_alert=True)
+    await call.answer("◌ Qismlar hali qo'shilmagan!", show_alert=True)
 
 
 @user_router.callback_query(F.data == "ep_noop")
@@ -1273,7 +1291,7 @@ async def ep_noop(call: types.CallbackQuery):
 @user_router.callback_query(F.data == "search_by_code")
 async def search_by_code_cb(call: types.CallbackQuery):
     text = (
-        "🔢 <b>Kod orqali qidirish</b>\n\n"
+        "№ <b>Kod orqali qidirish</b>\n\n"
         "Anime kodini (ID) yuboring.\n"
         "<i>Kod inline qidiruv natijasida ko'rinadi.</i>\n\n"
         "Masalan: <code>388</code>"
@@ -1326,17 +1344,20 @@ async def my_subscriptions(call: types.CallbackQuery):
 
     if not anime_list:
         text = (
-            "🔕 <b>Obunalarim</b>\n\n"
-            "Siz hozircha hech qaysi animega obuna bo'lmagansiz.\n\n"
-            "Anime sahifasidagi 🔔 <b>Obuna bo'lish</b> tugmasini bosing."
+            "♡ <b>Obunalarim</b>\n\n"
+            "Bu yerda sevimli kontentlaringiz turadi. Hozircha bo'sh, birinchisini qo'shing!\n\n"
+            "Anime sahifasidagi <b>Obuna bo'lish</b> tugmasini bosing: yangi qism chiqsa, birinchi bo'lib xabar olasiz."
         )
-        rows = [[InlineKeyboardButton(text="⌂ Asosiy menyu", callback_data="main_menu")]]
+        rows = [
+            [InlineKeyboardButton(text="๏ Janr bo'yicha", callback_data="genres")],
+            [InlineKeyboardButton(text="⌂ Asosiy menyu", callback_data="main_menu")],
+        ]
     else:
-        text = f"🔔 <b>Mening obunalarim ({len(anime_list)} ta):</b>\n\n"
+        text = f"● <b>Mening obunalarim ({len(anime_list)} ta):</b>\n\n"
         rows = []
         for anime in anime_list[:15]:
-            lock = "🔒 " if anime.is_pro_locked else ""
-            text += f"🎬 {lock}{anime.title}\n"
+            lock = "⊘ " if anime.is_pro_locked else ""
+            text += f"๏ {lock}{anime.title}\n"
             rows.append(
                 [
                     InlineKeyboardButton(
@@ -1374,21 +1395,21 @@ async def recheck_subscription(call: types.CallbackQuery):
         kb = get_sub_keyboard(not_subbed)
         try:
             await call.message.edit_text(
-                "❌ <b>Siz hali barcha kanallarga obuna bo'lmagansiz!</b>\n\n"
+                "✕ <b>Siz hali barcha kanallarga obuna bo'lmagansiz!</b>\n\n"
                 + "\n".join(f"• {ch.channel_name}" for ch in not_subbed),
                 reply_markup=kb,
                 parse_mode="HTML",
             )
         except Exception:
             pass
-        await call.answer("❌ Hali to'liq obuna emassiz!", show_alert=True)
+        await call.answer("✕ Hali to'liq obuna emassiz!", show_alert=True)
     else:
         try:
             await call.message.delete()
         except Exception:
             pass
         await send_main_menu(call.message)
-        await call.answer("✅ Obuna tasdiqlandi!", show_alert=True)
+        await call.answer("✓ Obuna tasdiqlandi!", show_alert=True)
 
 
 @user_router.callback_query(F.data == "cancel_sub_check")
@@ -1481,7 +1502,7 @@ async def my_taste_profile(call: types.CallbackQuery):
         has_data = bool(top_g or top_t)
     except Exception:
         has_data = False
-        identity = "🎌 Anime muxlisi"
+        identity = "๏ Anime muxlisi"
         top_g = []
         top_t = []
 
@@ -1491,20 +1512,20 @@ async def my_taste_profile(call: types.CallbackQuery):
 
     if not has_data:
         text = (
-            "👤 <b>Sizning Did Profilingiz</b>\n\n"
-            "📊 Hozircha ma'lumot to'planmagan.\n\n"
+            "◉ <b>Sizning Did Profilingiz</b>\n\n"
+            "◈ Hozircha ma'lumot to'planmagan.\n\n"
             "Ko'proq anime ko'ring — tizim avtomatik ravishda "
-            "sevimli janrlar va kayfiyatingizni aniqlaydi! 🎌\n\n"
+            "sevimli janrlar va kayfiyatingizni aniqlaydi! ๏\n\n"
             "<i>Qanchalik ko'p kontent ko'rsangiz, tavsiyalar shunchalik aniq bo'ladi.</i>"
         )
     else:
         g_text = "\n".join(f"  • {g}: {c} marta" for g, c in top_g) or "  Hali ma'lumot yo'q"
         t_text = "\n".join(f"  • {t}: {c} marta" for t, c in top_t) or "  Hali ma'lumot yo'q"
         text = (
-            f"👤 <b>Sizning Did Profilingiz</b>\n\n"
-            f"🎯 <b>{identity}</b>\n\n"
-            f"🎭 <b>Sevimli janrlar:</b>\n{g_text}\n\n"
-            f"🏷 <b>Sevimli teglar:</b>\n{t_text}\n\n"
+            f"◉ <b>Sizning Did Profilingiz</b>\n\n"
+            f"◎ <b>{identity}</b>\n\n"
+            f"๏ <b>Sevimli janrlar:</b>\n{g_text}\n\n"
+            f"# <b>Sevimli teglar:</b>\n{t_text}\n\n"
             "<i>Ko'rgan kontentlaringiz asosida yig'iladi.</i>"
         )
 

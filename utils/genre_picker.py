@@ -38,7 +38,7 @@ def genre_picker_kb(selected: list[str], prefix: str) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for key, label in GENRES.items():
-        mark = "✅" if key in sel_set else "▫️"
+        mark = "✓" if key in sel_set else "○"
         row.append(
             InlineKeyboardButton(
                 text=f"{sym(mark)} {genre_sym(label)}",
@@ -67,14 +67,14 @@ def genre_picker_text(selected: list[str]) -> str:
     """Picker tepasidagi matn — tanlanganlar ro'yxatini ko'rsatadi."""
     if not selected:
         return (
-            "🎭 <b>Janrlarni tanlang</b>\n"
+            "๏ <b>Janrlarni tanlang</b>\n"
             "<i>Bir yoki bir nechtasini tugmalar orqali belgilang, "
-            'so\'ng "✅ Tasdiqlash" bosing.</i>'
+            'so\'ng "✓ Tasdiqlash" bosing.</i>'
         )
     labels = ", ".join(GENRES.get(k, k) for k in selected)
     return (
-        "🎭 <b>Tanlangan janrlar:</b>\n"
+        "๏ <b>Tanlangan janrlar:</b>\n"
         f"{labels}\n\n"
         "<i>Yana qo'shishingiz yoki olib tashlashingiz mumkin. "
-        'Tayyor bo\'lsangiz "✅ Tasdiqlash".</i>'
+        'Tayyor bo\'lsangiz "✓ Tasdiqlash".</i>'
     )
