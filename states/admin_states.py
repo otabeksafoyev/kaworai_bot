@@ -39,6 +39,7 @@ class AddAnime(StatesGroup):
 class AddAnimeAI(StatesGroup):
     waiting_id = State()
     waiting_poster = State()
+    waiting_inline = State()
     waiting_trailer = State()
     waiting_title = State()
     waiting_english = State()

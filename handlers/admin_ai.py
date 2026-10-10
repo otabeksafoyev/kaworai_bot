@@ -140,6 +140,19 @@ async def ai_skip_poster(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+async def _photo_to_url(bot, photo: types.PhotoSize, name: str) -> str | None:
+    """Rasmni ImgBB ga yuklab doimiy URL oladi; bo'lmasa Telegram CDN URL."""
+    url = None
+    try:
+        from utils.imgbb import upload_telegram_photo_to_imgbb
+
+        if getattr(config, "IMGBB_API_KEY", ""):
+            url = await upload_telegram_photo_to_imgbb(bot, photo.file_id, config.IMGBB_API_KEY, name=name)
+    except Exception:
+        logger.warning("ImgBB xato", exc_info=True)
+    return url or await _get_telegram_file_url(bot, photo.file_id)
+
+
 @ai_admin_router.message(AddAnimeAI.waiting_poster, F.photo)
 async def ai_get_poster(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
@@ -149,24 +162,90 @@ async def ai_get_poster(msg: Message, state: FSMContext):
     if rejection:
         return await msg.answer(rejection + "\nIltimos, kichikroq rasm yuboring.")
 
-    inline_url = None
-    portrait = (photo.width / photo.height if photo.height else 1.0) <= 1.05
-    if portrait:  # inline qidiruv uchun faqat portret/kvadrat yaroqli
-        try:
-            from utils.imgbb import upload_telegram_photo_to_imgbb
+    w, h = photo.width, photo.height
+    ratio = w / h if h else 1.0
+    anime_id = (await state.get_data())["anime_id"]
+    await state.update_data(poster_file_id=photo.file_id, inline_thumbnail_url=None)
 
-            if getattr(config, "IMGBB_API_KEY", ""):
-                inline_url = await upload_telegram_photo_to_imgbb(
-                    msg.bot, photo.file_id, config.IMGBB_API_KEY, name=f"poster_{(await state.get_data())['anime_id']}"
-                )
+    if ratio <= 1.05:  # portret/kvadrat — inline qidiruv uchun yaroqli, avtomatik URL
+        wait = await msg.answer("⏳ Rasm URL'ga aylantirilmoqda...")
+        url = await _photo_to_url(msg.bot, photo, f"poster_{anime_id}")
+        try:
+            await wait.delete()
         except Exception:
-            logger.warning("ImgBB xato", exc_info=True)
-        if not inline_url:
-            inline_url = await _get_telegram_file_url(msg.bot, photo.file_id)
-    # Landscape bo'lsa — inline URL keyinroq AI (MyAnimeList) rasmidan olinadi.
-    await state.update_data(poster_file_id=photo.file_id, inline_thumbnail_url=inline_url)
+            pass
+        if url:
+            await state.update_data(inline_thumbnail_url=url)
+            await state.set_state(AddAnimeAI.waiting_trailer)
+            return await _ask_trailer(msg)
+
+    # Landscape (yoki URL olinmadi) — inline qidiruv uchun alohida rasm/URL so'raymiz
+    await state.set_state(AddAnimeAI.waiting_inline)
+    await msg.answer(
+        f"⚠️ <b>Landscape rasm</b> ({w}×{h}) — kanalga poster sifatida saqlandi, "
+        "lekin inline qidiruvda xunuk ko'rinadi 😕\n\n"
+        "Inline qidiruv uchun <b>kvadrat yoki portret rasm</b> yuboring "
+        "(men o'zim URL qilaman) yoki <b>rasm URL</b>sini (https://...) yuboring.",
+        parse_mode="HTML",
+        reply_markup=_skip_kb("aiadd_skip_inline"),
+    )
+
+
+@ai_admin_router.callback_query(F.data == "aiadd_skip_inline", AddAnimeAI.waiting_inline)
+async def ai_skip_inline(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(AddAnimeAI.waiting_trailer)
+    await _ask_trailer(call.message)
+    await call.answer()
+
+
+@ai_admin_router.message(AddAnimeAI.waiting_inline, F.photo)
+async def ai_get_inline_photo(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    photo = msg.photo[-1]
+    if photo.height and photo.width / photo.height > 1.05:
+        return await msg.answer("❌ Bu rasm ham keng. Kvadrat yoki portret rasm yuboring (yoki URL).")
+    anime_id = (await state.get_data())["anime_id"]
+    url = await _photo_to_url(msg.bot, photo, f"inline_{anime_id}")
+    if not url:
+        return await msg.answer("❌ Rasmdan URL olinmadi. URL yuboring yoki o'tkazib yuboring.")
+    await state.update_data(inline_thumbnail_url=url)
+    await state.set_state(AddAnimeAI.waiting_trailer)
+    await msg.answer("✅ Inline rasm qabul qilindi.")
     await _ask_trailer(msg)
+
+
+@ai_admin_router.message(AddAnimeAI.waiting_inline, F.text)
+async def ai_get_inline_url(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == CANCEL_TEXT:
+        return await _cancel(msg, state)
+    url = msg.text.strip()
+    if not url.startswith("http"):
+        return await msg.answer("❌ Rasm yuboring yoki https:// bilan boshlanadigan URL yozing.")
+    await state.update_data(inline_thumbnail_url=url)
+    await state.set_state(AddAnimeAI.waiting_trailer)
+    await msg.answer("✅ Inline URL qabul qilindi.")
+    await _ask_trailer(msg)
+
+
+# Qo'lda oqimda ham: landscape bo'lsa URL o'rniga rasm yuborish mumkin
+@ai_admin_router.message(F.photo, AddAnime.waiting_inline_url)
+async def manual_inline_photo(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    photo = msg.photo[-1]
+    if photo.height and photo.width / photo.height > 1.05:
+        return await msg.answer("❌ Bu rasm ham keng. Kvadrat yoki portret rasm yuboring (yoki URL).")
+    anime_id = (await state.get_data()).get("anime_id", "x")
+    url = await _photo_to_url(msg.bot, photo, f"inline_{anime_id}")
+    if not url:
+        return await msg.answer("❌ Rasmdan URL olinmadi. URL yuboring.")
+    await state.update_data(inline_thumbnail_url=url)
+    await state.set_state(AddAnime.waiting_trailer)
+    await msg.answer("✅ Inline rasm qabul qilindi.\n\n🎬 <b>Treyler videosini yuboring:</b>",
+                     parse_mode="HTML", reply_markup=_skip_kb("skip_trailer"))
 
 
 @ai_admin_router.message(AddAnimeAI.waiting_poster)
@@ -263,6 +342,7 @@ def _preview_text(d: dict) -> str:
         f"📅 Yil: {d.get('year') or '—'}  •  ⭐ Reyting: {d.get('rating') or '—'}",
         f"🎞 Qismlar: {d.get('episodes_count') or '—'}  •  ⏱ {d.get('duration') or '—'} daq",
         f"📊 Status: {STATUS_LABEL.get(d.get('status'), d.get('status'))}",
+        "🖼 Inline rasm: " + ("✅ bor" if d.get("inline_thumbnail_url") else "⚠️ yo'q (qidiruvda rasm chiqmaydi)"),
         "",
         f"📖 {esc(desc)}",
         "",
@@ -300,9 +380,6 @@ async def ai_get_english(msg: Message, state: FSMContext):
         pass
 
     data = await state.get_data()
-    # Poster landscape bo'lsa — MyAnimeList portret rasmini inline uchun ishlatamiz
-    if not data.get("inline_thumbnail_url") and info.get("image_url"):
-        await state.update_data(inline_thumbnail_url=info["image_url"])
     await state.update_data(
         english_title=english,
         ai=info,
@@ -398,7 +475,7 @@ EDIT_FIELDS = [
     ("mood", "😌 Mood"), ("status", "📊 Status"),
     ("year", "📅 Yil"), ("rating", "⭐ Reyting"),
     ("episodes_count", "🎞 Qismlar"), ("duration", "⏱ Davomiylik"),
-    ("desc", "📖 Tavsif"),
+    ("desc", "📖 Tavsif"), ("inline_thumbnail_url", "🖼 Inline rasm"),
 ]
 EDIT_HINTS = {
     "title": "Yangi nomni yuboring.",
@@ -410,6 +487,7 @@ EDIT_HINTS = {
     "episodes_count": "Qismlar sonini yozing (masalan <code>12</code>).",
     "duration": "Bir qism davomiyligini daqiqada yozing (masalan <code>24</code>) yoki <code>-</code>.",
     "desc": "Yangi tavsifni yuboring (1-1500 belgi).",
+    "inline_thumbnail_url": "Kvadrat/portret <b>rasm</b> yuboring (o'zim URL qilaman) yoki <b>https://</b> URL yozing.",
 }
 
 
@@ -468,6 +546,8 @@ async def ai_edit_pick(call: types.CallbackQuery, state: FSMContext):
     current = (await state.get_data()).get(field)
     if isinstance(current, list):
         current = ", ".join(current)
+    if field == "inline_thumbnail_url":
+        current = "✅ bor" if current else "yo'q"  # URL ichida maxfiy qism bo'lishi mumkin — ko'rsatmaymiz
     await state.update_data(edit_field=field, preview_msg_id=call.message.message_id)
     await state.set_state(AddAnimeAI.editing)
     await call.message.answer(
@@ -500,6 +580,8 @@ def _parse_edit(field: str, raw: str):
 
     raw = raw.strip()
     clear = raw in ("-", "—")
+    if field == "inline_thumbnail_url":
+        return (raw, None) if raw.startswith("http") else (None, "Rasm yuboring yoki https:// bilan boshlanadigan URL yozing.")
     if field == "title":
         return (raw, None) if raw else (None, "Nom bo'sh bo'lmasin.")
     if field == "desc":
@@ -554,4 +636,23 @@ async def ai_edit_value(msg: Message, state: FSMContext):
         await state.update_data(**update)
     await state.set_state(AddAnimeAI.confirm)
     await msg.answer("✅ Yangilandi." if msg.text != CANCEL_TEXT else "Bekor qilindi.", reply_markup=admin_main_kb)
+    await msg.answer(_render_preview(await state.get_data()), parse_mode="HTML", reply_markup=_confirm_kb())
+
+
+@ai_admin_router.message(AddAnimeAI.editing, F.photo)
+async def ai_edit_photo(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    data = await state.get_data()
+    if data.get("edit_field") != "inline_thumbnail_url":
+        return await msg.answer("❌ Bu maydon uchun matn yuboring.")
+    photo = msg.photo[-1]
+    if photo.height and photo.width / photo.height > 1.05:
+        return await msg.answer("❌ Bu rasm keng. Kvadrat yoki portret rasm yuboring (yoki URL).")
+    url = await _photo_to_url(msg.bot, photo, f"inline_{data['anime_id']}")
+    if not url:
+        return await msg.answer("❌ Rasmdan URL olinmadi. URL yuboring.")
+    await state.update_data(inline_thumbnail_url=url)
+    await state.set_state(AddAnimeAI.confirm)
+    await msg.answer("✅ Yangilandi.", reply_markup=admin_main_kb)
     await msg.answer(_render_preview(await state.get_data()), parse_mode="HTML", reply_markup=_confirm_kb())

@@ -58,3 +58,10 @@ def test_parse_edit():
     assert _parse_edit("mood", "dark, emotional") == (["dark", "emotional"], None)
     assert _parse_edit("mood", "zzz")[1]
     assert _parse_edit("genres", "Jang, Drama")[0] == ["Jang", "Drama"]
+
+
+def test_parse_edit_inline_url():
+    from handlers.admin_ai import _parse_edit
+
+    assert _parse_edit("inline_thumbnail_url", "https://x.y/a.jpg") == ("https://x.y/a.jpg", None)
+    assert _parse_edit("inline_thumbnail_url", "abc")[1]
