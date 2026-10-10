@@ -86,15 +86,12 @@ def _build_episode_keyboard(
         is_filler_btn = ep in filler_set
         if ep == current_ep:
             label = f"✅ {ep}" if not is_filler_btn else f"🎲 {ep}"
-            btn_style = "success" if not is_filler_btn else "danger"
         elif is_filler_btn:
             label = f"🎲 {ep}"
-            btn_style = "danger"
         else:
             label = str(ep)
-            btn_style = "primary"
         row_buttons.append(
-            InlineKeyboardButton(text=label, callback_data=f"ep_{anime_id}_{ep}_{page}", style=btn_style)
+            InlineKeyboardButton(text=label, callback_data=f"ep_{anime_id}_{ep}_{page}")
         )
     for i in range(0, len(row_buttons), GRID_COLS):
         builder.row(*row_buttons[i : i + GRID_COLS])
@@ -105,7 +102,6 @@ def _build_episode_keyboard(
             InlineKeyboardButton(
                 text="⬅️ Oldingi",
                 callback_data=f"eppage_{anime_id}_{current_ep}_{page - 1}",
-                style="primary",
             )
         )
     else:
@@ -113,16 +109,14 @@ def _build_episode_keyboard(
             InlineKeyboardButton(
                 text="⬅️ Oldingi",
                 callback_data=f"epnav_{anime_id}_{current_ep}_prev",
-                style="primary",
             )
         )
-    nav_row.append(InlineKeyboardButton(text=f"{page + 1} / {total_pages}", callback_data="ep_noop", style="primary"))
+    nav_row.append(InlineKeyboardButton(text=f"{page + 1} / {total_pages}", callback_data="ep_noop"))
     if page < total_pages - 1:
         nav_row.append(
             InlineKeyboardButton(
                 text="Keyingi ➡️",
                 callback_data=f"eppage_{anime_id}_{current_ep}_{page + 1}",
-                style="primary",
             )
         )
     else:
@@ -130,29 +124,28 @@ def _build_episode_keyboard(
             InlineKeyboardButton(
                 text="Keyingi ➡️",
                 callback_data=f"epnav_{anime_id}_{current_ep}_next",
-                style="primary",
             )
         )
     builder.row(*nav_row)
 
     share_url = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}%3Fstart%3Danime_{anime_id}"
     builder.row(
-        InlineKeyboardButton(text="⚡ Kaworai Pro", callback_data="kawaii_pass", style="primary"),
-        InlineKeyboardButton(text="🔗 Ulashish", url=share_url, style="primary"),
+        InlineKeyboardButton(text="⚡ Kaworai Pro", callback_data="kawaii_pass"),
+        InlineKeyboardButton(text="🔗 Ulashish", url=share_url),
     )
 
     if is_subscribed:
-        sub_btn = InlineKeyboardButton(text="💔 Obunani bekor", callback_data=f"toggle_sub_{anime_id}", style="danger")
+        sub_btn = InlineKeyboardButton(text="💔 Obunani bekor", callback_data=f"toggle_sub_{anime_id}")
     else:
-        sub_btn = InlineKeyboardButton(text="❤️ Obuna bo'lish", callback_data=f"toggle_sub_{anime_id}", style="success")
+        sub_btn = InlineKeyboardButton(text="❤️ Obuna bo'lish", callback_data=f"toggle_sub_{anime_id}")
     builder.row(
         sub_btn,
-        InlineKeyboardButton(text="⚠️ Muammo", callback_data=f"problems_{anime_id}_{current_ep}_{page}", style="danger"),
+        InlineKeyboardButton(text="⚠️ Muammo", callback_data=f"problems_{anime_id}_{current_ep}_{page}"),
     )
 
     builder.row(
-        InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu", style="primary"),
-        InlineKeyboardButton(text="⭐ Baho berish", callback_data=f"rate_{anime_id}", style="success"),
+        InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu"),
+        InlineKeyboardButton(text="⭐ Baho berish", callback_data=f"rate_{anime_id}"),
     )
 
     return builder.as_markup()
@@ -267,7 +260,6 @@ async def _deliver_filler_episode(
             InlineKeyboardButton(
                 text=f"▶️ Keyingi qism ({next_episode})",
                 callback_data=f"ep_{anime.id}_{next_episode}_{page}",
-                style="success",
             )
         )
     for row in kb.inline_keyboard:
@@ -396,7 +388,7 @@ async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id
 
     if anime.is_pro_locked and not is_pro:
         kb_rows.append(
-            [InlineKeyboardButton(text="🔒 Faqat Kaworai Pro uchun", callback_data="kawaii_pass", style="primary")]
+            [InlineKeyboardButton(text="🔒 Faqat Kaworai Pro uchun", callback_data="kawaii_pass")]
         )
     elif first_ep and ep_count > 0:
         kb_rows.append(
@@ -404,23 +396,22 @@ async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id
                 InlineKeyboardButton(
                     text=f"▶️ Tomosha qilish ({ep_count} qism)",
                     callback_data=f"watch_start_{anime_id}",
-                    style="success",
                 )
             ]
         )
     else:
         kb_rows.append(
-            [InlineKeyboardButton(text="⏳ Qismlar hali qo'shilmagan", callback_data="no_episodes", style="primary")]
+            [InlineKeyboardButton(text="⏳ Qismlar hali qo'shilmagan", callback_data="no_episodes")]
         )
 
     kb_rows.append(
         [
-            InlineKeyboardButton(text=f"❤️ Obuna bo'lganlar ({sub_count})", callback_data="main_menu", style="success"),
-            InlineKeyboardButton(text="🔍 Anime qidirish", switch_inline_query_current_chat="", style="success"),
+            InlineKeyboardButton(text=f"❤️ Obuna bo'lganlar ({sub_count})", callback_data="main_menu"),
+            InlineKeyboardButton(text="🔍 Anime qidirish", switch_inline_query_current_chat=""),
         ]
     )
 
-    kb_rows.append([InlineKeyboardButton(text="🏠 Menyu", callback_data="main_menu", style="primary")])
+    kb_rows.append([InlineKeyboardButton(text="🏠 Menyu", callback_data="main_menu")])
 
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
@@ -501,7 +492,7 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
     kb_rows = []
     if anime.is_pro_locked and not is_pro:
         kb_rows.append(
-            [InlineKeyboardButton(text="🔒 Faqat Kaworai Pro uchun", callback_data="kawaii_pass", style="primary")]
+            [InlineKeyboardButton(text="🔒 Faqat Kaworai Pro uchun", callback_data="kawaii_pass")]
         )
     elif first_ep:
         kb_rows.append(
@@ -509,7 +500,6 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
                 InlineKeyboardButton(
                     text="▶️ 1-qismdan tomosha qilish",
                     callback_data=f"watch_start_{anime_id}",
-                    style="success",
                 )
             ]
         )
@@ -518,25 +508,24 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
                 InlineKeyboardButton(
                     text="📋 Qismlar ro'yxati",
                     callback_data=f"episodes_{anime_id}",
-                    style="success",
                 )
             ]
         )
     else:
         kb_rows.append(
-            [InlineKeyboardButton(text="⏳ Qismlar hali qo'shilmagan", callback_data="no_episodes", style="primary")]
+            [InlineKeyboardButton(text="⏳ Qismlar hali qo'shilmagan", callback_data="no_episodes")]
         )
 
     kb_rows.append(
         [
-            InlineKeyboardButton(text=f"{sub_icon} {sub_txt}", callback_data=f"toggle_sub_{anime_id}", style="primary"),
-            InlineKeyboardButton(text="🔗 Ulashish", url=share_url, style="primary"),
+            InlineKeyboardButton(text=f"{sub_icon} {sub_txt}", callback_data=f"toggle_sub_{anime_id}"),
+            InlineKeyboardButton(text="🔗 Ulashish", url=share_url),
         ]
     )
     kb_rows.append(
         [
-            InlineKeyboardButton(text="⭐ Baho berish", callback_data=f"rate_{anime_id}", style="success"),
-            InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary"),
+            InlineKeyboardButton(text="⭐ Baho berish", callback_data=f"rate_{anime_id}"),
+            InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu"),
         ]
     )
 
@@ -585,7 +574,7 @@ def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboar
             label = _PRO_START_SHORTCUTS.get(key)
             if not label:
                 continue
-            row.append(InlineKeyboardButton(text=label, callback_data=key, style="primary"))
+            row.append(InlineKeyboardButton(text=label, callback_data=key))
             if len(row) == 2:
                 rows.append(row)
                 row = []
@@ -595,15 +584,15 @@ def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboar
     rows.extend(
         [
             [
-                InlineKeyboardButton(text="✨ Janr bo'yicha", callback_data="genres", style="success"),
-                InlineKeyboardButton(text="🔎 Qidiruv", switch_inline_query_current_chat="", style="success"),
+                InlineKeyboardButton(text="✨ Janr bo'yicha", callback_data="genres"),
+                InlineKeyboardButton(text="🔎 Qidiruv", switch_inline_query_current_chat=""),
             ],
             [
-                InlineKeyboardButton(text="🔢 Kod orqali qidirish", callback_data="search_by_code", style="success"),
-                InlineKeyboardButton(text="❤️ Obunalarim", callback_data="my_subs", style="danger"),
+                InlineKeyboardButton(text="🔢 Kod orqali qidirish", callback_data="search_by_code"),
+                InlineKeyboardButton(text="❤️ Obunalarim", callback_data="my_subs"),
             ],
             [
-                InlineKeyboardButton(text="⚡ Kaworai Pro", callback_data="kawaii_pass", style="primary"),
+                InlineKeyboardButton(text="⚡ Kaworai Pro", callback_data="kawaii_pass"),
             ],
         ]
     )
@@ -1163,13 +1152,13 @@ async def rate_anime_start(call: types.CallbackQuery):
     rows = []
     row = []
     for i in range(1, 11):
-        row.append(InlineKeyboardButton(text=str(i), callback_data=f"rate_set_{anime_id}_{i}", style="primary"))
+        row.append(InlineKeyboardButton(text=str(i), callback_data=f"rate_set_{anime_id}_{i}"))
         if len(row) == 5:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
-    rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data="rate_cancel", style="danger")])
+    rows.append([InlineKeyboardButton(text="❌ Bekor", callback_data="rate_cancel")])
 
     await call.answer()
     await call.message.answer(
@@ -1211,11 +1200,10 @@ async def rate_anime_set(call: types.CallbackQuery):
                 InlineKeyboardButton(
                     text=f"▶️ {next_season.title}",
                     callback_data=f"watch_start_{next_season.id}",
-                    style="success",
                 )
             ]
         )
-    kb_rows.append([InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")])
+    kb_rows.append([InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")])
     try:
         await call.message.edit_text(
             text,
@@ -1278,7 +1266,7 @@ async def search_by_code_cb(call: types.CallbackQuery):
         "Masalan: <code>388</code>"
     )
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")]]
+        inline_keyboard=[[InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")]]
     )
     try:
         await call.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
@@ -1329,7 +1317,7 @@ async def my_subscriptions(call: types.CallbackQuery):
             "Siz hozircha hech qaysi animega obuna bo'lmagansiz.\n\n"
             "Anime sahifasidagi 🔔 <b>Obuna bo'lish</b> tugmasini bosing."
         )
-        rows = [[InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")]]
+        rows = [[InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")]]
     else:
         text = f"🔔 <b>Mening obunalarim ({len(anime_list)} ta):</b>\n\n"
         rows = []
@@ -1339,11 +1327,11 @@ async def my_subscriptions(call: types.CallbackQuery):
             rows.append(
                 [
                     InlineKeyboardButton(
-                        text=f"🎬 {lock}{anime.title}", callback_data=f"anime_info_{anime.id}", style="primary"
+                        text=f"🎬 {lock}{anime.title}", callback_data=f"anime_info_{anime.id}"
                     )
                 ]
             )
-        rows.append([InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")])
+        rows.append([InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")])
 
     kb_markup = InlineKeyboardMarkup(inline_keyboard=rows)
     try:
@@ -1485,7 +1473,7 @@ async def my_taste_profile(call: types.CallbackQuery):
         top_t = []
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")]]
+        inline_keyboard=[[InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")]]
     )
 
     if not has_data:

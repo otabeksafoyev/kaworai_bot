@@ -128,7 +128,7 @@ def genres_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     row = []
     for key in page_keys:
         # Janr tanlash tugmalari — Bot API 9.4 success (yashil).
-        row.append(InlineKeyboardButton(text=GENRES[key], callback_data=f"gshow:{key}:{page}", style="success"))
+        row.append(InlineKeyboardButton(text=GENRES[key], callback_data=f"gshow:{key}:{page}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
@@ -137,13 +137,13 @@ def genres_keyboard(page: int = 0) -> InlineKeyboardMarkup:
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"gpage:{page - 1}", style="primary"))
+        nav.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"gpage:{page - 1}"))
     if page < total:
-        nav.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"gpage:{page + 1}", style="primary"))
+        nav.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"gpage:{page + 1}"))
     if nav:
         buttons.append(nav)
 
-    buttons.append([InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")])
+    buttons.append([InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -155,14 +155,11 @@ def anime_list_keyboard(animes: list, genre_key: str, from_page: int, page: int 
     buttons = []
     for anime in page_animes:
         lock = "🔒 " if anime.is_pro_locked else ""
-        # Pro-locked kontent — ko'k (primary), oddiy — yashil (success).
-        style = "primary" if anime.is_pro_locked else "success"
         buttons.append(
             [
                 InlineKeyboardButton(
                     text=f"🎬 {lock}{anime.title}",
                     callback_data=f"anime_info_{anime.id}",
-                    style=style,
                 )
             ]
         )
@@ -173,7 +170,6 @@ def anime_list_keyboard(animes: list, genre_key: str, from_page: int, page: int 
             InlineKeyboardButton(
                 text="⬅️ Oldingi",
                 callback_data=f"glist:{genre_key}:{from_page}:{page - 1}",
-                style="primary",
             )
         )
     if page < total_pages:
@@ -181,14 +177,13 @@ def anime_list_keyboard(animes: list, genre_key: str, from_page: int, page: int 
             InlineKeyboardButton(
                 text="Keyingi ➡️",
                 callback_data=f"glist:{genre_key}:{from_page}:{page + 1}",
-                style="primary",
             )
         )
     if nav:
         buttons.append(nav)
 
     buttons.append(
-        [InlineKeyboardButton(text="🔙 Janrlarga qaytish", callback_data=f"gpage:{from_page}", style="primary")]
+        [InlineKeyboardButton(text="🔙 Janrlarga qaytish", callback_data=f"gpage:{from_page}")]
     )
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
