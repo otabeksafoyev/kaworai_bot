@@ -20,6 +20,7 @@ from database.queries import (
 
 callback_router = Router()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
+from utils.ui import rating_stars, share_anime_url  # noqa: E402
 
 EP_PAGE_SIZE = 12  # 4 ta × 3 qator
 
@@ -58,7 +59,7 @@ def _anime_caption(anime: Anime) -> str:
         f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
         f"🎭 {genres_text}\n"
         + (f"🏷 {tags_text}\n" if tags_text else "")
-        + f"⭐ <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
+        + f"{rating_stars(anime.rating)} <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
         + (f"📊 {status_str}\n" if status_str else "")
         + f"🆔 <code>{anime.id}</code>\n\n"
         f"📖 <blockquote>{(anime.description or '')[:300]}</blockquote>"
@@ -126,7 +127,7 @@ def _anime_info_kb(
         [
             InlineKeyboardButton(
                 text="🔗 Ulashish",
-                url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}%3Fstart%3Danime_{anime_id}",
+                url=share_anime_url(anime_id),
             )
         ]
     )
@@ -201,7 +202,7 @@ def _player_kb(
         [
             InlineKeyboardButton(
                 text="🔗 Ulashish",
-                url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}%3Fstart%3Danime_{anime_id}",
+                url=share_anime_url(anime_id),
             )
         ]
     )

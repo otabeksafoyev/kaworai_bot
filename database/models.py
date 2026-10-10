@@ -46,6 +46,9 @@ class User(Base):
     # va h.k.). Qo'shilgan tartibi = menyudagi tartibi (eng tepada). Default
     # menyu tugmalari doim quyi qismida qoladi. Oddiy userlar uchun e'tiborsiz.
     start_extras = Column(JSON, default=list)
+    # Referal: kim taklif qilgan va mukofot berilganmi
+    referred_by = Column(BigInteger, nullable=True, index=True)
+    referral_rewarded = Column(Boolean, default=False)
 
     watch_history = relationship("UserWatchHistory", back_populates="user", cascade="all, delete-orphan")
     taste_profile = relationship("UserTasteProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")

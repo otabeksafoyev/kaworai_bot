@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import html
 import os
 from datetime import datetime
 
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 user_router = Router()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
+from utils.ui import greeting, parse_start_args, progress_bar, rating_stars, share_anime_url  # noqa: E402
 PHOTO_URL = "https://i.postimg.cc/zDpjp9Mz/kawaro-(1)-(3).jpg"
 
 GRID_SIZE = 8
@@ -128,7 +130,7 @@ def _build_episode_keyboard(
         )
     builder.row(*nav_row)
 
-    share_url = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}%3Fstart%3Danime_{anime_id}"
+    share_url = share_anime_url(anime_id)
     builder.row(
         InlineKeyboardButton(text="⚡ Kaworai Pro", callback_data="kawaii_pass"),
         InlineKeyboardButton(text="🔗 Ulashish", url=share_url),
@@ -154,7 +156,10 @@ def _build_episode_keyboard(
 def _build_episode_caption(anime: Anime, episode: int, total_eps: int) -> str:
     type_emoji = {"anime": "🎌", "movie": "🎥", "serial": "📺", "dorama": "🌸"}
     emoji = type_emoji.get(anime.content_type or "anime", "🎬")
-    caption = f"▶️ <b>{anime.title}</b>  •  {episode}-qism\n🎞 Jami: {total_eps} qism"
+    caption = (
+        f"▶️ <b>{anime.title}</b>  •  {episode}-qism\n"
+        f"🎞 {progress_bar(episode, total_eps)} {episode}/{total_eps} qism"
+    )
     filter_url = getattr(anime, "filter_url", None)
     if filter_url:
         caption += f'\n\n🎨 <a href="{filter_url}">Filter</a>'
@@ -378,7 +383,7 @@ async def _show_anime_card_inline(message: types.Message, anime_id: int, user_id
         f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
         f"🎭 {genres_text}\n"
         + (f"🏷 {tags_text}\n" if tags_text else "")
-        + f"⭐ <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
+        + f"{rating_stars(anime.rating)} <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
         + (f"📊 {status_str}\n" if status_str else "")
         + f"🆔 <code>{anime.id}</code>\n\n"
         + (f"📖 <i>{desc_short}...</i>" if desc_short else "")
@@ -476,14 +481,14 @@ async def _show_anime_card(message: types.Message, anime_id: int, user_id: int, 
         "announced": "📢 Kutilmoqda",
     }
     status_str = status_map.get(anime.status or "", "")
-    share_url = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}%3Fstart%3Danime_{anime_id}"
+    share_url = share_anime_url(anime_id)
 
     caption = (
         f"{emoji} <b>{anime.title}</b>" + (f" <i>({anime.year})</i>" if anime.year else "") + lock_str + "\n"
         f"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
         f"🎭 {genres_text}\n"
         + (f"🏷 {tags_text}\n" if tags_text else "")
-        + f"⭐ <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
+        + f"{rating_stars(anime.rating)} <b>{anime.rating:.1f}</b>  •  👥 {anime.rating_count} ovoz\n"
         + (f"📊 {status_str}\n" if status_str else "")
         + f"🆔 <code>{anime.id}</code>\n\n"
         f"📖 <blockquote>{(anime.description or '')[:300]}</blockquote>"
@@ -593,6 +598,7 @@ def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboar
             ],
             [
                 InlineKeyboardButton(text="⚡ Kaworai Pro", callback_data="kawaii_pass"),
+                InlineKeyboardButton(text="🎁 Do'st taklif qilish", callback_data="referral"),
             ],
         ]
     )
@@ -623,6 +629,10 @@ async def send_main_menu(target, delete_prev: bool = False):
         msg = target
         user_id = target.from_user.id if target.from_user else 0
     caption = "🎌 <b>Kaworai</b> — Anime & Dorama\n\n✨ <i>Sevimli kontentingizni toping</i>"
+    # Salomlashish: faqat haqiqiy foydalanuvchi bo'lsa (callback xabarining from_user'i bot bo'ladi)
+    _u = target.from_user if isinstance(target, types.CallbackQuery) else (target.from_user if target.from_user and not target.from_user.is_bot else None)
+    if _u and _u.first_name:
+        caption = f"<b>{greeting()}, {html.escape(_u.first_name)}!</b> Bugun nima ko'ramiz?\n\n" + caption
     extras = await _get_user_start_extras(user_id) if user_id else []
     kb = get_main_menu_keyboard(extras)
     try:
@@ -637,20 +647,7 @@ async def send_main_menu(target, delete_prev: bool = False):
 
 
 def _parse_start_anime_id(args: str) -> int | None:
-    args = args or ""
-    if args.startswith("anime_"):
-        try:
-            return int(args.replace("anime_", ""))
-        except ValueError:
-            return None
-    if args.startswith("kod_"):
-        try:
-            return int(args.replace("kod_", ""))
-        except ValueError:
-            return None
-    if args.isdigit():
-        return int(args)
-    return None
+    return parse_start_args(args)[0]
 
 
 async def _continue_after_start(
@@ -680,6 +677,14 @@ async def _continue_after_start(
                 pass
         return await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
+    # Taklif qilingan foydalanuvchi to'liq kirdi — taklif qiluvchiga Pro mukofoti
+    try:
+        from utils.referral import reward_referrer_if_due
+
+        await reward_referrer_if_due(message.bot, user_id)
+    except Exception:
+        logger.warning("reward_referrer_if_due xato", exc_info=True)
+
     if anime_id:
         try:
             await message.delete()
@@ -695,15 +700,23 @@ async def _continue_after_start(
 async def cmd_start(message: types.Message, command: CommandObject):
     user_id = message.from_user.id
 
+    anime_id, referrer_id = parse_start_args(command.args or "")
+
     async with AsyncSessionLocal() as session:
-        _, _ = await get_or_create_user(
+        _, created = await get_or_create_user(
             session=session,
             telegram_id=user_id,
             full_name=message.from_user.full_name,
             username=message.from_user.username,
         )
+        # Referal: faqat YANGI foydalanuvchi taklif qiluvchiga bog'lanadi
+        if created and referrer_id:
+            try:
+                from utils.referral import register_referral
 
-    anime_id = _parse_start_anime_id(command.args or "")
+                await register_referral(session, user_id, referrer_id)
+            except Exception:
+                logger.warning("register_referral xato", exc_info=True)
 
     await _continue_after_start(message, user_id=user_id, anime_id=anime_id)
 
@@ -1416,7 +1429,7 @@ async def handle_text(message: types.Message):
 
     if "?start=anime_" in text:
         try:
-            anime_id_str = text.split("?start=anime_")[-1].strip()
+            anime_id_str = text.split("?start=anime_")[-1].strip().split("_r")[0]
             if anime_id_str.isdigit():
                 try:
                     await message.delete()

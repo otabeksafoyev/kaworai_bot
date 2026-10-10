@@ -10,6 +10,7 @@ from data.config import BACKUP_CHANNEL_ID
 from database.engine import engine, init_db
 from handlers.admin import admin_router
 from handlers.admin_ai import ai_admin_router
+from handlers.referral import referral_router
 from handlers.admin_pro import pro_admin_router
 from handlers.callbacks import callback_router
 from handlers.errors import error_router
@@ -20,6 +21,7 @@ from handlers.users import user_router
 from handlers.users_pro import pro_user_router
 from handlers.watchlist import watchlist_router
 from loader import bot, dp
+from middlewares.current_user import CurrentUserMiddleware
 from middlewares.subscription import SubscriptionMiddleware
 from middlewares.throttling import ThrottlingMiddleware
 from utils.daily_backup import daily_backup_loop
@@ -179,6 +181,7 @@ async def main():
     dp.include_router(admin_router)
     dp.include_router(pro_admin_router)
     dp.include_router(pro_user_router)
+    dp.include_router(referral_router)
     dp.include_router(user_router)
     dp.include_router(callback_router)
     dp.include_router(watchlist_router)
@@ -189,6 +192,7 @@ async def main():
     # Throttling middleware — foydalanuvchi spam / brute-force qilishining
     # oldini oladi. Handler qabul qilinganidan oldin ishga tushadi, shuning
     # uchun uni subscription middleware'dan oldin qo'shamiz.
+    dp.update.outer_middleware(CurrentUserMiddleware())
     dp.message.middleware(ThrottlingMiddleware())
     dp.callback_query.middleware(ThrottlingMiddleware())
 

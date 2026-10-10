@@ -56,3 +56,7 @@ IMGBB_API_KEY = env.str("IMGBB_API_KEY", "")
 # Bo'sh bo'lsa — faqat Jikan (MyAnimeList) ishlaydi, tavsif inglizcha qoladi.
 GEMINI_API_KEY = env.str("GEMINI_API_KEY", "")
 GEMINI_MODEL = env.str("GEMINI_MODEL", "gemini-flash-latest")
+
+# Referal: taklif qilingan har bir do'st uchun beriladigan Pro kunlari va chegara
+REFERRAL_REWARD_DAYS = env.int("REFERRAL_REWARD_DAYS", 3)
+REFERRAL_MAX_REWARDS = env.int("REFERRAL_MAX_REWARDS", 30)

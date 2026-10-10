@@ -30,6 +30,7 @@ from database.models import Anime, User
 inline_router = Router()
 
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
+from utils.ui import anime_start_link  # noqa: E402
 DEFAULT_THUMB = "https://i.imgur.com/JyOSMOR.png"
 
 
@@ -58,7 +59,7 @@ def _make_result(anime: Anime) -> InlineQueryResultArticle:
     thumb = anime.inline_thumbnail_url or DEFAULT_THUMB
     lock_icon = "🔒 " if getattr(anime, "is_pro_locked", False) else ""
 
-    share_url = f"https://t.me/{BOT_USERNAME}?start=anime_{anime.id}"
+    share_url = anime_start_link(anime.id)
 
     desc = f"{lock_icon}⭐ {anime.rating:.1f}  📅 {anime.year or '—'}  🎭 {genres_text[:25]}  📺 {ep_text} qism"
 

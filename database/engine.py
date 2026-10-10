@@ -147,6 +147,9 @@ MIGRATIONS = [
     "ALTER TABLE animes ADD COLUMN IF NOT EXISTS added_at TIMESTAMP DEFAULT NOW()",
     # Users — Pro ustunlar
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_pro BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_rewarded BOOLEAN DEFAULT FALSE",
+    "CREATE INDEX IF NOT EXISTS ix_users_referred_by ON users(referred_by)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_until TIMESTAMP",
     # Admins — qo'shimcha
     "ALTER TABLE admins ADD COLUMN IF NOT EXISTS added_by BIGINT",
