@@ -48,13 +48,13 @@ STATUS_LABEL = {"ongoing": "📡 Davom etmoqda", "completed": "✅ Tugagan", "an
 def _confirm_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ To'g'ri, saqlash", callback_data="aiadd_ok")],
-            [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="aiadd_edit")],
+            [InlineKeyboardButton(text="✅ To'g'ri, saqlash", callback_data="aiadd_ok", style="success")],
+            [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="aiadd_edit", style="primary")],
             [
-                InlineKeyboardButton(text="🔄 AI qaytadan", callback_data="aiadd_retry"),
-                InlineKeyboardButton(text="✍️ Noldan qo'lda", callback_data="aiadd_manual"),
+                InlineKeyboardButton(text="🔄 AI qaytadan", callback_data="aiadd_retry", style="primary"),
+                InlineKeyboardButton(text="✍️ Noldan qo'lda", callback_data="aiadd_manual", style="primary"),
             ],
-            [InlineKeyboardButton(text="🚫 Bekor qilish", callback_data="aiadd_cancel")],
+            [InlineKeyboardButton(text="🚫 Bekor qilish", callback_data="aiadd_cancel", style="danger")],
         ]
     )
 
@@ -494,7 +494,7 @@ EDIT_HINTS = {
 def _edit_menu_kb() -> InlineKeyboardMarkup:
     rows, row = [], []
     for key, label in EDIT_FIELDS:
-        row.append(InlineKeyboardButton(text=label, callback_data=f"aiedit:{key}"))
+        row.append(InlineKeyboardButton(text=label, callback_data=f"aiedit:{key}", style="primary"))
         if len(row) == 2:
             rows.append(row)
             row = []
@@ -506,7 +506,7 @@ def _edit_menu_kb() -> InlineKeyboardMarkup:
 
 def _enum_kb(field: str) -> InlineKeyboardMarkup:
     options = TYPE_LABEL if field == "content_type" else STATUS_LABEL
-    rows = [[InlineKeyboardButton(text=label, callback_data=f"aival:{field}:{val}")]
+    rows = [[InlineKeyboardButton(text=label, callback_data=f"aival:{field}:{val}", style="primary")]
             for val, label in options.items()]
     rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="aiadd_edit")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

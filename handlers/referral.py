@@ -30,8 +30,8 @@ async def _build(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
     )
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📤 Do'stga yuborish", url=f"https://t.me/share/url?url={quote(link)}&text={share_text}")],
-            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu")],
+            [InlineKeyboardButton(text="📤 Do'stga yuborish", url=f"https://t.me/share/url?url={quote(link)}&text={share_text}", style="success")],
+            [InlineKeyboardButton(text="🏠 Asosiy menyu", callback_data="main_menu", style="primary")],
         ]
     )
     return text, kb

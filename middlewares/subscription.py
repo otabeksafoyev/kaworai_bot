@@ -81,6 +81,7 @@ def get_sub_keyboard(channels: list):
             InlineKeyboardButton(
                 text="⚡ Pro olish — kanalsiz kirish",
                 callback_data="kawaii_pass",
+                style="success",
             )
         ]
     )
