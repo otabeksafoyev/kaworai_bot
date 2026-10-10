@@ -43,6 +43,7 @@ class AddAnimeAI(StatesGroup):
     waiting_title = State()
     waiting_english = State()
     confirm = State()
+    editing = State()
 
 
 # 🔹 Kanal qo‘shish

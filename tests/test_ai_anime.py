@@ -33,3 +33,28 @@ def test_jikan_to_fields():
 
 def test_clean_list_filters_unknown():
     assert _clean_list(["dark", "bogus", "Dark"], ["dark", "funny"], 3) == ["dark"]
+
+
+def test_split_season_and_pick():
+    from utils.ai_anime import _pick_best, split_season
+
+    assert split_season("mushoku tensei: jobless reincarnation season 3") == ("mushoku tensei: jobless reincarnation", 3)
+    assert split_season("Naruto 2nd Season") == ("Naruto", 2)
+    assert split_season("Death Note") == ("Death Note", None)
+    results = [{"title": "Mushoku Tensei", "title_english": "Jobless Reincarnation"},
+               {"title": "Mushoku Tensei II", "title_english": "Jobless Reincarnation Season 2"}]
+    assert _pick_best(results, "x", 2)[1] is True
+    assert _pick_best(results, "x", 3) == (results[0], False)
+
+
+def test_parse_edit():
+    from handlers.admin_ai import _parse_edit
+
+    assert _parse_edit("year", "2026") == (2026, None)
+    assert _parse_edit("year", "-") == (None, None)
+    assert _parse_edit("rating", "8,4") == (8.4, None)
+    assert _parse_edit("rating", "11")[1]
+    assert _parse_edit("episodes_count", "abc")[1]
+    assert _parse_edit("mood", "dark, emotional") == (["dark", "emotional"], None)
+    assert _parse_edit("mood", "zzz")[1]
+    assert _parse_edit("genres", "Jang, Drama")[0] == ["Jang", "Drama"]

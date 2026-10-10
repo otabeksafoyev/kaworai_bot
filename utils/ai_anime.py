@@ -60,16 +60,52 @@ async def _jikan_search(session: aiohttp.ClientSession, query: str) -> list[dict
     return []
 
 
-def _pick_best(results: list[dict], query: str) -> dict | None:
-    """Nomi aniq mos kelganini, bo'lmasa birinchi natijani tanlaydi."""
+_SEASON_TAIL_RE = re.compile(
+    r"[\s,:\-]*\(?\s*(?:(?:season|part|cour)\s*(\d+)|(\d+)(?:st|nd|rd|th)\s+season)\s*\)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def split_season(query: str) -> tuple[str, int | None]:
+    """'Mushoku Tensei season 3' → ('Mushoku Tensei', 3). Fasl yo'q bo'lsa (query, None)."""
+    q = query.strip()
+    m = _SEASON_TAIL_RE.search(q)
+    if not m:
+        return q, None
+    num = int(m.group(1) or m.group(2))
+    base = q[: m.start()].strip(" ,:-")
+    return (base or q), num
+
+
+def _ordinal(n: int) -> str:
+    return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
+
+
+def _matches_season(item: dict, n: int) -> bool:
+    names = " ".join(filter(None, [item.get("title"), item.get("title_english")] + [
+        t.get("title", "") for t in item.get("titles") or []
+    ])).lower()
+    return any(k in names for k in (f"season {n}", f"{_ordinal(n)} season", f"part {n}", f" {n}"))
+
+
+def _pick_best(results: list[dict], query: str, season: int | None = None) -> tuple[dict | None, bool]:
+    """
+    (natija, fasl_mos_keldimi) qaytaradi. Fasl so'ralgan bo'lsa shu faslga mos yozuvni
+    qidiradi; topilmasa eng yaqin (odatda 1-fasl) natijani qaytaradi va False beradi.
+    """
     if not results:
-        return None
+        return None, False
+    if season and season > 1:
+        for r in results:
+            if _matches_season(r, season):
+                return r, True
+        return results[0], False
     q = query.strip().lower()
     for r in results:
         names = {(r.get("title") or "").lower(), (r.get("title_english") or "").lower()}
         if q in names:
-            return r
-    return results[0]
+            return r, True
+    return results[0], True
 
 
 def _map_status(raw: str | None) -> str:
@@ -205,12 +241,27 @@ async def build_content_info(english_title: str) -> dict:
     """
     facts: dict | None = None
     sources: list[str] = []
+    note = ""
+    base_query, season = split_season(english_title)
     async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         try:
-            best = _pick_best(await _jikan_search(session, english_title), english_title)
+            # Avval to'liq nom, topilmasa fasl qo'shimchasiz nom bilan qidiramiz
+            results: list[dict] = []
+            for variant in dict.fromkeys([english_title.strip(), base_query]):
+                results = await _jikan_search(session, variant)
+                if results:
+                    break
+                await asyncio.sleep(0.4)
+            best, season_ok = _pick_best(results, base_query, season)
             if best:
                 facts = jikan_to_fields(best)
                 sources.append("MyAnimeList")
+                if not season_ok:
+                    # Boshqa fasl ma'lumoti — raqamlarni noto'g'ri qo'ymaymiz
+                    note = (f"{season}-fasl MyAnimeList'da topilmadi: janr/tavsif umumiy serialdan olindi, "
+                            "yil/reyting/qismlarni qo'lda kiriting.")
+                    for k in ("year", "rating", "total_episodes", "episodes_count", "duration"):
+                        facts[k] = None if k in ("year", "duration") else 0
         except Exception:
             logger.warning("Jikan xato", exc_info=True)
         ai = await _gemini_enrich(session, english_title, facts)
@@ -236,8 +287,9 @@ async def build_content_info(english_title: str) -> dict:
         "total_episodes": facts.get("total_episodes") or 0,
         "episodes_count": facts.get("episodes_count") or 0,
         "duration": facts.get("duration"),
-        "status": facts.get("status") or "ongoing",
+        "status": (facts.get("status") if not note else None) or "ongoing",
         "image_url": facts.get("image_url"),
         "matched_title": facts.get("matched_title") or "",
+        "note": note,
         "sources": sources,
     }

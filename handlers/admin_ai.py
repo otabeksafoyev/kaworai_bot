@@ -49,9 +49,10 @@ def _confirm_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="✅ To'g'ri, saqlash", callback_data="aiadd_ok", style="success")],
+            [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="aiadd_edit", style="primary")],
             [
-                InlineKeyboardButton(text="🔄 AI bilan qaytadan", callback_data="aiadd_retry", style="primary"),
-                InlineKeyboardButton(text="✍️ Qo'lda davom", callback_data="aiadd_manual", style="primary"),
+                InlineKeyboardButton(text="🔄 AI qaytadan", callback_data="aiadd_retry", style="primary"),
+                InlineKeyboardButton(text="✍️ Noldan qo'lda", callback_data="aiadd_manual", style="primary"),
             ],
             [InlineKeyboardButton(text="🚫 Bekor qilish", callback_data="aiadd_cancel", style="danger")],
         ]
@@ -248,9 +249,11 @@ def _preview_text(d: dict) -> str:
         desc = desc[:600] + "…"
     src = " + ".join(d.get("sources") or []) or "hech narsa topilmadi"
     matched = d.get("matched_title")
+    note = d.get("note")
     lines = [
         f"🤖 <b>AI natijasi</b>  <i>({esc(src)})</i>",
         f"🔗 Topilgan nom: <b>{esc(matched)}</b>" if matched else "⚠️ MyAnimeList'dan topilmadi — ma'lumotlarni tekshiring",
+        f"⚠️ {esc(note)}" if note else "",
         "",
         f"🆔 <code>{d['anime_id']}</code>  •  📝 <b>{esc(d['title'])}</b>",
         f"📁 Tur: {TYPE_LABEL.get(d.get('content_type'), d.get('content_type'))}",
@@ -266,6 +269,13 @@ def _preview_text(d: dict) -> str:
         "<b>To'g'rimi?</b>",
     ]
     return "\n".join(lines)
+
+
+def _render_preview(data: dict) -> str:
+    """Joriy FSM qiymatlaridan (tahrirlar hisobga olingan holda) ko'rinish matni."""
+    ai = data.get("ai") or {}
+    merged = {**data, "sources": ai.get("sources"), "matched_title": ai.get("matched_title"), "note": ai.get("note")}
+    return _preview_text(merged)
 
 
 @ai_admin_router.message(AddAnimeAI.waiting_english, F.text)
@@ -314,9 +324,7 @@ async def ai_get_english(msg: Message, state: FSMContext):
         season=1,
     )
     await state.set_state(AddAnimeAI.confirm)
-    data = await state.get_data()
-    await msg.answer(_preview_text({**data, **info, "anime_id": data["anime_id"], "title": data["title"]}),
-                     parse_mode="HTML", reply_markup=_confirm_kb())
+    await msg.answer(_render_preview(await state.get_data()), parse_mode="HTML", reply_markup=_confirm_kb())
 
 
 # ─── 6) Tasdiqlash ────────────────────────────────────────────────────
@@ -380,3 +388,170 @@ async def ai_confirm_cancel(call: types.CallbackQuery, state: FSMContext):
         pass
     await call.message.answer("❌ Bekor qilindi.", reply_markup=admin_main_kb)
     await call.answer()
+
+
+# ─── 7) Tahrirlash ────────────────────────────────────────────────────
+
+EDIT_FIELDS = [
+    ("title", "📝 Nom"), ("content_type", "📁 Tur"),
+    ("genres", "🎭 Janr"), ("tags", "🏷 Teglar"),
+    ("mood", "😌 Mood"), ("status", "📊 Status"),
+    ("year", "📅 Yil"), ("rating", "⭐ Reyting"),
+    ("episodes_count", "🎞 Qismlar"), ("duration", "⏱ Davomiylik"),
+    ("desc", "📖 Tavsif"),
+]
+EDIT_HINTS = {
+    "title": "Yangi nomni yuboring.",
+    "genres": "Janrlarni vergul bilan yozing. Masalan: <code>Jang, Fantaziya, Drama</code>",
+    "tags": "Teglarni vergul bilan yozing (inglizcha). Masalan: <code>revenge, magic</code>",
+    "mood": f"Mood'larni vergul bilan yozing. Masalan: <code>dark, emotional</code>\nMumkin: {esc(', '.join(__import__('utils.ai_anime', fromlist=['ALLOWED_MOODS']).ALLOWED_MOODS))}",
+    "year": "Yilni yozing (masalan <code>2026</code>) yoki tozalash uchun <code>-</code>.",
+    "rating": "Reytingni yozing, 0 dan 10 gacha (masalan <code>8.4</code>) yoki <code>-</code>.",
+    "episodes_count": "Qismlar sonini yozing (masalan <code>12</code>).",
+    "duration": "Bir qism davomiyligini daqiqada yozing (masalan <code>24</code>) yoki <code>-</code>.",
+    "desc": "Yangi tavsifni yuboring (1-1500 belgi).",
+}
+
+
+def _edit_menu_kb() -> InlineKeyboardMarkup:
+    rows, row = [], []
+    for key, label in EDIT_FIELDS:
+        row.append(InlineKeyboardButton(text=label, callback_data=f"aiedit:{key}", style="primary"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="aiedit_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _enum_kb(field: str) -> InlineKeyboardMarkup:
+    options = TYPE_LABEL if field == "content_type" else STATUS_LABEL
+    rows = [[InlineKeyboardButton(text=label, callback_data=f"aival:{field}:{val}", style="primary")]
+            for val, label in options.items()]
+    rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="aiadd_edit")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _refresh_preview(message: Message, state: FSMContext) -> None:
+    """Mavjud ko'rinish xabarini yangilangan matn bilan almashtiradi."""
+    await message.edit_text(_render_preview(await state.get_data()), parse_mode="HTML", reply_markup=_confirm_kb())
+
+
+@ai_admin_router.callback_query(F.data == "aiadd_edit", AddAnimeAI.confirm)
+async def ai_edit_menu(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    await call.message.edit_reply_markup(reply_markup=_edit_menu_kb())
+    await call.answer("Qaysi maydonni o'zgartiramiz?")
+
+
+@ai_admin_router.callback_query(F.data == "aiedit_back", AddAnimeAI.confirm)
+async def ai_edit_back(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    await call.message.edit_reply_markup(reply_markup=_confirm_kb())
+    await call.answer()
+
+
+@ai_admin_router.callback_query(F.data.startswith("aiedit:"), AddAnimeAI.confirm)
+async def ai_edit_pick(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    field = call.data.split(":", 1)[1]
+    if field in ("content_type", "status"):
+        await call.message.edit_reply_markup(reply_markup=_enum_kb(field))
+        return await call.answer()
+    if field not in EDIT_HINTS:
+        return await call.answer("Noma'lum maydon")
+    current = (await state.get_data()).get(field)
+    if isinstance(current, list):
+        current = ", ".join(current)
+    await state.update_data(edit_field=field, preview_msg_id=call.message.message_id)
+    await state.set_state(AddAnimeAI.editing)
+    await call.message.answer(
+        f"✏️ <b>{dict(EDIT_FIELDS)[field]}</b>\n"
+        f"Hozir: <code>{esc(str(current if current not in (None, '') else '—'))[:300]}</code>\n\n"
+        f"{EDIT_HINTS[field]}",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@ai_admin_router.callback_query(F.data.startswith("aival:"), AddAnimeAI.confirm)
+async def ai_edit_enum(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    _, field, value = call.data.split(":", 2)
+    allowed = TYPE_LABEL if field == "content_type" else STATUS_LABEL
+    if field not in ("content_type", "status") or value not in allowed:
+        return await call.answer("Noto'g'ri qiymat")
+    await state.update_data(**{field: value})
+    await _refresh_preview(call.message, state)
+    await call.answer("✅ O'zgartirildi")
+
+
+def _parse_edit(field: str, raw: str):
+    """(qiymat, xato_matni) qaytaradi."""
+    from handlers.genres import normalize_genre
+    from utils.ai_anime import ALLOWED_MOODS
+
+    raw = raw.strip()
+    clear = raw in ("-", "—")
+    if field == "title":
+        return (raw, None) if raw else (None, "Nom bo'sh bo'lmasin.")
+    if field == "desc":
+        if not raw or clear:
+            return None, "Tavsif bo'sh bo'lmasin."
+        return raw[:1500], None
+    if field in ("tags", "mood", "genres"):
+        parts = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
+        if field == "genres":
+            good = [g for g in dict.fromkeys(normalize_genre(p) for p in parts) if g in GENRES]
+            bad = [p for p in parts if normalize_genre(p) not in GENRES]
+            if not good:
+                return None, "Janr topilmadi. Mumkin: " + ", ".join(GENRES.keys())
+            if bad:
+                return None, f"Tanilmadi: {', '.join(bad)}. Mumkin: " + ", ".join(GENRES.keys())
+            return good, None
+        parts = [p.lower() for p in parts]
+        if field == "mood":
+            bad = [p for p in parts if p not in ALLOWED_MOODS]
+            if bad:
+                return None, f"Tanilmadi: {', '.join(bad)}. Mumkin: {', '.join(ALLOWED_MOODS)}"
+        return list(dict.fromkeys(parts))[:8], None
+    if field in ("year", "duration", "rating") and clear:
+        return (0.0 if field == "rating" else None), None
+    try:
+        if field == "rating":
+            val = float(raw.replace(",", "."))
+            return (round(val, 1), None) if 0 <= val <= 10 else (None, "Reyting 0 dan 10 gacha bo'lsin.")
+        val = int(raw)
+    except ValueError:
+        return None, "Faqat son yozing."
+    if field == "year" and not 1950 <= val <= 2100:
+        return None, "Yil 1950–2100 oralig'ida bo'lsin."
+    if field in ("episodes_count", "duration") and not 0 <= val <= 5000:
+        return None, "0 dan 5000 gacha son yozing."
+    return val, None
+
+
+@ai_admin_router.message(AddAnimeAI.editing, F.text)
+async def ai_edit_value(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    data = await state.get_data()
+    field = data.get("edit_field")
+    if msg.text != CANCEL_TEXT:
+        value, error = _parse_edit(field, msg.text)
+        if error:
+            return await msg.answer(f"❌ {error}\nQayta yuboring yoki «{CANCEL_TEXT}» ni bosing.", parse_mode="HTML")
+        update = {field: value}
+        if field == "episodes_count":
+            update["total_episodes"] = value
+        await state.update_data(**update)
+    await state.set_state(AddAnimeAI.confirm)
+    await msg.answer("✅ Yangilandi." if msg.text != CANCEL_TEXT else "Bekor qilindi.", reply_markup=admin_main_kb)
+    await msg.answer(_render_preview(await state.get_data()), parse_mode="HTML", reply_markup=_confirm_kb())
