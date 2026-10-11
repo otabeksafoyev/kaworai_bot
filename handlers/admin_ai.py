@@ -15,11 +15,11 @@ import logging
 from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from data import config
 from database.engine import AsyncSessionLocal
-from database.models import Anime
+from database.models import Anime, BotSetting
 from handlers.admin import (
     TYPE_KB,
     _get_telegram_file_url,
@@ -33,7 +33,7 @@ from handlers.admin import (
     is_admin,
 )
 from handlers.genres import GENRES
-from states.admin_states import AddAnime, AddAnimeAI
+from states.admin_states import AddAnime, AddAnimeAI, InlineDefaultThumb
 from utils.ai_anime import build_content_info
 from utils.security import esc
 from utils.ui import sym
@@ -212,7 +212,7 @@ async def ai_get_inline_photo(msg: Message, state: FSMContext):
         return await msg.answer("✕ Rasmdan URL olinmadi. URL yuboring yoki o'tkazib yuboring.")
     await state.update_data(inline_thumbnail_url=url)
     await state.set_state(AddAnimeAI.waiting_trailer)
-    await msg.answer("✓ Inline rasm qabul qilindi.")
+    await msg.answer(f"✓ Inline rasm qabul qilindi.\n▣ {_inline_status(url)}")
     await _ask_trailer(msg)
 
 
@@ -320,6 +320,17 @@ async def ai_get_title(msg: Message, state: FSMContext):
 
 # ─── 5) Inglizcha nom → AI ────────────────────────────────────────────
 
+def _inline_status(url: str | None) -> str:
+    """Inline rasm manbasini ko'rsatadi: ishonchli (ImgBB) yoki zaxira (Telegram CDN)."""
+    if not url:
+        return "! yo'q (qidiruvda admin belgilagan standart rasm chiqadi)"
+    if "ibb.co" in url:
+        return "✓ ImgBB (doimiy)"
+    if "api.telegram.org" in url:
+        return "! Telegram CDN — ImgBB ishlamadi, rasm qidiruvda chiqmasligi mumkin"
+    return "✓ URL"
+
+
 def _preview_text(d: dict) -> str:
     genres = ", ".join(GENRES.get(g, g) for g in d.get("genres") or []) or "—"
     tags = ", ".join(d.get("tags") or []) or "—"
@@ -343,7 +354,7 @@ def _preview_text(d: dict) -> str:
         f"◎ Yil: {d.get('year') or '—'}  •  ★ Reyting: {d.get('rating') or '—'}",
         f"๏ Qismlar: {d.get('episodes_count') or '—'}  •  ◷ {d.get('duration') or '—'} daq",
         f"◈ Status: {STATUS_LABEL.get(d.get('status'), d.get('status'))}",
-        "▣ Inline rasm: " + ("✓ bor" if d.get("inline_thumbnail_url") else "! yo'q (qidiruvda rasm chiqmaydi)"),
+        "▣ Inline rasm: " + _inline_status(d.get("inline_thumbnail_url")),
         "",
         f"๏ {esc(desc)}",
         "",
@@ -657,3 +668,109 @@ async def ai_edit_photo(msg: Message, state: FSMContext):
     await state.set_state(AddAnimeAI.confirm)
     await msg.answer("✓ Yangilandi.", reply_markup=admin_main_kb)
     await msg.answer(_render_preview(await state.get_data()), parse_mode="HTML", reply_markup=_confirm_kb())
+
+
+# ─── 8) Inline qidiruv standart rasmi (admin belgilaydi) ─────────────
+
+def _inthumb_kb(has_value: bool) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text="▣ Rasm yoki URL yuborish", callback_data="inthumb_set")]]
+    if has_value:
+        rows.append([InlineKeyboardButton(text="✕ Standart rasmni o'chirish", callback_data="inthumb_del")])
+    rows.append([InlineKeyboardButton(text="ᐊ Orqaga", callback_data="gthumb_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _get_inthumb() -> str | None:
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(select(BotSetting).where(BotSetting.key == "inline_default_thumb"))).scalar_one_or_none()
+        return row.value if row and row.value else None
+
+
+async def _set_inthumb(url: str | None) -> None:
+    async with AsyncSessionLocal() as session:
+        await session.execute(delete(BotSetting).where(BotSetting.key == "inline_default_thumb"))
+        if url:
+            session.add(BotSetting(key="inline_default_thumb", value=url))
+        await session.commit()
+    from handlers.inline import reset_default_thumb_cache
+
+    reset_default_thumb_cache()
+
+
+@ai_admin_router.callback_query(F.data == "inthumb_menu")
+async def inthumb_menu(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    await state.clear()
+    current = await _get_inthumb()
+    text = (
+        "▣ <b>Inline standart rasm</b>\n\n"
+        "Kontentning o'z inline rasmi bo'lmasa, qidiruvda shu rasm chiqadi.\n\n"
+        f"Holat: <b>{'✓ ' + _inline_status(current) if current else '✕ belgilanmagan (rasm chiqmaydi)'}</b>\n\n"
+        "<i>Tavsiya: kvadrat yoki portret rasm.</i>"
+    )
+    try:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=_inthumb_kb(bool(current)))
+    except Exception:
+        await call.message.answer(text, parse_mode="HTML", reply_markup=_inthumb_kb(bool(current)))
+    await call.answer()
+
+
+@ai_admin_router.callback_query(F.data == "inthumb_set")
+async def inthumb_set(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    await state.set_state(InlineDefaultThumb.waiting)
+    await call.message.answer(
+        "▣ <b>Standart inline rasm</b>\n\nKvadrat/portret <b>rasm</b> yuboring (o'zim URL qilaman) "
+        "yoki <b>https://</b> URL yozing ᐁ",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await call.answer()
+
+
+@ai_admin_router.message(InlineDefaultThumb.waiting, F.photo)
+async def inthumb_photo(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    photo = msg.photo[-1]
+    if photo.height and photo.width / photo.height > 1.05:
+        return await msg.answer("❌ Rasm keng (landscape). Kvadrat yoki portret rasm yuboring (yoki URL).")
+    url = await _photo_to_url(msg.bot, photo, "inline_default")
+    if not url:
+        return await msg.answer("❌ Rasmdan URL olinmadi. URL yuboring yoki qayta urinib ko'ring.")
+    await _set_inthumb(url)
+    await state.clear()
+    await msg.answer(f"✅ Standart inline rasm saqlandi.\n▣ {_inline_status(url)}", reply_markup=admin_main_kb)
+
+
+@ai_admin_router.message(InlineDefaultThumb.waiting, F.text)
+async def inthumb_text(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == CANCEL_TEXT:
+        await state.clear()
+        return await msg.answer("Bekor.", reply_markup=admin_main_kb)
+    url = msg.text.strip()
+    if not url.startswith("http"):
+        return await msg.answer("❌ Rasm yuboring yoki https:// bilan boshlanadigan URL yozing.")
+    await _set_inthumb(url)
+    await state.clear()
+    await msg.answer("✅ Standart inline rasm saqlandi.", reply_markup=admin_main_kb)
+
+
+@ai_admin_router.callback_query(F.data == "inthumb_del")
+async def inthumb_del(call: types.CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    await _set_inthumb(None)
+    await call.answer("O'chirildi")
+    try:
+        await call.message.edit_text(
+            "▣ <b>Inline standart rasm</b>\n\nHolat: <b>✕ belgilanmagan</b>",
+            parse_mode="HTML",
+            reply_markup=_inthumb_kb(False),
+        )
+    except Exception:
+        pass

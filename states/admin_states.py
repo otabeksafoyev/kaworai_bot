@@ -152,3 +152,8 @@ class AddAdState(StatesGroup):
 # 🔹 Pro yozuv boshqaruv — admin Pro reklama matnini o'zgartirishi
 class EditProTextState(StatesGroup):
     waiting_text = State()
+
+
+# 🔹 Inline qidiruv uchun standart rasm (kontentning o'z rasmi bo'lmasa)
+class InlineDefaultThumb(StatesGroup):
+    waiting = State()

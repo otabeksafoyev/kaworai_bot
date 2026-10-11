@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 
 user_router = Router()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "kaworai_uz_bot")
+from utils.gamification import ENABLED as GAME_ON
 from utils.gamification import streak_line, touch_streak, uz_now
+from utils.live_stats import get_live_stats
 from utils.season import current_season, season_banner
 from utils.ui import DIV1, sym, greeting, parse_start_args, progress_bar, rating_stars, share_anime_url  # noqa: E402
 PHOTO_URL = "https://i.postimg.cc/zDpjp9Mz/kawaro-(1)-(3).jpg"
@@ -573,6 +575,15 @@ _PRO_START_SHORTCUTS: dict[str, str] = {
 }
 
 
+def _menu_bottom_rows() -> list[list[InlineKeyboardButton]]:
+    """Pro + taklif (+ o'yin elementlari yoqilgan bo'lsa profil)."""
+    pro = InlineKeyboardButton(text="ϟ Kaworai Pro", callback_data="kawaii_pass")
+    ref = InlineKeyboardButton(text="✧ Do'st taklif qilish", callback_data="referral")
+    if GAME_ON:
+        return [[pro], [InlineKeyboardButton(text="✦ Mening profilim", callback_data="my_profile"), ref]]
+    return [[pro, ref]]
+
+
 def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if pro_extras:
@@ -598,11 +609,7 @@ def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboar
                 InlineKeyboardButton(text="№ Kod orqali qidirish", callback_data="search_by_code"),
                 InlineKeyboardButton(text="♡ Obunalarim", callback_data="my_subs"),
             ],
-            [InlineKeyboardButton(text="ϟ Kaworai Pro", callback_data="kawaii_pass")],
-            [
-                InlineKeyboardButton(text="✦ Mening profilim", callback_data="my_profile"),
-                InlineKeyboardButton(text="✧ Do'st taklif qilish", callback_data="referral"),
-            ],
+            *_menu_bottom_rows(),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -631,10 +638,11 @@ async def send_main_menu(target, delete_prev: bool = False):
     else:
         msg = target
         user_id = target.from_user.id if target.from_user else 0
-    caption = f"{DIV1}\n๏ <b>Kaworai</b> — Anime & Dorama\n{DIV1}\n✦ <i>Sevimli kontentingizni toping</i>"
+    caption = "๏ <b>Kaworai</b> — Anime & Dorama\n✦ <i>Sevimli kontentingizni toping</i>"
     # Salomlashish: faqat haqiqiy foydalanuvchi bo'lsa (callback xabarining from_user'i bot bo'ladi)
     _u = target.from_user if isinstance(target, types.CallbackQuery) else (target.from_user if target.from_user and not target.from_user.is_bot else None)
-    head = []
+    online, _total = await get_live_stats()
+    head = [f"● <b>{max(online, 1)}</b> kishi online"]
     if _u and _u.first_name:
         head.append(f"<b>{greeting()}, {html.escape(_u.first_name)}!</b> Bugun nima ko'ramiz?")
     _streak = streak_line(user_id) if user_id else ""
@@ -643,8 +651,8 @@ async def send_main_menu(target, delete_prev: bool = False):
     _season = current_season(uz_now().date())
     if _season:
         head.append(f"<i>{_season[1]}</i>")
-    if head:
-        caption = "\n".join(head) + "\n\n" + caption
+    # Bitta ajratgich: yuqorida salom/holat, pastda sarlavha
+    caption = "\n".join(head) + f"\n{DIV1}\n" + caption
     photo = season_banner(_season[0] if _season else None) or PHOTO_URL
     extras = await _get_user_start_extras(user_id) if user_id else []
     kb = get_main_menu_keyboard(extras)

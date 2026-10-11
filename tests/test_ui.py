@@ -72,3 +72,12 @@ def test_sym_keeps_existing_symbols():
     assert sym("★★☆☆☆") == "★★☆☆☆"
     assert sym("→ keyingi") == "→ keyingi"
     assert sym("🎉 Tabrik! 🆔 5") == "✧ Tabrik! № 5"
+
+
+def test_inline_status_labels():
+    from handlers.admin_ai import _inline_status
+
+    assert "standart" in _inline_status(None)
+    assert "ImgBB" in _inline_status("https://i.ibb.co/x/a.jpg")
+    assert "Telegram CDN" in _inline_status("https://api.telegram.org/file/bot1/x.jpg")
+    assert _inline_status("https://example.com/a.jpg") == "✓ URL"

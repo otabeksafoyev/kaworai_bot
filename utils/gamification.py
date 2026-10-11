@@ -18,9 +18,12 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from database.models import Anime, AnimeSubscription, User, UserEpisodeSeen
+from data import config
 from utils.ui import DIV1, DIV2, EFFECT_CONFETTI, current_bot, progress_bar, send_with_effect
 
 logger = logging.getLogger(__name__)
+
+ENABLED = bool(getattr(config, "GAMIFICATION_ENABLED", False))
 
 XP_EPISODE = 10
 XP_RATING = 5
@@ -105,7 +108,7 @@ def earned_badges(stats: dict) -> list[str]:
 def streak_line(user_id: int) -> str:
     """Bosh menyu uchun: 'ϟ 5 kun ketma-ket!' (bugungi kesh bo'lsa va 2+ kun bo'lsa)."""
     item = STREAK_CACHE.get(user_id)
-    if item and item[0] == uz_now().date() and item[1] >= 2:
+    if ENABLED and item and item[0] == uz_now().date() and item[1] >= 2:
         return f"ϟ <b>{item[1]} kun ketma-ket!</b>"
     return ""
 
@@ -160,6 +163,8 @@ def _notify(user_id: int, old_level: int, user: User, new_badges: list[str]) -> 
 
 async def _grant(session, user_id: int, xp: int = 0, counters: dict | None = None, extra: dict | None = None) -> None:
     """XP va hisoblagichlarni atomik oshiradi, daraja/nishonlarni tekshiradi, kerak bo'lsa xabar yuboradi."""
+    if not ENABLED:
+        return
     user = await session.get(User, user_id)
     if user is None:
         return
@@ -188,6 +193,8 @@ async def _grant(session, user_id: int, xp: int = 0, counters: dict | None = Non
 
 async def touch_streak(session, user_id: int) -> int:
     """Kunlik seriyani yangilaydi (kuniga bir marta yozadi). Joriy seriyani qaytaradi."""
+    if not ENABLED:
+        return 0
     user = await session.get(User, user_id)
     if user is None:
         return 0
@@ -209,6 +216,8 @@ async def touch_streak(session, user_id: int) -> int:
 # ─── Hodisalar (best-effort) ──────────────────────────────────────────
 
 async def on_episode(session, user_id: int, anime_id: int, episode: int) -> None:
+    if not ENABLED:
+        return
     try:
         await touch_streak(session, user_id)
         seen = await session.execute(
@@ -247,6 +256,8 @@ async def on_episode(session, user_id: int, anime_id: int, episode: int) -> None
 
 async def on_rating(session, user_id: int) -> None:
     """Kontentga BIRINCHI marta baho berilganda chaqiriladi."""
+    if not ENABLED:
+        return
     try:
         await _grant(session, user_id, XP_RATING, {"ratings_given": 1})
     except Exception:
@@ -255,6 +266,8 @@ async def on_rating(session, user_id: int) -> None:
 
 async def on_favorite(session, user_id: int) -> None:
     """Obuna qo'shilganda — faqat nishon tekshiriladi (ochko yo'q: qayta-qayta bosib ochko yig'ib bo'lmasin)."""
+    if not ENABLED:
+        return
     try:
         favs = (
             await session.execute(select(func.count(AnimeSubscription.id)).where(AnimeSubscription.user_id == user_id))
@@ -265,6 +278,8 @@ async def on_favorite(session, user_id: int) -> None:
 
 
 async def on_invite(session, user_id: int, invited_total: int) -> None:
+    if not ENABLED:
+        return
     try:
         await _grant(session, user_id, XP_INVITE, None, {"invites": invited_total})
     except Exception:

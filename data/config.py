@@ -60,3 +60,7 @@ GEMINI_MODEL = env.str("GEMINI_MODEL", "gemini-flash-latest")
 # Referal: taklif qilingan har bir do'st uchun beriladigan Pro kunlari va chegara
 REFERRAL_REWARD_DAYS = env.int("REFERRAL_REWARD_DAYS", 3)
 REFERRAL_MAX_REWARDS = env.int("REFERRAL_MAX_REWARDS", 30)
+
+# O'yin elementlari (daraja, seriya, nishonlar, profil). Standart: o'chiq.
+# Qayta yoqish uchun Railway'da GAMIFICATION_ENABLED=true qo'ying.
+GAMIFICATION_ENABLED = env.bool("GAMIFICATION_ENABLED", False)

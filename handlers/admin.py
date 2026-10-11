@@ -7341,6 +7341,7 @@ def _global_thumb_menu_kb(has_day: bool, has_night: bool) -> InlineKeyboardMarku
     night_label = "☾ Kechki rasm ✓" if has_night else "☾ Kechki rasm qo'shish"
     kb.row(InlineKeyboardButton(text=sym(day_label), callback_data="gthumb_set_day"))
     kb.row(InlineKeyboardButton(text=sym(night_label), callback_data="gthumb_set_night"))
+    kb.row(InlineKeyboardButton(text="▣ Inline standart rasm", callback_data="inthumb_menu"))
     if has_day or has_night:
         kb.row(InlineKeyboardButton(text="⌕ Thumbnail test (ID kiriting)", callback_data="gthumb_test"))
         kb.row(InlineKeyboardButton(text="✕ Kunduzgini o'chirish", callback_data="gthumb_del_day"))
