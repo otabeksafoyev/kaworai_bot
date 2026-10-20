@@ -309,13 +309,48 @@ async def ai_get_title(msg: Message, state: FSMContext):
     if not title:
         return await msg.answer("✕ Nom bo'sh bo'la olmaydi.")
     await state.update_data(title=title)
-    await state.set_state(AddAnimeAI.waiting_english)
+    await state.set_state(AddAnimeAI.waiting_type)
     await msg.answer(
+        "≡ <b>Kontent turini tanlang:</b>\n<i>AI shunga qarab to'g'ri manbadan qidiradi.</i>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=label, callback_data=f"aitype:{key}")]
+                for key, label in TYPE_LABEL.items()
+            ]
+        ),
+    )
+
+
+@ai_admin_router.callback_query(F.data.startswith("aitype:"), AddAnimeAI.waiting_type)
+async def ai_pick_type(call: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        return await call.answer()
+    key = call.data.split(":", 1)[1]
+    if key not in TYPE_LABEL:
+        return await call.answer("Noma'lum tur")
+    await state.update_data(chosen_type=key)
+    await state.set_state(AddAnimeAI.waiting_english)
+    try:
+        await call.message.edit_text(f"≡ Tur: <b>{TYPE_LABEL[key]}</b>", parse_mode="HTML")
+    except Exception:
+        pass
+    await call.message.answer(
         "⌕ <b>Inglizcha nomini yuboring</b> (AI topa olishi uchun):\n"
-        "<i>Masalan: Jujutsu Kaisen, Fullmetal Alchemist: Brotherhood</i>",
+        "<i>Masalan: Jujutsu Kaisen, Parasite, Squid Game</i>",
         parse_mode="HTML",
         reply_markup=cancel_kb,
     )
+    await call.answer()
+
+
+@ai_admin_router.message(AddAnimeAI.waiting_type)
+async def ai_type_other(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        return
+    if msg.text == CANCEL_TEXT:
+        return await _cancel(msg, state)
+    await msg.answer("≡ Turni yuqoridagi tugmalardan tanlang.")
 
 
 # ─── 5) Inglizcha nom → AI ────────────────────────────────────────────
@@ -343,7 +378,8 @@ def _preview_text(d: dict) -> str:
     note = d.get("note")
     lines = [
         f"◈ <b>AI natijasi</b>  <i>({esc(src)})</i>",
-        f"↗ Topilgan nom: <b>{esc(matched)}</b>" if matched else "! MyAnimeList'dan topilmadi — ma'lumotlarni tekshiring",
+        f"↗ Topilgan nom: <b>{esc(matched)}</b>" if matched else "! Aniq manbada topilmadi — ma'lumotlarni tekshiring",
+        *[f"! {esc(e)}" for e in (d.get("errors") or [])[:4]],
         f"! {esc(note)}" if note else "",
         "",
         f"№ <code>{d['anime_id']}</code>  •  ✎ <b>{esc(d['title'])}</b>",
@@ -366,7 +402,7 @@ def _preview_text(d: dict) -> str:
 def _render_preview(data: dict) -> str:
     """Joriy FSM qiymatlaridan (tahrirlar hisobga olingan holda) ko'rinish matni."""
     ai = data.get("ai") or {}
-    merged = {**data, "sources": ai.get("sources"), "matched_title": ai.get("matched_title"), "note": ai.get("note")}
+    merged = {**data, "sources": ai.get("sources"), "matched_title": ai.get("matched_title"), "note": ai.get("note"), "errors": ai.get("errors")}
     return _preview_text(merged)
 
 
@@ -380,12 +416,16 @@ async def ai_get_english(msg: Message, state: FSMContext):
     if not english:
         return await msg.answer("✕ Nom bo'sh bo'la olmaydi.")
 
+    chosen = (await state.get_data()).get("chosen_type", "anime")
     wait = await msg.answer("◌ AI ma'lumot yig'ayapti...")
     try:
-        info = await build_content_info(english)
-    except Exception:
+        info = await build_content_info(english, chosen)
+    except Exception as e:
         logger.exception("build_content_info xato")
-        info = {"content_type": "anime", "sources": [], "genres": [], "tags": [], "mood": [], "status": "ongoing"}
+        info = {
+            "content_type": chosen, "sources": [], "genres": [], "tags": [], "mood": [], "status": "ongoing",
+            "errors": [f"Ichki xato: {type(e).__name__}"],
+        }
     try:
         await wait.delete()
     except Exception:
