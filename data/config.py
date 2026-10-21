@@ -68,4 +68,4 @@ GAMIFICATION_ENABLED = env.bool("GAMIFICATION_ENABLED", False)
 # Kino/serial/dorama faktlari uchun (ixtiyoriy, bepul): https://www.themoviedb.org/settings/api
 TMDB_API_KEY = env.str("TMDB_API_KEY", "")
 # Gemini asosiy modeli javob bermasa (limit/model topilmadi) shu modellar sinab ko'riladi
-GEMINI_FALLBACK_MODELS = env.str("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite,gemini-2.5-flash")
+GEMINI_FALLBACK_MODELS = env.str("GEMINI_FALLBACK_MODELS", "")

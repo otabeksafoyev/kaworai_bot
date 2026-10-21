@@ -55,8 +55,11 @@ def test_parse_edit():
     assert _parse_edit("rating", "8,4") == (8.4, None)
     assert _parse_edit("rating", "11")[1]
     assert _parse_edit("episodes_count", "abc")[1]
-    assert _parse_edit("mood", "dark, emotional") == (["dark", "emotional"], None)
+    assert _parse_edit("mood", "dark, Jangari") == (["dark", "action"], None)   # kalit yoki o'zbekcha nom
+    assert _parse_edit("mood", "emotional")[1]                                    # botda bunday kayfiyat yo'q
     assert _parse_edit("mood", "zzz")[1]
+    assert _parse_edit("tags", "revenge, magic") == (["revenge", "magic"], None)
+    assert _parse_edit("tags", "revenge, bogus")[1]
     assert _parse_edit("genres", "Jang, Drama")[0] == ["Jang", "Drama"]
 
 

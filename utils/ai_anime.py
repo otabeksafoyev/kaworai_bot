@@ -13,6 +13,7 @@ Natija dict'ining kalitlari `_save_anime` kutgan FSM kalitlariga mos.
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import json
 import logging
 import re
@@ -21,6 +22,7 @@ import aiohttp
 
 from data import config
 from handlers.genres import GENRES, normalize_genre
+from utils.recommendation import MOOD_MAP, TEXT_TO_MOOD
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +33,29 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:ge
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=25)
 HTTP_HEADERS = {"User-Agent": "KaworaiBot/1.0 (+https://t.me/kaworai_uz_bot)"}
 
-ALLOWED_MOODS = [
-    "dark", "emotional", "funny", "relaxing", "intense",
-    "wholesome", "mysterious", "inspiring", "romantic", "thrilling",
-]
+# Botning o'z filtrlari (utils/recommendation.py) bilan bir xil lug'at — shunda qo'shilgan kontent
+# kayfiyat/teg/janr bo'yicha qidiruv va tavsiyalarda topiladi.
+ALLOWED_MOODS = list(MOOD_MAP)
+ALLOWED_TAGS = sorted({t for cfg in MOOD_MAP.values() for t in cfg["tags"]})
+MOOD_UZ = {
+    "sad": "G'amgin", "romantic": "Romantik", "dark": "Dark", "motivational": "Motivatsion",
+    "action": "Jangari", "funny": "Kulgili", "mystery": "Sirli", "chill": "Chill",
+    "fantasy": "Fantastik", "scary": "Qo'rqinchli",
+}
+_MOOD_ALIASES = {
+    **{m: m for m in MOOD_MAP},
+    **{kw.lower(): m for m, kws in TEXT_TO_MOOD.items() for kw in kws},
+    **{label.lower(): m for m, label in MOOD_UZ.items()},
+}
+
+
+def normalize_mood(text: str | None) -> str | None:
+    """'Jangari' / 'action' / 'kulgili' → botdagi mood kaliti."""
+    return _MOOD_ALIASES.get((text or "").strip().lower())
+
+
+def mood_label(key: str) -> str:
+    return MOOD_UZ.get(key, key)
 CONTENT_TYPES = ["anime", "movie", "serial", "dorama"]
 STATUSES = ["ongoing", "completed", "announced"]
 
@@ -195,6 +216,7 @@ async def _tmdb_facts(session: aiohttp.ClientSession, query: str, content_type: 
         "genres": _split_genre_names([g.get("name", "") for g in d.get("genres") or []]),
         "synopsis_en": (d.get("overview") or "").strip(),
         "image_url": None,
+        "raw_names": [p.strip().lower() for g in d.get("genres") or [] for p in re.split(r"\s*&\s*|,", g.get("name", ""))],
     }
 
 
@@ -296,6 +318,11 @@ def jikan_to_fields(item: dict) -> dict:
         "genres": _map_genres(item),
         "synopsis_en": (item.get("synopsis") or "").strip(),
         "image_url": images.get("large_image_url") or images.get("image_url"),
+        "raw_names": [
+            (g.get("name") or "").lower()
+            for key in ("genres", "themes", "demographics")
+            for g in item.get(key) or []
+        ],
     }
 
 
@@ -318,12 +345,14 @@ def _build_prompt(english_title: str, facts: dict | None, content_type: str) -> 
         )
     else:
         base += "Aniq manba topilmadi — o'zing bilganingga tayan; bilmasang null yoki bo'sh qoldir, to'qima.\n"
+    mood_help = "; ".join(f"{k} ({MOOD_UZ[k]})" for k in ALLOWED_MOODS)
     base += (
         "JSON maydonlari:\n"
-        "  description_uz: o'zbek tilida (lotin), 2-4 gap, spoilersiz, jozibali tavsif;\n"
+        "  description_uz: O'ZBEK tilida (lotin yozuvi), 2-4 gap, spoilersiz, jozibali tavsif. "
+        "Inglizcha so'z yoki '(Source: ...)' kabi manba izohlarini QO'SHMA;\n"
         f"  genres: faqat shu ro'yxatdan 1-4 ta tanla: [{genre_keys}];\n"
-        "  tags: 3-5 ta qisqa inglizcha kichik harfli teg (masalan revenge, survival);\n"
-        f"  mood: shu ro'yxatdan 1-3 ta: {ALLOWED_MOODS};\n"
+        f"  tags: 3-6 ta teg, FAQAT shu ro'yxatdan (aynan shunday yozilishi shart): {ALLOWED_TAGS};\n"
+        f"  mood: 1-3 ta kayfiyat, FAQAT shu kalitlardan: {mood_help};\n"
         "  year: chiqqan yil (son) yoki null;\n"
         "  episodes: qismlar soni (son) yoki null;\n"
         "  duration: bir qism davomiyligi daqiqada (son) yoki null;\n"
@@ -340,6 +369,46 @@ def _gemini_err(status: int) -> str:
     }.get(status, f"status {status}")
 
 
+_gemini_state: dict = {"model": None, "listed": [], "listed_at": 0.0}
+_MODEL_HINT_RE = re.compile(r"use models/([A-Za-z0-9._\-]+)")
+_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+def _rank_models(names: list[str]) -> list[str]:
+    """generateContent'li barqaror flash modellar: yangisi oldin, 'lite' va 'preview' keyin."""
+    bad = ("image", "tts", "live", "audio", "embed", "robotics", "computer", "thinking", "-exp", "learnlm")
+    ok = [n for n in names if n.startswith("gemini") and "flash" in n and not any(b in n for b in bad)]
+
+    def key(n: str):
+        nums = tuple(-int(x) for x in re.findall(r"\d+", n)[:3])
+        return ("preview" in n, "lite" in n, nums)
+
+    return sorted(ok, key=key)
+
+
+async def _discover_models(session: aiohttp.ClientSession, api_key: str) -> list[str]:
+    """Kalitga haqiqatan ochiq modellar (6 soat keshlanadi) — model nomlari o'zgarsa ham ishlaydi."""
+    import time
+
+    if _gemini_state["listed"] and time.monotonic() - _gemini_state["listed_at"] < 6 * 3600:
+        return _gemini_state["listed"]
+    try:
+        async with session.get(_MODELS_URL, params={"pageSize": 200}, headers={"x-goog-api-key": api_key}) as r:
+            if r.status != 200:
+                return []
+            models = (await r.json()).get("models") or []
+    except Exception:
+        return []
+    names = [
+        m["name"].removeprefix("models/")
+        for m in models
+        if "generateContent" in (m.get("supportedGenerationMethods") or [])
+    ]
+    ranked = _rank_models(names)[:4]
+    _gemini_state.update(listed=ranked, listed_at=time.monotonic())
+    return ranked
+
+
 async def _gemini_enrich(
     session: aiohttp.ClientSession, english_title: str, facts: dict | None, content_type: str, errors: list[str]
 ) -> dict | None:
@@ -347,36 +416,144 @@ async def _gemini_enrich(
     if not api_key:
         errors.append("Gemini: GEMINI_API_KEY qo'yilmagan")
         return None
-    models = [getattr(config, "GEMINI_MODEL", "gemini-flash-latest")]
-    models += [m.strip() for m in (getattr(config, "GEMINI_FALLBACK_MODELS", "") or "").split(",") if m.strip()]
+    configured = [getattr(config, "GEMINI_MODEL", "gemini-flash-latest")]
+    configured += [m.strip() for m in (getattr(config, "GEMINI_FALLBACK_MODELS", "") or "").split(",") if m.strip()]
+    queue = deque(([_gemini_state["model"]] if _gemini_state["model"] else []) + configured)
     body = {
         "contents": [{"parts": [{"text": _build_prompt(english_title, facts, content_type)}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.4},
     }
+    tried: set[str] = set()
+    discovered = False
     last = None
-    for model in dict.fromkeys(models):
+    while queue and len(tried) < 8:
+        model = queue.popleft()
+        if not model or model in tried:
+            if not queue and not discovered:
+                discovered = True
+                queue.extend(await _discover_models(session, api_key))
+            continue
+        tried.add(model)
         try:
-            async with session.post(GEMINI_URL.format(model=model), headers={"x-goog-api-key": api_key}, json=body) as resp:
-                if resp.status != 200:
-                    last = f"{model}: {_gemini_err(resp.status)}"
-                    logger.warning("Gemini %s status=%s %s", model, resp.status, (await resp.text())[:200])
-                    if resp.status in (400, 401, 403):
-                        break  # kalit muammosi — boshqa model yordam bermaydi
-                    continue  # 404/429/5xx — zaxira modelga o'tamiz
-                payload = await resp.json()
-            text = payload["candidates"][0]["content"]["parts"][0]["text"]
-            text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
-            data = json.loads(text)
-            if isinstance(data, dict):
-                return data
-            last = f"{model}: noto'g'ri javob"
+            async with session.post(
+                GEMINI_URL.format(model=model), headers={"x-goog-api-key": api_key}, json=body
+            ) as resp:
+                status = resp.status
+                err_body = (await resp.text()) if status != 200 else ""
+                payload = await resp.json() if status == 200 else None
+            if status != 200:
+                last = f"{model}: {_gemini_err(status)}"
+                logger.warning("Gemini %s status=%s %s", model, status, err_body[:200])
+                if status in (400, 401, 403):
+                    break  # kalit muammosi — boshqa model yordam bermaydi
+                hint = _MODEL_HINT_RE.search(err_body) if status == 404 else None
+                if hint and hint.group(1) not in tried:
+                    queue.appendleft(hint.group(1))  # Google o'zi yangi model nomini aytdi
+            else:
+                text = payload["candidates"][0]["content"]["parts"][0]["text"]
+                text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
+                data = json.loads(text)
+                if isinstance(data, dict):
+                    _gemini_state["model"] = model  # ishlagan modelni eslab qolamiz
+                    return data
+                last = f"{model}: noto'g'ri javob"
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             last = f"{model}: ulanib bo'lmadi ({type(e).__name__})"
         except Exception as e:  # JSON/tuzilma xatosi
             last = f"{model}: javob o'qilmadi ({type(e).__name__})"
             logger.warning("Gemini parse xato", exc_info=True)
+        if not queue and not discovered:
+            discovered = True
+            queue.extend(await _discover_models(session, api_key))
     errors.append(f"Gemini: {last}")
     return None
+
+
+# ─── Tarjima zaxirasi (Gemini ishlamasa tavsifni o'zbekchaga o'giradi) ──
+
+_SOURCE_NOTE_RE = re.compile(r"\s*[\(\[]\s*(?:Source|Written by)[^\)\]]*[\)\]]", re.IGNORECASE)
+
+
+def clean_synopsis(text: str | None) -> str:
+    """'(Source: Crunchyroll)', '[Written by MAL Rewrite]' kabi izohlarni olib tashlaydi."""
+    return _SOURCE_NOTE_RE.sub("", text or "").strip()
+
+
+def _chunks(text: str, limit: int = 900) -> list[str]:
+    out, cur = [], ""
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        if cur and len(cur) + len(sentence) + 1 > limit:
+            out.append(cur)
+            cur = ""
+        cur = f"{cur} {sentence}".strip()
+    if cur:
+        out.append(cur)
+    return out
+
+
+async def _translate_uz(session: aiohttp.ClientSession, text: str, errors: list[str]) -> str | None:
+    """Inglizcha → o'zbekcha (Google Tarjima'ning ochiq endpointi, kalitsiz)."""
+    url = "https://translate.googleapis.com/translate_a/single"
+    parts: list[str] = []
+    try:
+        for chunk in _chunks(text):
+            async with session.post(
+                url, params={"client": "gtx", "sl": "en", "tl": "uz", "dt": "t"}, data={"q": chunk}
+            ) as r:
+                if r.status != 200:
+                    errors.append(f"Tarjima: status {r.status}")
+                    return None
+                data = await r.json(content_type=None)
+            parts.append("".join(seg[0] for seg in data[0] if seg and seg[0]))
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        errors.append(f"Tarjima: ulanib bo'lmadi ({type(e).__name__})")
+        return None
+    except Exception as e:
+        errors.append(f"Tarjima: javob o'qilmadi ({type(e).__name__})")
+        return None
+    return " ".join(p.strip() for p in parts if p.strip()) or None
+
+
+# ─── Kayfiyat va teglar (botning o'z lug'ati) ────────────────────────
+
+def _genre_english(key: str) -> str:
+    """'SliceOfLife' kabi janr yorlig'ini 'slice of life' ga aylantiradi (heuristika uchun)."""
+    label = re.sub(r"[^A-Za-z ]", "", str(GENRES.get(key, key))).strip()
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", label).lower()
+
+
+def _clean_moods(values, limit: int = 3) -> list[str]:
+    out: list[str] = []
+    for v in values or []:
+        m = normalize_mood(str(v))
+        if m and m not in out:
+            out.append(m)
+    return out[:limit]
+
+
+def _clean_tags(values, limit: int = 6) -> list[str]:
+    out: list[str] = []
+    for v in values or []:
+        t = str(v).strip().lower()
+        if t in ALLOWED_TAGS and t not in out:
+            out.append(t)
+    return out[:limit]
+
+
+def derive_mood_tags(raw_names: list[str]) -> tuple[list[str], list[str]]:
+    """
+    AI ishlamaganda: manbadagi janr/mavzu nomlaridan (inglizcha) kayfiyat va teglarni chiqaradi.
+    Masalan {"action","fantasy"} → mood ["action","fantasy"], teglar ["adventure", ...].
+    """
+    names = {n.strip().lower() for n in raw_names if n}
+    tags = [t for t in ALLOWED_TAGS if t in names]
+    scored = []
+    for mood, cfg in MOOD_MAP.items():
+        score = len(names & set(cfg["genres"])) + len(names & set(cfg["tags"]))
+        if score:
+            scored.append((score, mood))
+    scored.sort(key=lambda x: -x[0])
+    return [m for _, m in scored[:3]], tags[:6]
 
 
 def _clean_list(values, allowed: list[str] | None = None, limit: int = 5) -> list[str]:
@@ -453,9 +630,17 @@ async def build_content_info(english_title: str, content_type: str = "anime") ->
         except Exception:
             logger.warning("manba qidirishda xato", exc_info=True)
             errors.append("Manbalarni qidirishda ichki xato")
+        if facts and facts.get("synopsis_en"):
+            facts["synopsis_en"] = clean_synopsis(facts["synopsis_en"])
         ai = await _gemini_enrich(session, english_title, facts, content_type, errors)
         if ai:
             sources.append("Gemini AI")
+        translated = None
+        if not (ai or {}).get("description_uz") and facts and facts.get("synopsis_en"):
+            # Gemini ishlamadi — tavsif baribir o'zbekcha bo'lsin
+            translated = await _translate_uz(session, facts["synopsis_en"], errors)
+            if translated:
+                sources.append("Google Tarjima")
 
     ai = ai or {}
     facts = facts or {}
@@ -470,14 +655,24 @@ async def build_content_info(english_title: str, content_type: str = "anime") ->
     status = facts.get("status") if have_facts else None
     if not status:
         status = ai.get("status") if (ai.get("status") in STATUSES and not note) else "ongoing"
-    desc = ai.get("description_uz") or facts.get("synopsis_en") or ""
+    # Tavsif faqat o'zbekcha: Gemini yoki tarjima. Ikkalasi ham bo'lmasa bo'sh (inglizcha qoldirilmaydi).
+    desc = (ai.get("description_uz") or translated or "").strip()
+
+    # Kayfiyat/teglar — botning o'z lug'atidan (qidiruv va tavsiyalar topishi uchun)
+    raw_names = list(facts.get("raw_names") or []) or [_genre_english(g) for g in genres]
+    d_moods, d_tags = derive_mood_tags(raw_names)
+    moods = _clean_moods(ai.get("mood")) or d_moods
+    tags = _clean_tags(ai.get("tags"))
+    for t in d_tags:
+        if t not in tags and len(tags) < 6:
+            tags.append(t)
 
     return {
         "content_type": content_type,
-        "desc": desc.strip()[:1500],
+        "desc": desc[:1500],
         "genres": genres,
-        "tags": _clean_list(ai.get("tags"), None, 5),
-        "mood": _clean_list(ai.get("mood"), ALLOWED_MOODS, 3),
+        "tags": tags,
+        "mood": moods,
         "year": year,
         "rating": facts.get("rating") or 0.0,
         "total_episodes": episodes,

@@ -369,7 +369,9 @@ def _inline_status(url: str | None) -> str:
 def _preview_text(d: dict) -> str:
     genres = ", ".join(GENRES.get(g, g) for g in d.get("genres") or []) or "—"
     tags = ", ".join(d.get("tags") or []) or "—"
-    mood = ", ".join(d.get("mood") or []) or "—"
+    from utils.ai_anime import mood_label
+
+    mood = ", ".join(mood_label(m) for m in d.get("mood") or []) or "—"
     desc = d.get("desc") or "—"
     if len(desc) > 600:
         desc = desc[:600] + "…"
@@ -532,8 +534,8 @@ EDIT_FIELDS = [
 EDIT_HINTS = {
     "title": "Yangi nomni yuboring.",
     "genres": "Janrlarni vergul bilan yozing. Masalan: <code>Jang, Fantaziya, Drama</code>",
-    "tags": "Teglarni vergul bilan yozing (inglizcha). Masalan: <code>revenge, magic</code>",
-    "mood": f"Mood'larni vergul bilan yozing. Masalan: <code>dark, emotional</code>\nMumkin: {esc(', '.join(__import__('utils.ai_anime', fromlist=['ALLOWED_MOODS']).ALLOWED_MOODS))}",
+    "tags": "Teglarni vergul bilan yozing (botdagi teglardan). Masalan: <code>revenge, magic, battle</code>",
+    "mood": "Mood'larni vergul bilan yozing. Masalan: <code>Jangari, Fantastik</code>\nMumkin: G'amgin, Romantik, Dark, Motivatsion, Jangari, Kulgili, Sirli, Chill, Fantastik, Qo'rqinchli",
     "year": "Yilni yozing (masalan <code>2026</code>) yoki tozalash uchun <code>-</code>.",
     "rating": "Reytingni yozing, 0 dan 10 gacha (masalan <code>8.4</code>) yoki <code>-</code>.",
     "episodes_count": "Qismlar sonini yozing (masalan <code>12</code>).",
@@ -628,8 +630,6 @@ async def ai_edit_enum(call: types.CallbackQuery, state: FSMContext):
 def _parse_edit(field: str, raw: str):
     """(qiymat, xato_matni) qaytaradi."""
     from handlers.genres import normalize_genre
-    from utils.ai_anime import ALLOWED_MOODS
-
     raw = raw.strip()
     clear = raw in ("-", "—")
     if field == "inline_thumbnail_url":
@@ -652,10 +652,20 @@ def _parse_edit(field: str, raw: str):
             return good, None
         parts = [p.lower() for p in parts]
         if field == "mood":
-            bad = [p for p in parts if p not in ALLOWED_MOODS]
+            from utils.ai_anime import MOOD_UZ, normalize_mood
+
+            moods = [normalize_mood(p) for p in parts]
+            bad = [p for p, m in zip(parts, moods) if m is None]
             if bad:
-                return None, f"Tanilmadi: {', '.join(bad)}. Mumkin: {', '.join(ALLOWED_MOODS)}"
-        return list(dict.fromkeys(parts))[:8], None
+                return None, f"Tanilmadi: {', '.join(bad)}. Mumkin: " + ", ".join(MOOD_UZ.values())
+            return list(dict.fromkeys(moods))[:3], None
+        if field == "tags":
+            from utils.ai_anime import ALLOWED_TAGS
+
+            bad = [p for p in parts if p not in ALLOWED_TAGS]
+            if bad:
+                return None, f"Bu teglar botda yo'q: {', '.join(bad)}.\nMumkin: " + ", ".join(ALLOWED_TAGS)
+        return list(dict.fromkeys(parts))[:6], None
     if field in ("year", "duration", "rating") and clear:
         return (0.0 if field == "rating" else None), None
     try:
