@@ -10,6 +10,7 @@ from data.config import BACKUP_CHANNEL_ID, GAMIFICATION_ENABLED
 from database.engine import engine, init_db
 from handlers.admin import admin_router
 from handlers.admin_ai import ai_admin_router
+from handlers.admin_start import start_admin_router
 from handlers.profile import profile_router
 from handlers.referral import referral_router
 from handlers.admin_pro import pro_admin_router
@@ -178,6 +179,7 @@ async def main():
 
     # Routerlar (pro_payment ENG BIRINCHI — kawaii_pass ni ushlaydi)
     dp.include_router(pro_payment_router)
+    dp.include_router(start_admin_router)
     dp.include_router(ai_admin_router)
     dp.include_router(admin_router)
     dp.include_router(pro_admin_router)

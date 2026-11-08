@@ -584,7 +584,9 @@ def _menu_bottom_rows() -> list[list[InlineKeyboardButton]]:
     return [[pro, ref]]
 
 
-def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboardMarkup:
+def get_main_menu_keyboard(
+    pro_extras: list[str] | None = None, custom: list[InlineKeyboardButton] | None = None
+) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if pro_extras:
         row: list[InlineKeyboardButton] = []
@@ -609,6 +611,7 @@ def get_main_menu_keyboard(pro_extras: list[str] | None = None) -> InlineKeyboar
                 InlineKeyboardButton(text="№ Kod orqali qidirish", callback_data="search_by_code"),
                 InlineKeyboardButton(text="♡ Obunalarim", callback_data="my_subs"),
             ],
+            *[list(c) for c in (custom[i : i + 2] for i in range(0, len(custom or []), 2))],
             *_menu_bottom_rows(),
         ]
     )
@@ -631,31 +634,38 @@ async def _get_user_start_extras(user_id: int) -> list[str]:
         return []
 
 
-async def send_main_menu(target, delete_prev: bool = False):
-    if isinstance(target, types.CallbackQuery):
-        msg = target.message
-        user_id = target.from_user.id
-    else:
-        msg = target
-        user_id = target.from_user.id if target.from_user else 0
-    caption = "๏ <b>Kaworai</b> — Anime & Dorama\n✦ <i>Sevimli kontentingizni toping</i>"
-    # Salomlashish: faqat haqiqiy foydalanuvchi bo'lsa (callback xabarining from_user'i bot bo'ladi)
-    _u = target.from_user if isinstance(target, types.CallbackQuery) else (target.from_user if target.from_user and not target.from_user.is_bot else None)
-    online, _total = await get_live_stats()
-    head = [f"● <b>{max(online, 1)}</b> kishi online"]
-    if _u and _u.first_name:
-        head.append(f"<b>{greeting()}, {html.escape(_u.first_name)}!</b> Bugun nima ko'ramiz?")
+async def build_start_view(user_id: int, tg_user: types.User | None):
+    """/start va "Menyu" uchun yagona ko'rinish: (rasm, matn, klaviatura)."""
+    from utils.start_cfg import custom_start_buttons, get_start_photo
+
+    head: list[str] = []
+    if tg_user and not tg_user.is_bot and tg_user.first_name:
+        head.append(f"<b>{greeting()}, {html.escape(tg_user.first_name)}!</b> Bugun nima ko'ramiz?")
     _streak = streak_line(user_id) if user_id else ""
     if _streak:
         head.append(_streak)
     _season = current_season(uz_now().date())
     if _season:
         head.append(f"<i>{_season[1]}</i>")
-    # Bitta ajratgich: yuqorida salom/holat, pastda sarlavha
-    caption = "\n".join(head) + f"\n{DIV1}\n" + caption
-    photo = season_banner(_season[0] if _season else None) or PHOTO_URL
+    head.append(DIV1)
+    head.append("<b>Kaworai</b> — Anime & Dorama")
+    caption = "\n".join(head)
+    photo = await get_start_photo() or season_banner(_season[0] if _season else None) or PHOTO_URL
     extras = await _get_user_start_extras(user_id) if user_id else []
-    kb = get_main_menu_keyboard(extras)
+    custom = await custom_start_buttons(user_id) if user_id else []
+    return photo, caption, get_main_menu_keyboard(extras, custom)
+
+
+async def send_main_menu(target, delete_prev: bool = False):
+    if isinstance(target, types.CallbackQuery):
+        msg = target.message
+        user_id = target.from_user.id
+        tg_user = target.from_user
+    else:
+        msg = target
+        user_id = target.from_user.id if target.from_user else 0
+        tg_user = target.from_user
+    photo, caption, kb = await build_start_view(user_id, tg_user)
     try:
         if delete_prev:
             try:
@@ -1268,13 +1278,11 @@ async def rate_cancel(call: types.CallbackQuery):
 @user_router.callback_query(F.data == "main_menu")
 async def go_main_menu(call: types.CallbackQuery):
     await call.answer()
-    caption = "๏ <b>Kaworai Anime Botga xush kelibsiz!</b>\n\n"
-    extras = await _get_user_start_extras(call.from_user.id)
-    kb = get_main_menu_keyboard(extras)
+    photo, caption, kb = await build_start_view(call.from_user.id, call.from_user)
 
     try:
         await call.message.edit_media(
-            media=InputMediaPhoto(media=PHOTO_URL, caption=caption, parse_mode="HTML"),
+            media=InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
             reply_markup=kb,
         )
         return

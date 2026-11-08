@@ -906,19 +906,14 @@ async def already_rated(call: CallbackQuery):
 
 @callback_router.callback_query(F.data == "main_menu")
 async def back_to_main(call: CallbackQuery):
-    from handlers.users import PHOTO_URL, _get_user_start_extras, get_main_menu_keyboard
+    from handlers.users import build_start_view
 
     try:
         await call.message.delete()
     except Exception:
         pass
-    extras = await _get_user_start_extras(call.from_user.id)
-    await call.message.answer_photo(
-        photo=PHOTO_URL,
-        caption="๏ <b>Kaworai</b> — Anime & Dorama\n\n✦ <i>Sevimli kontentingizni toping</i>",
-        reply_markup=get_main_menu_keyboard(extras),
-        parse_mode="HTML",
-    )
+    photo, caption, kb = await build_start_view(call.from_user.id, call.from_user)
+    await call.message.answer_photo(photo=photo, caption=caption, reply_markup=kb, parse_mode="HTML")
     await call.answer()
 
 

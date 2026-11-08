@@ -158,3 +158,13 @@ class EditProTextState(StatesGroup):
 # 🔹 Inline qidiruv uchun standart rasm (kontentning o'z rasmi bo'lmasa)
 class InlineDefaultThumb(StatesGroup):
     waiting = State()
+
+
+# 🔹 /start sozlash: rasm almashtirish va admin tugmalari qo'shish
+class StartCfg(StatesGroup):
+    photo = State()
+    label = State()
+    url = State()
+    text = State()
+    link_label = State()
+    link_url = State()

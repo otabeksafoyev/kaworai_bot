@@ -189,6 +189,7 @@ ADMIN_REPLY_BUTTONS: set[str] = {
     "◎ Regionlar",
     "✎ Pro yozuvi",
     "▣ Thumbnail sozlash",
+    "✦ Start sozlash",
     "ᐊ Chiqish",
     "✕ Bekor qilish",
 }
@@ -210,6 +211,7 @@ PERMS_ALL: list[tuple[str, str]] = [
     ("pro_manage", "◆ Pro boshqaruv"),
     ("top18", "★ Top 18"),
     ("backup", "≡ Baza zaxira"),
+    ("start_cfg", "✦ Start sozlash"),
 ]
 PERMS_KEYS: set[str] = {k for k, _ in PERMS_ALL}
 
@@ -224,6 +226,7 @@ _BUTTON_TO_PERM: dict[str, str] = {
     "◆ Pro boshqaruv": "pro_manage",
     "★ Top 18": "top18",
     "≡ Baza zaxira": "backup",
+    "✦ Start sozlash": "start_cfg",
 }
 
 
@@ -486,7 +489,7 @@ def _watch_kb(anime_id, extra_button: dict | None = None) -> InlineKeyboardMarku
     rows: list[list[InlineKeyboardButton]] = []
     if extra_button and extra_button.get("text") and extra_button.get("url"):
         rows.append([InlineKeyboardButton(text=sym(extra_button["text"]), url=extra_button["url"])])
-    rows.append([InlineKeyboardButton(text="✦ Ko'rish", url=_watch_url(anime_id))])
+    rows.append([InlineKeyboardButton(text="ᐅ Tomosha qilish", url=_watch_url(anime_id))])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -494,138 +497,64 @@ def _yn(val: bool) -> str:
     return "Ha" if val else "Yo'q"
 
 
+def _hashtag(name: str) -> str:
+    """'Sci-Fi' -> '#SciFi', 'Hayotiy drama' -> '#HayotiyDrama'."""
+    parts = _re_ep.findall(r"[\w']+", str(name), flags=_re_ep.UNICODE)
+    word = "".join(p[:1].upper() + p[1:] for p in parts).replace("'", "")
+    return f"#{word}" if word else ""
+
+
+def _post_meta_lines(anime: Anime, *, full: bool) -> list[str]:
+    type_label = {"anime": "Anime", "movie": "Kino", "serial": "Serial", "dorama": "Dorama"}
+    status_map = {"completed": "✓ Tugagan", "ongoing": "◌ Davom etmoqda", "announced": "ᐅ Tez kunda"}
+    lines = [f"๏ Tur: {type_label.get(anime.content_type or 'anime', 'Kontent')}"]
+    if anime.rating:
+        lines.append(f"★ Reyting: {float(anime.rating):.1f}/10")
+    lines.append("◉ Til: O'zbek")
+    tags = " ".join(t for t in (_hashtag(g) for g in (anime.genres or [])[:4]) if t)
+    if tags:
+        lines.append(f"๏ Janr: {tags}")
+    eps = anime.episodes_count or anime.total_episodes
+    if eps:
+        lines.append(f"▶ Qism: {eps}")
+    if full:
+        if anime.duration:
+            lines.append(f"◷ Davomiyligi: {anime.duration} daq")
+        status = status_map.get(anime.status or "")
+        if status:
+            lines.append(status)
+    lines.append(f"№ Kodi: <code>{anime.id}</code>")
+    return lines
+
+
+def _post_title(anime: Anime) -> str:
+    year = f" <i>({anime.year})</i>" if anime.year else ""
+    return f"⌕ <b>{esc(anime.title)}</b>{year}"
+
+
+def _post_desc_block(anime: Anime, limit: int) -> list[str]:
+    desc = (anime.description or "").strip()
+    if not desc:
+        return []
+    if len(desc) > limit:
+        desc = desc[:limit].rstrip() + "…"
+    return [f"<blockquote expandable>✎ <b>Qisqacha:</b> {esc(desc)}</blockquote>"]
+
+
 def _build_post_caption(anime: Anime) -> str:
     """
-    Anime uchun to'liq post caption quradi. Admin so'ragan bo'yicha
-    animening barcha ma'lumotlari (tur, nom, yil, janr, tag, mood, yulduz,
-    ovozlar, qism soni, davomiylik, holat, mashhurlik, Pro lock, yashirin
-    gem, tavsif) chiqadi — cheklashlar olib tashlandi, faqat tavsif
-    Telegram caption limitiga sig'ishi uchun 600 belgigacha qisqartiriladi.
+    Kanal posti (asosiy format): sarlavha, ajratgich, qisqa aniq ma'lumot, ajratgich,
+    ochiladigan (expandable) tavsif. Tag/kayfiyat/ovoz soni/ko'rishlar/mashhurlik/Pro-belgisi olib tashlangan.
     """
-    type_emoji = {"anime": "๏", "movie": "๏", "serial": "๏", "dorama": "๏"}
-    type_label = {"anime": "Anime", "movie": "Kino", "serial": "Serial", "dorama": "Dorama"}
-    emoji = type_emoji.get(anime.content_type or "anime", "๏")
-    type_str = type_label.get(anime.content_type or "anime", "—")
-
-    genres_str = ", ".join(anime.genres or []) or "—"
-    tags_str = ", ".join(anime.tags or [])
-    mood_str = ", ".join(anime.mood or [])
-    status_map = {"completed": "✓ Tugagan", "ongoing": "◌ Davom etmoqda", "announced": "ᐅ Kutilmoqda"}
-    status_str = status_map.get(anime.status or "", "")
-
-    lines: list[str] = []
-    title_line = f"{emoji} <b>{anime.title}</b>"
-    if anime.year:
-        title_line += f" ({anime.year})"
-    lines.append(title_line)
-    lines.append(DIV1)
-    lines.append(f"๏ Tur: {type_str}")
-    lines.append(f"№ <code>{anime.id}</code>")
-    lines.append(f"๏ Janr: {genres_str}")
-    if tags_str:
-        lines.append(f"# Tag: {tags_str}")
-    if mood_str:
-        lines.append(f"☺ Kayfiyat: {mood_str}")
-
-    meta_parts: list[str] = []
-    if anime.rating is not None:
-        rc = anime.rating_count or 0
-        meta_parts.append(f"★ {float(anime.rating):.1f}" + (f" ({rc})" if rc else ""))
-    if anime.episodes_count:
-        meta_parts.append(f"๏ {anime.episodes_count} qism")
-    elif anime.total_episodes:
-        meta_parts.append(f"๏ {anime.total_episodes} qism")
-    if anime.duration:
-        meta_parts.append(f"◷ {anime.duration} daq")
-    if status_str:
-        meta_parts.append(status_str)
-    if meta_parts:
-        lines.append("  ".join(meta_parts))
-
-    extra_parts: list[str] = []
-    if anime.views:
-        extra_parts.append(f"◉ {anime.views}")
-    if anime.popularity:
-        try:
-            extra_parts.append(f"✦ {float(anime.popularity):.1f}")
-        except Exception:
-            pass
-    if extra_parts:
-        lines.append("  ".join(extra_parts))
-
-    flags: list[str] = []
-    if anime.is_pro_locked:
-        flags.append("⊘ Pro")
-    if anime.is_hidden_gem:
-        flags.append("◆ Hidden gem")
-    if flags:
-        lines.append("  ".join(flags))
-
-    desc = (anime.description or "").strip()
-    if desc:
-        if len(desc) > 600:
-            desc = desc[:600].rstrip() + "…"
-        lines.append(f"{DIV2}\n๏ {desc}")
+    lines = [_post_title(anime), DIV1, *_post_meta_lines(anime, full=True), DIV1]
+    lines += _post_desc_block(anime, 500)
     return "\n".join(lines)
 
 
 def _build_short_caption(anime: Anime) -> str:
-    """
-    Anime uchun CHIROYLI QISQA post caption.
-    Estetik, emojilar bilan ajratilgan, blockquote tavsif.
-    """
-    type_emoji = {"anime": "๏", "movie": "๏", "serial": "๏", "dorama": "๏"}
-    type_label = {"anime": "Anime", "movie": "Kino", "serial": "Serial", "dorama": "Dorama"}
-    emoji = type_emoji.get(anime.content_type or "anime", "๏")
-    label = type_label.get(anime.content_type or "anime", "Kontent")
-
-    # Sarlavha
-    year_str = f" <i>({anime.year})</i>" if anime.year else ""
-    title = f"{emoji} <b>{esc(anime.title)}</b>{year_str}"
-
-    # Janrlar — max 3 ta, hashtag shaklida
-    genres = anime.genres or []
-    genre_tags = "  ".join(
-        f"<code>{g}</code>" for g in genres[:3]
-    ) if genres else ""
-
-    # Meta — reyting, qism soni, davomiylik
-    meta_parts: list[str] = []
-    if anime.rating is not None:
-        stars = "★" * min(int(float(anime.rating) / 2), 5)
-        meta_parts.append(f"{stars} <b>{float(anime.rating):.1f}</b>")
-    if anime.episodes_count:
-        meta_parts.append(f"๏ <b>{anime.episodes_count}</b> qism")
-    elif anime.total_episodes:
-        meta_parts.append(f"๏ <b>{anime.total_episodes}</b> qism")
-    if anime.duration:
-        meta_parts.append(f"◷ {anime.duration} daq")
-
-    status_map = {
-        "completed": "✓ Tugagan",
-        "ongoing": "◌ Davom etmoqda",
-        "announced": "ᐅ Tez kunda",
-    }
-    status_str = status_map.get(anime.status or "", "")
-
-    # Tavsif — blockquote ichida
-    desc = (anime.description or "").strip()
-    if len(desc) > 300:
-        desc = desc[:300].rstrip() + "…"
-
-    # Yig'ish
-    lines: list[str] = []
-    lines.append(title)
-    lines.append(DIV1)
-    lines.append(f"# {label}  •  {genre_tags}" if genre_tags else f"# {label}")
-    if meta_parts:
-        lines.append("  ".join(meta_parts))
-    if status_str:
-        lines.append(status_str)
-    if desc:
-        lines.append(f"\n✎ <b>Tavsif:</b>")
-        lines.append(f"<blockquote>{desc}</blockquote>")
-
+    """Qisqa post: asosiy formatning ixchamroq varianti (davomiylik/holat yo'q, tavsif qisqa)."""
+    lines = [_post_title(anime), DIV1, *_post_meta_lines(anime, full=False), DIV1]
+    lines += _post_desc_block(anime, 220)
     return "\n".join(lines)
 
 
@@ -837,7 +766,8 @@ admin_main_kb = ReplyKeyboardMarkup(
         [KeyboardButton(text="≡ Baza zaxira"), KeyboardButton(text="◈ Statistika")],
         [KeyboardButton(text="★ Top 18"), KeyboardButton(text="ᐅ Reklamalar")],
         [KeyboardButton(text="◎ Regionlar"), KeyboardButton(text="✎ Pro yozuvi")],
-        [KeyboardButton(text="▣ Thumbnail sozlash"), KeyboardButton(text="ᐊ Chiqish")],
+        [KeyboardButton(text="▣ Thumbnail sozlash"), KeyboardButton(text="✦ Start sozlash")],
+        [KeyboardButton(text="ᐊ Chiqish")],
     ],
     resize_keyboard=True,
 )
