@@ -1178,8 +1178,10 @@ async def toggle_subscription(call: types.CallbackQuery):
             pass
 
 
-@user_router.callback_query(F.data.startswith("rate_"))
+@user_router.callback_query(F.data.regexp(r"^rate_\d+$"))
 async def rate_anime_start(call: types.CallbackQuery):
+    # Faqat 'rate_{anime_id}'. Oldin filtr 'rate_' bilan boshlanadigan HAMMASINI ushlardi, shuning uchun
+    # 'rate_set_753_3' va 'rate_cancel' o'z handlerlariga yetib bormay ValueError berardi.
     anime_id = int(call.data.replace("rate_", ""))
 
     async with AsyncSessionLocal() as session:
