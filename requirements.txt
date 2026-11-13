@@ -12,3 +12,6 @@ sentry-sdk==2.18.0
 Pillow==10.4.0
 # aiohttp — ImgBB va boshqa HTTP so'rovlar uchun
 aiohttp==3.10.5
+
+telethon==1.36.0
+cryptography>=43.0.0
