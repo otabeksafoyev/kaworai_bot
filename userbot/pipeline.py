@@ -141,9 +141,11 @@ async def _upload_episodes(client, anime_id: int, ctype: str, episodes: dict) ->
 
 async def process_post(client, msg, cfg: dict) -> None:
     if await storage.is_done(msg.chat_id, msg.id):
+        logger.info("O'tkazildi (allaqachon qayta ishlangan): %s/%s", msg.chat_id, msg.id)
         return
     title, code, eng = parse_post(msg.message or "")
     if not (title and code):
+        logger.info("O'tkazildi: nom/kod topilmadi (nom=%r, kod=%r) matn=%r", title, code, (msg.message or "")[:200])
         return  # anime posti emas
     ctype = cfg.get("content_type", "anime")
     await rt.notify(f"◈ Yangi post: <b>{esc(title)}</b>\n№ Manba kodi: <code>{esc(code)}</code>\n◌ Manba botdan tekshiryapman...")

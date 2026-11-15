@@ -21,11 +21,19 @@ async def start_watcher() -> None:
         rt.client.remove_event_handler(rt.handler)
 
     async def on_post(event):
-        await rt.queue.put((event.message, cfg))
+        m = event.message
+        logger.info("Post keldi: chat=%s id=%s matn=%r", m.chat_id, m.id, (m.message or "")[:80])
+        await rt.queue.put((m, cfg))
 
     rt.handler = on_post
     rt.client.add_event_handler(on_post, events.NewMessage(chats=[cfg["channel"]], incoming=True))
     logger.info("Kuzatuv: %s", cfg)
+    try:
+        ent = await rt.client.get_entity(cfg["channel"])
+        logger.info("Kuzatuv kanali: %s (id=%s)", getattr(ent, "title", ent), cfg["channel"])
+    except Exception as e:
+        logger.error("Kuzatuv kanali topilmadi (akkaunt a'zo emasmi?): %s: %s", type(e).__name__, e)
+        await rt.notify(f"✕ Kuzatuv kanali ({cfg['channel']}) topilmadi — akkaunt kanalga a'zo ekanini tekshiring ({type(e).__name__}).")
 
 
 async def worker() -> None:
