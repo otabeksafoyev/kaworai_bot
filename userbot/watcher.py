@@ -22,11 +22,11 @@ async def start_watcher() -> None:
 
     async def on_post(event):
         m = event.message
-        logger.info("Post keldi: chat=%s id=%s matn=%r", m.chat_id, m.id, (m.message or "")[:80])
+        logger.info("Post keldi: chat=%s id=%s out=%s matn=%r", m.chat_id, m.id, m.out, (m.message or "")[:80])
         await rt.queue.put((m, cfg))
 
     rt.handler = on_post
-    rt.client.add_event_handler(on_post, events.NewMessage(chats=[cfg["channel"]], incoming=True))
+    rt.client.add_event_handler(on_post, events.NewMessage(chats=[cfg["channel"]]))
     logger.info("Kuzatuv: %s", cfg)
     try:
         ent = await rt.client.get_entity(cfg["channel"])
