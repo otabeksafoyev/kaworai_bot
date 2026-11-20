@@ -15,7 +15,7 @@ import logging
 import os
 import re
 
-from telethon import errors, functions
+from telethon import errors, events, functions
 
 from .parsers import episode_no
 
@@ -28,6 +28,35 @@ MAX_RECHECK = 3        # a'zolik so'rovi yuborilgan kanallar uchun "tekshirish"n
 MAX_FLOOD = int(os.environ.get("UB_MAX_FLOOD", "300"))   # shu soniyagacha FloodWait'ni kutamiz
 _JOINED: set[str] = set()                                # shu jarayonda a'zo bo'lingan havolalar (keyingi postlarda qayta urinmaslik uchun)
 _PENDING: set[str] = set()                               # a'zolik so'rovi yuborilgan (tasdiq kutilayotgan) havolalar
+
+
+class _BotChat:
+    """Manba bot bilan suhbat. Xabarlarni o'zimiz yig'amiz: Telethon `conversation.get_response()` kutish vaqti
+    tugagandan keyin kelgan xabarni yo'qotadi (InvalidStateError), bizning kutish tsiklimiz esa doim timeout bilan tugaydi."""
+
+    def __init__(self, client, bot: str):
+        self.client, self.bot = client, bot
+        self.q: asyncio.Queue = asyncio.Queue()
+
+    async def __aenter__(self):
+        self.entity = await self.client.get_input_entity(self.bot)
+
+        async def on_new(event):
+            self.q.put_nowait(event.message)
+        self._cb = on_new
+        self._ev = events.NewMessage(chats=[self.entity], incoming=True)
+        self.client.add_event_handler(self._cb, self._ev)
+        return self
+
+    async def __aexit__(self, *exc):
+        self.client.remove_event_handler(self._cb, self._ev)
+        return False
+
+    async def send_message(self, text: str):
+        return await self.client.send_message(self.entity, text)
+
+    async def get_response(self):
+        return await self.q.get()
 
 
 class SourceBlocked(Exception):
@@ -231,7 +260,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
             logger.info("tugma '%s' -> bot ogohlantirishi: %s", b.text, txt)
             alerts.append(txt)
 
-    async with client.conversation(source_bot, timeout=120, total_timeout=1800, max_messages=1000) as conv:
+    async with _BotChat(client, source_bot) as conv:
 
         async def pull(wait: float) -> None:
             nonlocal cur_ep
