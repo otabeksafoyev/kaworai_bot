@@ -1,6 +1,7 @@
 """Boshqaruv boti: /start → api_id, api_hash, telefon, kod (nuqtali), [2FA] → kanal, manba bot, tur."""
 from __future__ import annotations
 
+import html
 import logging
 import re
 
@@ -8,7 +9,8 @@ from aiogram import F, Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonCommands,
+                           Message)
 from telethon import TelegramClient
 from telethon.errors import (PasswordHashInvalidError, PhoneCodeExpiredError, PhoneCodeInvalidError,
                              SessionPasswordNeededError)
@@ -55,6 +57,30 @@ def _parse_code(text: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _panel_kb() -> InlineKeyboardMarkup:
+    b = InlineKeyboardButton
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [b(text="⌕ Kuzatuv kanallari", callback_data="menu:watch"), b(text="◈ Nishon botlar", callback_data="menu:targets")],
+        [b(text="≡ Holat", callback_data="menu:status"), b(text="⊘ Uzish", callback_data="menu:logout")],
+    ])
+
+
+async def setup_menu(bot) -> None:
+    """Telegramdagi 'Menu' tugmasi buyruqlar ro'yxatini ko'rsatadi."""
+    try:
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Panel"),
+            BotCommand(command="watch", description="Kuzatuv kanallari (istalgancha)"),
+            BotCommand(command="targets", description="Nishon botlar va foizlar"),
+            BotCommand(command="status", description="Holat"),
+            BotCommand(command="logout", description="Akkauntni uzish"),
+            BotCommand(command="cancel", description="Bekor qilish"),
+        ])
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    except Exception:
+        logger.warning("buyruqlar menyusi o'rnatilmadi", exc_info=True)
+
+
 @router.message(Command("start"))
 async def start(msg: Message, state: FSMContext):
     if not _is_admin(msg.from_user.id):
@@ -62,8 +88,8 @@ async def start(msg: Message, state: FSMContext):
     await state.clear()
     if await storage.load_login():
         return await msg.answer(
-            f"{DIV}\n◈ <b>Userbot ulangan.</b>\n\n/status — holat\n/watch — kuzatiladigan kanalni o'zgartirish\n/targets — nishon botlar va foizlar\n/logout — uzish\n{DIV}",
-            parse_mode="HTML")
+            f"{DIV}\n◈ <b>Userbot ulangan.</b>\n\nPastdagi tugmalardan foydalaning yoki buyruqlar menyusini (Menu) oching.\n{DIV}",
+            parse_mode="HTML", reply_markup=_panel_kb())
     await state.set_state(Login.api_id)
     await msg.answer(
         f"{DIV}\n◈ <b>Userbot ulash</b>\n\nmy.telegram.org → API development tools dan oling.\n\n№ <b>api_id</b> ni yuboring:\n{DIV}",
@@ -213,13 +239,31 @@ async def got_type(call: CallbackQuery, state: FSMContext):
     if not _is_admin(call.from_user.id):
         return await call.answer()
     d = await state.get_data()
-    cfg = {"channel": d["channel"], "source_bot": d["source_bot"], "content_type": call.data.split(":")[1]}
-    await storage.save_watch(cfg)
+    cfg = {"channel": d["channel"], "source_bot": d["source_bot"], "content_type": call.data.split(":")[1],
+           "title": d["channel_title"]}
+    items = [w for w in await storage.load_watches() if w["channel"] != cfg["channel"]]   # shu kanal bo'lsa — yangilanadi
+    items.append(cfg)
+    await storage.save_watches(items)
     await state.clear()
     from .watcher import start_watcher
     await start_watcher()
-    await call.message.answer(f"{DIV}\n✓ <b>Kuzatuv boshlandi!</b>\n\n⌕ Kanal: {d['channel_title']}\n▣ Manba: {d['source_bot']}\n≡ Tur: {cfg['content_type']}\n\nYangi post chiqsa, men sizga yozaman.\n{DIV}", parse_mode="HTML")
+    await call.message.answer(f"{DIV}\n✓ <b>Kuzatuv boshlandi!</b>\n\n⌕ Kanal: {d['channel_title']}\n▣ Manba: {d['source_bot']}\n≡ Tur: {cfg['content_type']}\n\nJami kuzatuv kanallari: {len(items)}. Yana qo'shish: /watch\nYangi post chiqsa, men sizga yozaman.\n{DIV}", parse_mode="HTML")
     await call.answer()
+
+
+async def _watch_view() -> tuple[str, InlineKeyboardMarkup]:
+    items = await storage.load_watches()
+    lines = [f"{DIV}\n◈ <b>Kuzatiladigan kanallar</b>: {len(items)} ta\n"]
+    kb = []
+    for i, w in enumerate(items, 1):
+        title = html.escape(w.get("title") or str(w["channel"]))
+        lines.append(f"{i}. <b>{title}</b> — {html.escape(w['source_bot'])} • {w['content_type']}")
+        kb.append([InlineKeyboardButton(text=f"✕ {w.get('title') or w['channel']}", callback_data=f"wc:del:{w['channel']}")])
+    if not items:
+        lines.append("Hozircha kanal yo'q.")
+    lines.append(f"\nIstalgancha kanal qo'shishingiz mumkin. Har biri o'z manba boti va turi bilan.\n{DIV}")
+    kb.append([InlineKeyboardButton(text="＋ Kanal qo'shish", callback_data="wc:add")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 @router.message(Command("watch"))
@@ -228,23 +272,54 @@ async def watch_cmd(msg: Message, state: FSMContext):
         return
     if not rt.client:
         return await msg.answer("✕ Avval /start bilan akkauntni ulang.")
+    await state.clear()
+    text, kb = await _watch_view()
+    await msg.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data == "wc:add")
+async def watch_add(call: CallbackQuery, state: FSMContext):
+    if not _is_admin(call.from_user.id):
+        return await call.answer()
+    if not rt.client:
+        return await call.answer("Avval /start bilan akkauntni ulang.", show_alert=True)
     await state.set_state(Login.channel)
-    await msg.answer("⌕ Yangi kanal usernameini yuboring:")
+    await call.message.answer("⌕ Yangi kanal usernameini yuboring (bekor qilish: /cancel):")
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("wc:del:"))
+async def watch_del(call: CallbackQuery):
+    if not _is_admin(call.from_user.id):
+        return await call.answer()
+    cid = int(call.data.split(":", 2)[2])
+    await storage.save_watches([w for w in await storage.load_watches() if w["channel"] != cid])
+    from .watcher import start_watcher
+    await start_watcher()
+    text, kb = await _watch_view()
+    try:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await call.answer("✓ Olib tashlandi")
+
+
+async def _status_text() -> str:
+    items = await storage.load_watches()
+    on = bool(rt.client and rt.client.is_connected())
+    rows = "\n".join(f"• {html.escape(w.get('title') or str(w['channel']))} — {html.escape(w['source_bot'])} • {w['content_type']}"
+                     for w in items) or "—"
+    return f"◈ Userbot: {'✓ ishlayapti' if on else '✕ o‘chiq'}\n⌕ Kuzatuv kanallari ({len(items)}):\n{rows}"
 
 
 @router.message(Command("status"))
 async def status(msg: Message):
     if not _is_admin(msg.from_user.id):
         return
-    w = await storage.load_watch()
-    on = bool(rt.client and rt.client.is_connected())
-    await msg.answer(f"◈ Userbot: {'✓ ishlayapti' if on else '✕ o‘chiq'}\n⌕ Sozlama: {w or '—'}")
+    await msg.answer(await _status_text(), parse_mode="HTML")
 
 
-@router.message(Command("logout"))
-async def logout(msg: Message, state: FSMContext):
-    if not _is_admin(msg.from_user.id):
-        return
+async def _do_logout(state: FSMContext) -> None:
     if rt.client:
         try:
             await rt.client.log_out()
@@ -253,7 +328,48 @@ async def logout(msg: Message, state: FSMContext):
         rt.client = None
     await storage.clear_login()
     await state.clear()
+
+
+@router.message(Command("logout"))
+async def logout(msg: Message, state: FSMContext):
+    if not _is_admin(msg.from_user.id):
+        return
+    await _do_logout(state)
     await msg.answer("✓ Uzildi, sessiya o'chirildi. /start")
+
+
+@router.callback_query(F.data.startswith("menu:"))
+async def menu_cb(call: CallbackQuery, state: FSMContext):
+    if not _is_admin(call.from_user.id):
+        return await call.answer()
+    action = call.data.split(":", 1)[1]
+    if action == "watch":
+        if not rt.client:
+            return await call.answer("Avval /start bilan akkauntni ulang.", show_alert=True)
+        text, kb = await _watch_view()
+        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    elif action == "targets":
+        from .targets_bot import _list_view
+        text, kb = await _list_view()
+        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    elif action == "status":
+        await call.message.answer(await _status_text(), parse_mode="HTML")
+    elif action == "logout":
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="✓ Ha, uzish", callback_data="menu:logout_yes"),
+            InlineKeyboardButton(text="✕ Yo'q", callback_data="menu:cancel")]])
+        await call.message.answer("⊘ Akkaunt uziladi va sessiya o'chiriladi. Rostdan uzasizmi?", reply_markup=kb)
+    elif action == "logout_yes":
+        await _do_logout(state)
+        await call.message.answer("✓ Uzildi, sessiya o'chirildi. /start")
+    elif action == "cancel":
+        pass
+    if action in ("logout_yes", "cancel"):
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+    await call.answer()
 
 
 @router.callback_query(F.data.regexp(r"^ub_(ok|retry|cancel):"))

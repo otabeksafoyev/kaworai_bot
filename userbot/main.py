@@ -13,7 +13,7 @@ from telethon.sessions import StringSession
 from data import config
 
 from . import storage
-from .login_bot import router
+from .login_bot import router, setup_menu
 from .targets_bot import router as targets_router
 from .runtime import rt
 from .watcher import start_watcher, worker
@@ -40,6 +40,7 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(targets_router)   # login_bot dagi umumiy matn handlerdan OLDIN bo'lishi shart
     dp.include_router(router)
+    await setup_menu(rt.login_bot)
     asyncio.create_task(worker())
     await dp.start_polling(rt.login_bot)
 

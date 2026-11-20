@@ -28,3 +28,14 @@ Foiz (`scoring.py`): nom 25, yil 20, janr 25, tavsif 30 — faqat post/manba mat
 (yil: `Yil: 2024`, janr: `Janr: a, b`, tavsif: `Tavsif: ...` yoki eng uzun qator). Faqat nom mos kelsa foiz 60% dan oshmaydi;
 AI "nom aniq topilmadi" desa 50% dan oshmaydi; AI ma'lumoti to'liq bo'lmasa (tavsif/janr/yil) hech qaysi botga qo'shilmaydi.
 Chegara: foiz **shu qiymatdan kam bo'lmasa** qo'shiladi (>=).
+
+## Manba bot, majburiy obuna, ko'p kanal
+
+- Postdagi "Tomosha qilish" tugmasi `t.me/<manba_bot>?start=<kod>` bo'lsa, userbot botga `/start <kod>` yuboradi
+  (bo'lmasa `/start <kod>`, javob kelmasa — oddiy kod). Qism raqamlari tugmalari birma-bir bosiladi, sifat tanlovi chiqsa
+  `UB_QUALITY` (standart `720`) tanlanadi, "keyingi" tugmasi bo'lsa sahifalar o'tiladi.
+- Manba bot majburiy obuna so'rasa (t.me havolali tugmalar), userbot akkaunti o'sha kanallarga a'zo bo'ladi (bir martada
+  10 tagacha), "tekshirish" tugmasini bosadi va adminga xabar beradi. A'zolik so'rovi tasdiqlanishi kerak bo'lgan kanallar haqida ogohlantiradi.
+- Qismlar topilmasa, adminga botning javobi va ko'ringan tugmalar matni yuboriladi (moslashtirish uchun).
+- `/watch` — istalgancha kanal qo'shish/olib tashlash; har biri o'z manba boti va kontent turi bilan.
+- `/start` — tugmali panel (kanallar, nishon botlar, holat, uzish); "Menu" tugmasi buyruqlar ro'yxatini ochadi.

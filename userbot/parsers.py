@@ -17,6 +17,8 @@ EP_RE = [
     re.compile(r"(?i)(?:qism|seriya|ep(?:isode)?|part)\s*[:#\-–]?\s*(\d{1,4})"),
 ]
 
+_YEAR_TAIL = re.compile(r"\s*[\(\[]\s*(?:19|20)\d{2}\s*[\)\]]\s*$")
+_YEAR_TOKEN = re.compile(r"\b(?:19|20)\d{2}\b")
 _JUNK = re.compile(r"[^\w\s'ʻ’‘`-]", re.UNICODE)
 
 
@@ -37,11 +39,11 @@ def parse_post(text: str) -> tuple[str | None, str | None, str | None]:
     eng = clean_line(em.group(1)) if em else None
     nm = NAME_RE.search(text)
     if nm:
-        title = clean_line(nm.group(1))
+        title = clean_line(_YEAR_TAIL.sub("", nm.group(1).strip()))
     else:
         title = None
         for line in text.splitlines():
-            c = clean_line(line)
+            c = clean_line(_YEAR_TAIL.sub("", line.strip()))
             if len(c) >= 2 and not CODE_RE.fullmatch(line.strip()) and not ENG_RE.search(line):
                 title = c
                 break
@@ -64,13 +66,13 @@ def _norm(s: str) -> str:
 
 def same_title(a: str, b_text: str, threshold: float = 0.72) -> bool:
     """Kanal nomi (a) manba bot javobida (b_text) bormi — erkin taqqoslash."""
-    a, b = _norm(a), _norm(b_text)
+    a, b = _YEAR_TOKEN.sub("", _norm(a)).strip(), _norm(b_text)
     if not a or not b:
         return False
     if a in b:
         return True
     best = 0.0
-    for line in (_norm(x) for x in b_text.splitlines()):
+    for line in (_YEAR_TOKEN.sub("", _norm(x)).strip() for x in b_text.splitlines()):
         if line:
             best = max(best, SequenceMatcher(None, a, line).ratio())
     ta, tb = set(a.split()), set(b.split())

@@ -14,6 +14,7 @@ from database.models import BotSetting
 _K_SESSION = "userbot:session"
 _K_CREDS = "userbot:creds"
 _K_WATCH = "userbot:watch"
+_K_WATCHES = "userbot:watches"
 _K_DONE = "userbot:done"
 _K_TARGETS = "userbot:targets"
 
@@ -76,6 +77,19 @@ async def save_watch(cfg: dict) -> None:
 async def load_watch() -> dict | None:
     v = await _get(_K_WATCH)
     return json.loads(v) if v else None
+
+
+async def load_watches() -> list[dict]:
+    """Kuzatilayotgan kanallar ro'yxati. Eski (bitta kanalli) sozlama bo'lsa — undan boshlanadi."""
+    v = await _get(_K_WATCHES)
+    if v:
+        return json.loads(v)
+    legacy = await load_watch()
+    return [legacy] if legacy else []
+
+
+async def save_watches(items: list[dict]) -> None:
+    await _set(_K_WATCHES, json.dumps(items))
 
 
 async def is_done(chat_id: int, msg_id: int) -> bool:

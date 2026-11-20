@@ -152,11 +152,11 @@ async def process_post(client, msg, cfg: dict) -> None:
 
     # 1) manba bot
     try:
-        info_text, episodes = await fetch_from_source(client, cfg["source_bot"], code)
+        info_text, episodes, debug = await fetch_from_source(client, cfg["source_bot"], code, post=msg, notify=rt.notify)
     except Exception as e:
         return await rt.notify(f"✕ Manba bot bilan ishlashda xato: {esc(type(e).__name__)}")
     if not episodes:
-        return await rt.notify("✕ Manba botdan qismlar topilmadi — qo'shilmadi.")
+        return await rt.notify(f"✕ Manba botdan qismlar topilmadi — qo'shilmadi.\n<code>{esc(debug[:700])}</code>")
 
     # 2) nom tekshiruvi (post nomi == manba bot nomi)
     if not same_title(title, info_text):
