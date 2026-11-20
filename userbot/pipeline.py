@@ -19,7 +19,7 @@ from . import storage, targets
 from .parsers import ENG_RE, clean_line, parse_post, same_title
 from .scoring import breakdown_text, match_percent
 from .runtime import rt
-from .source import fetch_from_source
+from .source import SourceBlocked, fetch_from_source
 
 logger = logging.getLogger("userbot")
 
@@ -139,7 +139,11 @@ async def _upload_episodes(client, anime_id: int, ctype: str, episodes: dict) ->
     return sent
 
 
-async def process_post(client, msg, cfg: dict) -> None:
+RETRY_MIN = int(os.environ.get("UB_RETRY_MIN", "10"))     # majburiy obuna tugallanmasa — necha daqiqadan keyin qayta urinish
+MAX_RETRY = int(os.environ.get("UB_MAX_RETRY", "6"))
+
+
+async def process_post(client, msg, cfg: dict, attempt: int = 0) -> None:
     if await storage.is_done(msg.chat_id, msg.id):
         logger.info("O'tkazildi (allaqachon qayta ishlangan): %s/%s", msg.chat_id, msg.id)
         return
@@ -148,11 +152,19 @@ async def process_post(client, msg, cfg: dict) -> None:
         logger.info("O'tkazildi: nom/kod topilmadi (nom=%r, kod=%r) matn=%r", title, code, (msg.message or "")[:200])
         return  # anime posti emas
     ctype = cfg.get("content_type", "anime")
-    await rt.notify(f"◈ Yangi post: <b>{esc(title)}</b>\n№ Manba kodi: <code>{esc(code)}</code>\n◌ Manba botdan tekshiryapman...")
+    if attempt == 0:
+        await rt.notify(f"◈ Yangi post: <b>{esc(title)}</b>\n№ Manba kodi: <code>{esc(code)}</code>\n◌ Manba botdan tekshiryapman...")
+    else:
+        await rt.notify(f"◌ <b>{esc(title)}</b>: qayta tekshiryapman ({attempt}/{MAX_RETRY})...")
 
     # 1) manba bot
     try:
         info_text, episodes, debug = await fetch_from_source(client, cfg["source_bot"], code, post=msg, notify=rt.notify)
+    except SourceBlocked as e:
+        if attempt < MAX_RETRY:
+            asyncio.get_running_loop().call_later(RETRY_MIN * 60, rt.queue.put_nowait, (msg, cfg, attempt + 1))
+            return await rt.notify(f"! <b>{esc(title)}</b>:\n{esc(str(e))}\n◌ {RETRY_MIN} daqiqadan keyin qayta uriniladi ({attempt + 1}/{MAX_RETRY}).")
+        return await rt.notify(f"✕ <b>{esc(title)}</b>: urinishlar tugadi — qo'shilmadi.\n{esc(str(e))}")
     except Exception as e:
         return await rt.notify(f"✕ Manba bot bilan ishlashda xato: {esc(type(e).__name__)}")
     if not episodes:

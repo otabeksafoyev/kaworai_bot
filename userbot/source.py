@@ -27,6 +27,11 @@ MAX_GATE_ROUNDS = 4
 MAX_RECHECK = 3        # a'zolik so'rovi yuborilgan kanallar uchun "tekshirish"ni qayta bosish soni
 MAX_FLOOD = int(os.environ.get("UB_MAX_FLOOD", "300"))   # shu soniyagacha FloodWait'ni kutamiz
 _JOINED: set[str] = set()                                # shu jarayonda a'zo bo'lingan havolalar (keyingi postlarda qayta urinmaslik uchun)
+_PENDING: set[str] = set()                               # a'zolik so'rovi yuborilgan (tasdiq kutilayotgan) havolalar
+
+
+class SourceBlocked(Exception):
+    """Manba bot majburiy obuna tugallanmagani sababli qismlarni bermayapti (keyinroq qayta urinish mumkin)."""
 MAX_STEPS = 80
 
 _QUALITY_RE = re.compile(r"(?i)(?<!\d)(2160|1440|1080|720|576|480|360|240)\s*p\b|\b(4k|2k|fhd|uhd)\b")
@@ -208,11 +213,23 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
     done: set = set()
     cur_ep = None
     joined: list[str] = []
+    alerts: list[str] = []           # bot callback'ga bergan ogohlantirish matnlari (masalan "obuna bo'ling")
     gate_rounds = 0
     gate_done = False
     rechecks = 0
-    pending: set[str] = set()
+    pending: set[str] = set(_PENDING)
     pages = 0
+
+    async def click(b):
+        try:
+            ans = await b.click()
+        except Exception as e:                        # callback'ga javob bo'lmasligi mumkin — baribir video kelishi mumkin
+            logger.info("tugma '%s' bosildi (callback javobsiz: %s)", b.text, type(e).__name__)
+            return
+        txt = (getattr(ans, "message", None) or "").strip()
+        if txt:
+            logger.info("tugma '%s' -> bot ogohlantirishi: %s", b.text, txt)
+            alerts.append(txt)
 
     async with client.conversation(source_bot, timeout=120, total_timeout=1800, max_messages=1000) as conv:
 
@@ -253,6 +270,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
                             joined.append(txt)
                         if st == "pending":
                             pending.add(u)
+                            _PENDING.add(u)
                 elif pending and rechecks < MAX_RECHECK:       # a'zolik so'rovi bor — bot avto-tasdiqlashi mumkin, biroz kutamiz
                     rechecks += 1
                     await asyncio.sleep(6)
@@ -260,10 +278,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
                     gate_done = True                           # yangi qiladigan ish yo'q — davom etamiz
                     continue
                 if chk:
-                    try:
-                        await chk.click()
-                    except Exception:
-                        pass
+                    await click(chk)
                 else:
                     await conv.send_message(f"/start {payload}")
                 await pull(click_idle)
@@ -282,10 +297,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
                 cur_ep = act[3]
             elif kind == "next":
                 pages += 1
-            try:
-                await b.click()
-            except Exception as e:                    # callback'ga javob bo'lmasligi mumkin — baribir video kelishi mumkin
-                logger.info("tugma '%s' bosildi (callback javobsiz: %s)", b.text, type(e).__name__)
+            await click(b)
             await pull(click_idle)
             cards[m.id] = await _refresh(client, m)
         await pull(settle)                                # kechikib kelgan videolar
@@ -306,9 +318,23 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
         used.add(n)
         episodes.setdefault(n, m)
 
+    missing = [b.text for k in sorted(cards) for b in flat_buttons(cards[k])
+               if getattr(b, "url", None) and "❌" in (b.text or "")]
+    gate_alert = any(_GATE_TEXT_RE.search(a) for a in alerts)
+    if not episodes and (missing or gate_alert):
+        lines = ["Majburiy obuna to'liq emas."]
+        if missing:
+            lines.append("Bot a'zo emas deb ko'rsatayotgan kanallar: " + ", ".join(missing))
+        if pending:
+            lines.append(f"A'zolik so'rovi tasdiqlanishini kutyapman: {len(pending)} ta")
+        if alerts:
+            lines.append("Bot ogohlantirishi: " + alerts[-1][:150])
+        raise SourceBlocked("\n".join(lines))
+
     info_parts = [m.message for m in got if m.message]
     btn_txt = " | ".join(b.text for k in sorted(cards) for b in flat_buttons(cards[k]) if b.text)
     debug = (f"javoblar: {len(got)} ta, videolar: {sum(1 for m in got if is_video(m))} ta\n"
              f"kirish: /start {payload}\ntugmalar: {btn_txt or '—'}\n"
+             f"bot ogohlantirishi: {alerts[-1][:150] if alerts else '—'}\n"
              f"oxirgi matn: {(info_parts[-1] if info_parts else '—')[:200]}")
     return "\n".join(info_parts), dict(sorted(episodes.items())), debug

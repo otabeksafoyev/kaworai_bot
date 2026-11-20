@@ -47,9 +47,9 @@ async def start_watcher() -> None:
 
 async def worker() -> None:
     while True:
-        msg, cfg = await rt.queue.get()
+        msg, cfg, *rest = await rt.queue.get()
         try:
-            await process_post(rt.client, msg, cfg)
+            await process_post(rt.client, msg, cfg, rest[0] if rest else 0)
         except Exception:
             logger.exception("process_post xato")
             await rt.notify("✕ Ichki xato yuz berdi (loglarga qarang).")
