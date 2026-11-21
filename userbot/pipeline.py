@@ -180,6 +180,8 @@ async def process_post(client, msg, cfg: dict, attempt: int = 0) -> None:
     if not eng:
         em = ENG_RE.search(info_text)
         eng = clean_line(em.group(1)) if em else None
+    if not eng and await targets.load_targets():
+        eng = title      # avtomatik rejimda admindan so'ramaymiz: AI post nomi bilan qidiradi (topilmasa foiz past chiqadi)
     if not eng:
         eng = await rt.ask_text(f"⌕ <b>{esc(title)}</b> uchun inglizcha nomni yuboring:")
         if not eng:

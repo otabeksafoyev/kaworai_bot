@@ -62,6 +62,7 @@ class _BotChat:
 class SourceBlocked(Exception):
     """Manba bot majburiy obuna tugallanmagani sababli qismlarni bermayapti (keyinroq qayta urinish mumkin)."""
 MAX_STEPS = 80
+MAX_CLICKS_PER_EP = 2     # bir qism raqami uchun eng ko'pi bilan nechta tugma bosiladi
 
 _QUALITY_RE = re.compile(r"(?i)(?<!\d)(2160|1440|1080|720|576|480|360|240)\s*p\b|\b(4k|2k|fhd|uhd)\b")
 _EP_BTN_RE = re.compile(r"^\D{0,3}(\d{1,4})\D{0,3}$")
@@ -204,33 +205,37 @@ def _key(m, b, extra=None) -> tuple:
     return (m.id, b.text, tuple(x.text for x in flat_buttons(m)), extra)
 
 
-def _next_action(cards: dict, done: set, pages: int, cur_ep=None):
+def _next_action(cards: dict, done: set, pages: int, cur_ep=None, have: set | None = None, clicks: dict | None = None):
     """('quality'|'episode'|'next', xabar, tugma[, boshqa_sifatlar]) yoki None."""
     msgs = [cards[k] for k in sorted(cards, reverse=True)]
     for m in msgs:                                        # 1) sifat tanlovi (har bir qism uchun alohida)
         q = [b for b in flat_buttons(m) if getattr(b, "data", None) and _quality_value(b.text) and _key(m, b, cur_ep) not in done]
         if q:
             return "quality", m, _pick_quality(q), q
+    have, clicks = have or set(), clicks or {}
     eps = []
-    for m in msgs:                                        # 2) qism raqamlari
+    for m in msgs:                                        # 2) qism raqamlari (video xabaridagi "▶️ 1" kabi takror tugmalar emas)
         for b in flat_buttons(m):
             mm = _EP_BTN_RE.match(b.text or "")
             if (mm and getattr(b, "data", None) and not _SKIP_BTN_RE.search(b.text) and not _quality_value(b.text)
-                    and _key(m, b) not in done):
+                    and _key(m, b) not in done
+                    and int(mm.group(1)) not in have                      # bu qism allaqachon olingan
+                    and clicks.get(int(mm.group(1)), 0) < MAX_CLICKS_PER_EP):
                 eps.append((int(mm.group(1)), m, b))
     if eps:
         n, m, b = min(eps, key=lambda x: x[0])
         return "episode", m, b, n
-    if pages < 20:                                        # 3) keyingi sahifa
+    if pages < 10:                                        # 3) keyingi sahifa
         for m in msgs:
             for b in flat_buttons(m):
-                if getattr(b, "data", None) and _NEXT_RE.search(b.text or "") and _key(m, b) not in done:
+                if (getattr(b, "data", None) and _NEXT_RE.search(b.text or "") and not re.search(r"\d", b.text or "")
+                        and _key(m, b) not in done):                  # raqamli tugma ("▶️ 1") sahifa tugmasi emas
                     return "next", m, b, None
     return None
 
 
 async def fetch_from_source(client, source_bot: str, code: str, post=None, notify=None,
-                            idle: float = 12.0, click_idle: float = 8.0, settle: float = 2.0):
+                            idle: float = 12.0, click_idle: float = 15.0, settle: float = 2.0):
     """(info_text, {qism_raqami: telethon_message}, debug_matn) qaytaradi."""
     links = deep_links(post, source_bot) if post is not None else []
     payload = links[0][1] if links else code
@@ -247,6 +252,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
     gate_done = False
     rechecks = 0
     pending: set[str] = set(_PENDING)
+    ep_clicks: dict[int, int] = {}
     pages = 0
 
     async def click(b):
@@ -314,7 +320,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
                 cards[gate.id] = await _refresh(client, gate)
                 continue
 
-            act = _next_action(cards, done, pages, cur_ep)
+            act = _next_action(cards, done, pages, cur_ep, set(ep_msgs), ep_clicks)
             if not act:
                 break
             kind, m, b = act[0], act[1], act[2]
@@ -324,6 +330,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
                 done.add(_key(m, b))
             if kind == "episode":
                 cur_ep = act[3]
+                ep_clicks[cur_ep] = ep_clicks.get(cur_ep, 0) + 1
             elif kind == "next":
                 pages += 1
             await click(b)
