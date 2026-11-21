@@ -1,9 +1,11 @@
 """Boshqaruv boti: /start → api_id, api_hash, telefon, kod (nuqtali), [2FA] → kanal, manba bot, tur."""
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
+import time
 
 from aiogram import F, Router
 from aiogram.filters import Command, StateFilter
@@ -304,12 +306,33 @@ async def watch_del(call: CallbackQuery):
     await call.answer("✓ Olib tashlandi")
 
 
+def _ago(ts: float) -> str:
+    d = int(time.time() - ts)
+    return f"{d} soniya oldin" if d < 90 else f"{d // 60} daqiqa oldin" if d < 5400 else f"{d // 3600} soat oldin"
+
+
 async def _status_text() -> str:
     items = await storage.load_watches()
-    on = bool(rt.client and rt.client.is_connected())
-    rows = "\n".join(f"• {html.escape(w.get('title') or str(w['channel']))} — {html.escape(w['source_bot'])} • {w['content_type']}"
-                     for w in items) or "—"
-    return f"◈ Userbot: {'✓ ishlayapti' if on else '✕ o‘chiq'}\n⌕ Kuzatuv kanallari ({len(items)}):\n{rows}"
+    c = rt.client
+    connected = bool(c and c.is_connected())
+    authorized = None
+    if connected:
+        try:
+            authorized = bool(await asyncio.wait_for(c.is_user_authorized(), 10))
+        except Exception:
+            authorized = None
+    tg = ("✓ ulangan" if authorized else "✕ sessiya BEKOR qilingan (/logout, /start)" if authorized is False else "? tekshirib bo'lmadi") \
+        if connected else "✕ ULANMAGAN"
+    rows = []
+    for w in items:
+        seen = rt.last_seen.get(w["channel"])
+        rows.append(f"• {html.escape(w.get('title') or str(w['channel']))} — {html.escape(w['source_bot'])} • {w['content_type']}\n"
+                    f"   oxirgi post: {_ago(seen) if seen else 'ishga tushgandan beri kelmagan'}")
+    work = f"{html.escape(rt.current)} ({int(time.time() - rt.current_since)}s)" if rt.current else "—"
+    up = _ago(rt.started_at).replace(" oldin", "") if rt.started_at else "—"
+    return (f"◈ Userbot: {'✓ ishlayapti' if connected else '✕ o‘chiq'}\n≡ Telegram: {tg}\n"
+            f"⌕ Kuzatuv kanallari ({len(items)}):\n" + ("\n".join(rows) or "—")
+            + f"\n◌ Navbatda: {rt.queue.qsize()} • hozir: {work}\n⏱ Ishlayapti: {up}")
 
 
 @router.message(Command("status"))

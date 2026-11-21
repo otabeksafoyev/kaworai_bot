@@ -19,6 +19,10 @@ class Runtime:
     login_bot: Bot | None = None        # userbotni boshqaradigan bot
     client: object = None               # Telethon TelegramClient
     handler: object = None
+    started_at: float = 0.0
+    last_seen: dict = field(default_factory=dict)   # kanal id -> oxirgi post kelgan vaqt (time.time)
+    current: str | None = None                      # hozir qayta ishlanayotgan post
+    current_since: float = 0.0
     queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     confirms: dict = field(default_factory=dict)
     text_waiter: asyncio.Future | None = None
