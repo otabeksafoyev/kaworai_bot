@@ -28,6 +28,9 @@ logger = logging.getLogger("userbot")
 AUTO_CONFIRM = os.environ.get("USERBOT_AUTO_CONFIRM", "0") == "1"
 # AI natijasida bo'sh bo'lsa qayta urinadigan asosiy maydonlar
 REQUIRED = ("desc", "genres", "year")
+FETCH_TIMEOUT = int(os.environ.get("UB_FETCH_TIMEOUT", "240"))     # manba bot bilan butun suhbat eng ko'pi bilan
+POSTER_TIMEOUT = int(os.environ.get("UB_POSTER_TIMEOUT", "45"))    # poster yuklab olish
+UPLOAD_TIMEOUT = int(os.environ.get("UB_UPLOAD_TIMEOUT", "900"))   # bitta nishonga yuklash
 AI_TIMEOUT = int(os.environ.get("UB_AI_TIMEOUT", "60"))      # AI qidiruvi eng ko'pi bilan necha soniya
 AI_ATTEMPTS = int(os.environ.get("UB_AI_ATTEMPTS", "1"))     # AI maydonlari bo'sh bo'lsa necha marta urinish
 
@@ -153,6 +156,8 @@ async def _upload_episodes(client, anime_id: int, ctype: str, episodes: dict) ->
                 sent += 1
                 break
             except FloodWaitError as e:
+                if e.seconds > 20:
+                    await rt.notify(f"◌ Telegram {e.seconds}s kutishni so'radi (qism {n}) — kutyapman...")
                 await asyncio.sleep(e.seconds + 1)
             except Exception:
                 logger.warning("qism %s yuborilmadi", n, exc_info=True)
@@ -165,17 +170,34 @@ RETRY_MIN = int(os.environ.get("UB_RETRY_MIN", "10"))     # majburiy obuna tugal
 MAX_RETRY = int(os.environ.get("UB_MAX_RETRY", "6"))
 
 
+async def _noop(*a, **k) -> None:
+    return None
+
+
+async def _fetch(client, cfg: dict, code: str, msg, prog) -> tuple:
+    """Manba bot bilan suhbat — vaqt chegarasi bilan (qotib qolsa SourceBlocked: keyinroq qayta uriniladi)."""
+    try:
+        return await asyncio.wait_for(
+            fetch_from_source(client, cfg["source_bot"], code, post=msg, notify=rt.notify, progress=prog.step),
+            FETCH_TIMEOUT)
+    except asyncio.TimeoutError:
+        raise SourceBlocked(f"Manba bot {FETCH_TIMEOUT}s ichida tugamadi.\nOxirgi bosqich: {rt.stage or '—'}")
+
+
 async def process_post(client, msg, cfg: dict, attempt: int = 0) -> None:
     bag: dict = {}
+    prog = rt.progress()
     try:
-        await _process_post(client, msg, cfg, attempt, bag)
-    finally:                                   # erta qaytilsa — fonda ishlayotgan AI/poster vazifalarini to'xtatamiz
+        await _process_post(client, msg, cfg, attempt, bag, prog)
+    finally:
+        await prog.flush()
+        rt.stage = None                                   # erta qaytilsa — fonda ishlayotgan AI/poster vazifalarini to'xtatamiz
         for t in bag.values():
             if not t.done():
                 t.cancel()
 
 
-async def _process_post(client, msg, cfg: dict, attempt: int, bag: dict) -> None:
+async def _process_post(client, msg, cfg: dict, attempt: int, bag: dict, prog) -> None:
     if await storage.is_done(msg.chat_id, msg.id):
         logger.info("O'tkazildi (allaqachon qayta ishlangan): %s/%s", msg.chat_id, msg.id)
         return
@@ -184,10 +206,9 @@ async def _process_post(client, msg, cfg: dict, attempt: int, bag: dict) -> None
         logger.info("O'tkazildi: nom/kod topilmadi (nom=%r, kod=%r) matn=%r", title, code, (msg.message or "")[:200])
         return  # anime posti emas
     ctype = cfg.get("content_type", "anime")
-    if attempt == 0:
-        await rt.notify(f"◈ Yangi post: <b>{esc(title)}</b>\n№ Manba kodi: <code>{esc(code)}</code>\n◌ Manba botdan tekshiryapman...")
-    else:
-        await rt.notify(f"◌ <b>{esc(title)}</b>: qayta tekshiryapman ({attempt}/{MAX_RETRY})...")
+    header = (f"Yangi post • № manba kodi: {code}" if attempt == 0
+              else f"Qayta tekshiryapman ({attempt}/{MAX_RETRY}) • № manba kodi: {code}")
+    await prog.begin(title, header)
 
     # Fonda bir vaqtda: AI qidiruvi (avtomatik rejimda) va poster yuklab olish — manba bot bilan parallel
     t0 = time.monotonic()
@@ -201,8 +222,9 @@ async def _process_post(client, msg, cfg: dict, attempt: int, bag: dict) -> None
     # 1) manba bot
     ts0 = time.monotonic()
     try:
-        info_text, episodes, debug = await fetch_from_source(client, cfg["source_bot"], code, post=msg, notify=rt.notify)
+        info_text, episodes, debug = await _fetch(client, cfg, code, msg, prog)
         timings["manba"] = round(time.monotonic() - ts0)
+        await prog.step(f"✓ Manba bot: {len(episodes)} ta qism ({timings['manba']}s)")
     except SourceBlocked as e:
         if attempt < MAX_RETRY:
             asyncio.get_running_loop().call_later(RETRY_MIN * 60, rt.queue.put_nowait, (msg, cfg, attempt + 1))
@@ -233,14 +255,25 @@ async def _process_post(client, msg, cfg: dict, attempt: int, bag: dict) -> None
     poster = None
     if "poster" in bag:
         try:
-            poster = await bag["poster"]
+            poster = await asyncio.wait_for(bag["poster"], POSTER_TIMEOUT)
+            await prog.step(f"✓ Poster yuklandi ({len(poster or b'') // 1024} KB)")
+        except asyncio.TimeoutError:
+            logger.warning("poster %ss ichida yuklanmadi — manba tugagach qayta urinaman", POSTER_TIMEOUT)
+            await prog.step("◌ Poster qotib qoldi, qayta urinyapman...")
+            try:
+                poster = await asyncio.wait_for(_download_poster(client, msg), POSTER_TIMEOUT)
+                await prog.step(f"✓ Poster yuklandi ({len(poster or b'') // 1024} KB)", True)
+            except Exception:
+                logger.warning("poster ikkinchi urinishda ham yuklanmadi", exc_info=True)
+                await prog.step("! Poster yuklanmadi — posterisiz davom etaman", True)
         except Exception:
             logger.warning("poster yuklanmadi", exc_info=True)
+            await prog.step("! Poster yuklanmadi — posterisiz davom etaman")
 
     # Avtomatik rejim (/targets): bir nechta nishon bot, moslik foizi bo'yicha. Nishon yo'q bo'lsa — eski rejim.
     if tcfgs:
         return await _process_multi(client, msg, tcfgs, title, code, eng, ctype, info_text, episodes, poster,
-                                    ai_task=bag.get("ai"), timings=timings, t0=t0)
+                                    ai_task=bag.get("ai"), timings=timings, t0=t0, prog=prog)
 
     # 4) AI ma'lumot + tasdiq (nom noto'g'ri bo'lsa "boshqa nom bilan" qayta urinadi)
     for _ in range(3):
@@ -291,7 +324,7 @@ async def _deliver(t, client, title: str, ctype: str, info: dict, episodes: dict
             new_eps = targets.new_episodes(episodes, last)
             if not new_eps:
                 return f"= {esc(t.name)}: «{esc(title)}» bor (ID {aid}), yangi qism yo'q ({last}-qismgacha bor)"
-        sent, saved = await t.upload(client, aid, ctype, new_eps)
+        sent, saved = await asyncio.wait_for(t.upload(client, aid, ctype, new_eps), UPLOAD_TIMEOUT)
         if saved <= 0:
             return f"! {esc(t.name)}: ID {aid} — qismlar qabul qilinmadi (yuborildi {sent}/{len(new_eps)}). Kanal/admin huquqini tekshiring."
         news = await t.news(aid, ctype, sorted(new_eps), is_new)
@@ -304,13 +337,15 @@ async def _deliver(t, client, title: str, ctype: str, info: dict, episodes: dict
 
 async def _process_multi(client, msg, tcfgs: list[dict], title: str, code: str, eng: str, ctype: str,
                          info_text: str, episodes: dict, poster: bytes | None,
-                         ai_task=None, timings: dict | None = None, t0: float | None = None) -> None:
+                         ai_task=None, timings: dict | None = None, t0: float | None = None, prog=None) -> None:
+    step = prog.step if prog else _noop
     timings = timings if timings is not None else {}
     t0 = t0 if t0 is not None else time.monotonic()
     ts = [t for t in (targets.make(c) for c in tcfgs if c.get("enabled", True)) if t.accepts(ctype)]
     if not ts:
         return await rt.notify(f"✕ «{esc(title)}» ({esc(ctype)}) uchun yoqilgan nishon bot yo'q — qo'shilmadi.")
 
+    await step("◌ AI natijasini kutyapman...")
     try:
         ai = await (ai_task if ai_task is not None else _ai_info(eng, ctype))
     except Exception:
@@ -341,6 +376,7 @@ async def _process_multi(client, msg, tcfgs: list[dict], title: str, code: str, 
     if not ok_ts:
         return await rt.notify("\n".join(lines))
     await rt.notify("\n".join(lines) + "\n◌ Qo'shilyapti...")
+    await step("◌ Qo'shilyapti: " + ", ".join(t.name for t in ok_ts))
 
     td = time.monotonic()
     results = list(await asyncio.gather(*(_deliver(t, client, title, ctype, info, episodes, poster) for t in ok_ts)))

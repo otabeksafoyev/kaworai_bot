@@ -40,6 +40,8 @@ async def _send_file_retry(client, chan: int, media, caption: str) -> bool:
             await client.send_file(chan, media, caption=caption)
             return True
         except FloodWaitError as e:
+            if e.seconds > 20:
+                await rt.notify(f"◌ Telegram {e.seconds}s kutishni so'radi (yuklash kanali) — kutyapman...")
             await asyncio.sleep(e.seconds + 1)
         except Exception:
             logger.warning("yuborilmadi: %s", caption.replace("\n", " | "), exc_info=True)

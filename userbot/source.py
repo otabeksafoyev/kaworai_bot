@@ -53,7 +53,7 @@ class _BotChat:
         return False
 
     async def send_message(self, text: str):
-        return await self.client.send_message(self.entity, text)
+        return await asyncio.wait_for(self.client.send_message(self.entity, text), IO_TIMEOUT)
 
     async def get_response(self):
         return await self.q.get()
@@ -62,6 +62,8 @@ class _BotChat:
 class SourceBlocked(Exception):
     """Manba bot majburiy obuna tugallanmagani sababli qismlarni bermayapti (keyinroq qayta urinish mumkin)."""
 MAX_STEPS = 80
+CLICK_TIMEOUT = int(os.environ.get("UB_CLICK_TIMEOUT", "40"))   # tugma bosilganda botning callback javobini eng ko'pi bilan shuncha kutamiz
+IO_TIMEOUT = 30                                                    # Telegram'ga bitta so'rov uchun
 MAX_CLICKS_PER_EP = 2     # bir qism raqami uchun eng ko'pi bilan nechta tugma bosiladi
 
 _QUALITY_RE = re.compile(r"(?i)(?<!\d)(2160|1440|1080|720|576|480|360|240)\s*p\b|\b(4k|2k|fhd|uhd)\b")
@@ -193,7 +195,7 @@ async def _drain(conv, first: float, settle: float, sink: list) -> None:
 async def _refresh(client, m):
     """Tahrirlangan xabarning (tugmalari o'zgargan) yangi holatini oladi."""
     try:
-        fresh = await client.get_messages(m.chat_id, ids=m.id)
+        fresh = await asyncio.wait_for(client.get_messages(m.chat_id, ids=m.id), IO_TIMEOUT)
         return fresh or m
     except Exception:
         return m
@@ -235,8 +237,12 @@ def _next_action(cards: dict, done: set, pages: int, cur_ep=None, have: set | No
 
 
 async def fetch_from_source(client, source_bot: str, code: str, post=None, notify=None,
-                            idle: float = 12.0, click_idle: float = 15.0, settle: float = 1.5):
+                            idle: float = 12.0, click_idle: float = 15.0, settle: float = 1.5, progress=None):
     """(info_text, {qism_raqami: telethon_message}, debug_matn) qaytaradi."""
+    async def say(text: str, replace: bool = False) -> None:
+        if progress:
+            await progress(text, replace)
+
     links = deep_links(post, source_bot) if post is not None else []
     payload = links[0][1] if links else code
 
@@ -257,7 +263,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
 
     async def click(b):
         try:
-            ans = await b.click()
+            ans = await asyncio.wait_for(b.click(), CLICK_TIMEOUT)
         except Exception as e:                        # callback'ga javob bo'lmasligi mumkin — baribir video kelishi mumkin
             logger.info("tugma '%s' bosildi (callback javobsiz: %s)", b.text, type(e).__name__)
             return
@@ -278,16 +284,20 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
                     cards[m.id] = m
                 if is_video(m):
                     n = cur_ep if cur_ep is not None else episode_no(m.message)
+                    await say(f"✓ Video keldi{f' ({n}-qism)' if n is not None else ''}", True)
                     if n is not None:
                         ep_msgs.setdefault(n, m)
                     else:
                         loose.append(m)
 
+        await say(f"◌ Manba bot: /start {payload} yuborildi, javob kutyapman...", True)
         await conv.send_message(f"/start {payload}")
         await pull(idle)
         if not got:                                   # deep link javobsiz — oddiy kod
+            await say("◌ Manba bot /start ga javob bermadi, oddiy kod yuboryapman...", True)
             await conv.send_message(code)
             await pull(idle)
+        await say(f"◌ Manba bot javob berdi ({len(got)} xabar), tugmalarni ko'ryapman...", True)
 
         for _ in range(MAX_STEPS):
             latest = cards[max(cards)] if cards else None
@@ -324,6 +334,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
             if not act:
                 break
             kind, m, b = act[0], act[1], act[2]
+            await say(f"◌ '{b.text}' tugmasi bosildi, natijani kutyapman...", True)
             if kind == "quality":
                 done.update(_key(m, x, cur_ep) for x in act[3])
             else:
