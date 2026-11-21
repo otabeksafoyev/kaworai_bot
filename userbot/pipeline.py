@@ -5,6 +5,7 @@ import asyncio
 import io
 import logging
 import os
+import time
 
 from sqlalchemy import func, select
 from telethon.errors import FloodWaitError
@@ -17,6 +18,7 @@ from utils.security import esc
 
 from . import storage, targets
 from .parsers import ENG_RE, clean_line, parse_post, same_title
+from .postinfo import AI_TRUST, merge_info, post_info
 from .scoring import breakdown_text, match_percent
 from .runtime import rt
 from .source import SourceBlocked, fetch_from_source
@@ -26,6 +28,8 @@ logger = logging.getLogger("userbot")
 AUTO_CONFIRM = os.environ.get("USERBOT_AUTO_CONFIRM", "0") == "1"
 # AI natijasida bo'sh bo'lsa qayta urinadigan asosiy maydonlar
 REQUIRED = ("desc", "genres", "year")
+AI_TIMEOUT = int(os.environ.get("UB_AI_TIMEOUT", "60"))      # AI qidiruvi eng ko'pi bilan necha soniya
+AI_ATTEMPTS = int(os.environ.get("UB_AI_ATTEMPTS", "1"))     # AI maydonlari bo'sh bo'lsa necha marta urinish
 
 
 def _secret_channel(ctype: str) -> int:
@@ -43,19 +47,37 @@ def _missing(info: dict) -> list[str]:
 
 
 async def _ai_info(english: str, ctype: str) -> dict:
-    """AI ma'lumot yig'adi; asosiy maydonlar bo'sh bo'lsa BIR marta qayta urinadi."""
+    """AI ma'lumot yig'adi (vaqt chegarasi bilan); asosiy maydonlar bo'sh bo'lsa AI_ATTEMPTS martagacha urinadi."""
     info: dict = {}
-    for attempt in (1, 2):
+    for attempt in range(1, max(1, AI_ATTEMPTS) + 1):
         try:
-            info = await build_content_info(english, ctype)
+            info = await asyncio.wait_for(build_content_info(english, ctype), AI_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning("AI qidiruvi %ss ichida tugamadi (%s)", AI_TIMEOUT, english)
+            info = {"errors": [f"AI {AI_TIMEOUT}s ichida javob bermadi"]}
         except Exception:
             logger.exception("build_content_info xato")
             info = {}
         if not _missing(info):
             break
         logger.info("AI maydonlar bo'sh %s (urinish %s)", _missing(info), attempt)
-        await asyncio.sleep(2)
+        if attempt < AI_ATTEMPTS:
+            await asyncio.sleep(2)
     return info
+
+
+async def _timed_ai(english: str, ctype: str, timings: dict) -> dict:
+    t = time.monotonic()
+    try:
+        return await _ai_info(english, ctype)
+    finally:
+        timings["AI"] = round(time.monotonic() - t)
+
+
+async def _download_poster(client, msg) -> bytes | None:
+    buf = io.BytesIO()
+    await client.download_media(msg, file=buf)
+    return buf.getvalue() or None
 
 
 def _preview(title: str, english: str, ctype: str, info: dict, ep_count: int, code: str) -> str:
@@ -144,6 +166,16 @@ MAX_RETRY = int(os.environ.get("UB_MAX_RETRY", "6"))
 
 
 async def process_post(client, msg, cfg: dict, attempt: int = 0) -> None:
+    bag: dict = {}
+    try:
+        await _process_post(client, msg, cfg, attempt, bag)
+    finally:                                   # erta qaytilsa — fonda ishlayotgan AI/poster vazifalarini to'xtatamiz
+        for t in bag.values():
+            if not t.done():
+                t.cancel()
+
+
+async def _process_post(client, msg, cfg: dict, attempt: int, bag: dict) -> None:
     if await storage.is_done(msg.chat_id, msg.id):
         logger.info("O'tkazildi (allaqachon qayta ishlangan): %s/%s", msg.chat_id, msg.id)
         return
@@ -157,9 +189,20 @@ async def process_post(client, msg, cfg: dict, attempt: int = 0) -> None:
     else:
         await rt.notify(f"◌ <b>{esc(title)}</b>: qayta tekshiryapman ({attempt}/{MAX_RETRY})...")
 
+    # Fonda bir vaqtda: AI qidiruvi (avtomatik rejimda) va poster yuklab olish — manba bot bilan parallel
+    t0 = time.monotonic()
+    timings: dict = {}
+    tcfgs = await targets.load_targets()
+    if tcfgs:
+        bag["ai"] = asyncio.create_task(_timed_ai(eng or title, cfg.get("content_type", "anime"), timings))
+    if msg.photo:
+        bag["poster"] = asyncio.create_task(_download_poster(client, msg))
+
     # 1) manba bot
+    ts0 = time.monotonic()
     try:
         info_text, episodes, debug = await fetch_from_source(client, cfg["source_bot"], code, post=msg, notify=rt.notify)
+        timings["manba"] = round(time.monotonic() - ts0)
     except SourceBlocked as e:
         if attempt < MAX_RETRY:
             asyncio.get_running_loop().call_later(RETRY_MIN * 60, rt.queue.put_nowait, (msg, cfg, attempt + 1))
@@ -188,15 +231,16 @@ async def process_post(client, msg, cfg: dict, attempt: int = 0) -> None:
             return await rt.notify("✕ Inglizcha nom kelmadi — bekor qilindi.")
 
     poster = None
-    if msg.photo:
-        buf = io.BytesIO()
-        await client.download_media(msg, file=buf)
-        poster = buf.getvalue() or None
+    if "poster" in bag:
+        try:
+            poster = await bag["poster"]
+        except Exception:
+            logger.warning("poster yuklanmadi", exc_info=True)
 
     # Avtomatik rejim (/targets): bir nechta nishon bot, moslik foizi bo'yicha. Nishon yo'q bo'lsa — eski rejim.
-    tcfgs = await targets.load_targets()
     if tcfgs:
-        return await _process_multi(client, msg, tcfgs, title, code, eng, ctype, info_text, episodes, poster)
+        return await _process_multi(client, msg, tcfgs, title, code, eng, ctype, info_text, episodes, poster,
+                                    ai_task=bag.get("ai"), timings=timings, t0=t0)
 
     # 4) AI ma'lumot + tasdiq (nom noto'g'ri bo'lsa "boshqa nom bilan" qayta urinadi)
     for _ in range(3):
@@ -259,29 +303,50 @@ async def _deliver(t, client, title: str, ctype: str, info: dict, episodes: dict
 
 
 async def _process_multi(client, msg, tcfgs: list[dict], title: str, code: str, eng: str, ctype: str,
-                         info_text: str, episodes: dict, poster: bytes | None) -> None:
+                         info_text: str, episodes: dict, poster: bytes | None,
+                         ai_task=None, timings: dict | None = None, t0: float | None = None) -> None:
+    timings = timings if timings is not None else {}
+    t0 = t0 if t0 is not None else time.monotonic()
     ts = [t for t in (targets.make(c) for c in tcfgs if c.get("enabled", True)) if t.accepts(ctype)]
     if not ts:
         return await rt.notify(f"✕ «{esc(title)}» ({esc(ctype)}) uchun yoqilgan nishon bot yo'q — qo'shilmadi.")
 
-    info = await _ai_info(eng, ctype)
-    if _missing(info):
-        return await rt.notify(
-            f"✕ <b>{esc(title)}</b>: AI ma'lumoti to'liq emas ({esc(', '.join(_missing(info)))}) — hech qaysi botga qo'shilmadi.")
+    try:
+        ai = await (ai_task if ai_task is not None else _ai_info(eng, ctype))
+    except Exception:
+        logger.exception("AI xato")
+        ai = {}
+    ai = ai or {}
+    post = post_info(msg.message or "")
+    ai_found = bool(ai.get("matched_title") or ai.get("desc") or ai.get("genres"))
+    if ai_found:
+        pct, parts = match_percent(title, eng, f"{msg.message or ''}\n{info_text}", ai)
+    else:
+        pct, parts = None, {}
+    info = merge_info(ai, post, pct)
+    if not any(info.get(k) for k in REQUIRED):
+        return await rt.notify(f"✕ <b>{esc(title)}</b>: na AI, na postda ma'lumot (tavsif/janr/yil) topildi — hech qaysi botga qo'shilmadi.")
 
-    pct, parts = match_percent(title, eng, f"{msg.message or ''}\n{info_text}", info)
-    ok_ts = [t for t in ts if pct >= t.min_percent]
-    lines = [f"◈ <b>{esc(title)}</b> — moslik <b>{pct}%</b>", f"≡ {esc(breakdown_text(parts))}"]
-    if info.get("note"):
-        lines.append(f"! AI: {esc(info['note'])}")
-    lines += [f"✕ {esc(t.name)}: {pct}% < {t.min_percent}% — qo'shilmadi" for t in ts if t not in ok_ts]
+    if pct is None:                               # AI topmadi — postdagi ma'lumot bilan hamma nishonga qo'shamiz
+        ok_ts = list(ts)
+        lines = [f"◈ <b>{esc(title)}</b> — AI ma'lumot topmadi, postdagi ma'lumot ishlatiladi"]
+    else:
+        ok_ts = [t for t in ts if pct >= t.min_percent]
+        lines = [f"◈ <b>{esc(title)}</b> — moslik <b>{pct}%</b>", f"≡ {esc(breakdown_text(parts))}"]
+        if pct < AI_TRUST:
+            lines.append("! AI boshqa asarni topgan ko'rinadi — postdagi ma'lumot ishlatiladi")
+        lines += [f"✕ {esc(t.name)}: {pct}% < {t.min_percent}% — qo'shilmadi" for t in ts if t not in ok_ts]
+    if ai.get("note"):
+        lines.append(f"! AI: {esc(ai['note'])}")
     if not ok_ts:
         return await rt.notify("\n".join(lines))
     await rt.notify("\n".join(lines) + "\n◌ Qo'shilyapti...")
 
-    results = []
-    for t in ok_ts:
-        results.append(await _deliver(t, client, title, ctype, info, episodes, poster))
+    td = time.monotonic()
+    results = list(await asyncio.gather(*(_deliver(t, client, title, ctype, info, episodes, poster) for t in ok_ts)))
+    timings["yuklash"] = round(time.monotonic() - td)
     if any(r.startswith(("✓", "=")) for r in results):
         await storage.mark_done(msg.chat_id, msg.id)
-    await rt.notify(f"◈ <b>{esc(title)}</b> — natija:\n" + "\n".join(results))
+    spent = " • ".join(f"{k} {v}s" for k, v in timings.items())
+    await rt.notify(f"◈ <b>{esc(title)}</b> — natija:\n" + "\n".join(results)
+                    + f"\n⏱ jami {round(time.monotonic() - t0)}s ({spent})")

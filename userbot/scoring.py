@@ -18,7 +18,7 @@ NOTE_CAP = 50              # AI "nom aniq topilmadi" (note) desa — foiz shunda
 
 _YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
 _GENRE_LINE = re.compile(r"(?i)(?:janr(?:lari|i)?|genres?|жанр\w*)\s*[:\-–—]\s*(.+)")
-_DESC_LINE = re.compile(r"(?is)(?:tavsif(?:i)?|syujet|haqida|description|опис\w*|сюжет)\s*[:\-–—]\s*(.+)")
+_DESC_LINE = re.compile(r"(?is)(?:qisqacha|tavsif(?:i)?|syujet|haqida|description|опис\w*|сюжет)\s*[:\-–—]\s*(.+)")
 _SPLIT = re.compile(r"[,;/|•·\n]+|\s#")
 
 

@@ -153,11 +153,11 @@ class KaworaiTarget(Target):
         before = await self.count_episodes(aid)
         sent = await p._upload_episodes(client, aid, ctype, episodes)
         saved = 0
-        for _ in range(12):             # Kaworai bot maxfiy kanaldan qabul qilguncha kutamiz (~1 daqiqagacha)
+        for _ in range(40):             # Kaworai bot maxfiy kanaldan qabul qilguncha kutamiz (~1 daqiqagacha)
             saved = await self.count_episodes(aid) - before
             if saved >= len(episodes):
                 break
-            await asyncio.sleep(5)
+            await asyncio.sleep(1.5)
         return sent, saved
 
     async def count_episodes(self, aid: int) -> int:
@@ -303,12 +303,12 @@ class YumoraTarget(Target):
             await asyncio.sleep(2)
         want = list(episodes)
         saved = 0
-        for _ in range(12):             # Yumora bot kanaldan qabul qilguncha kutamiz (~1 daqiqagacha)
+        for _ in range(40):             # Yumora bot kanaldan qabul qilguncha kutamiz (~1 daqiqagacha)
             saved = await pool.fetchval("SELECT COUNT(*) FROM episodes WHERE anime_id = $1 AND number = ANY($2::int[])",
                                         aid, want)
             if saved >= len(want):
                 break
-            await asyncio.sleep(5)
+            await asyncio.sleep(1.5)
         return sent, saved
 
     async def news(self, aid, ctype, eps, is_new) -> int:

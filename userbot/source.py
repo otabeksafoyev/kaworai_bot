@@ -235,7 +235,7 @@ def _next_action(cards: dict, done: set, pages: int, cur_ep=None, have: set | No
 
 
 async def fetch_from_source(client, source_bot: str, code: str, post=None, notify=None,
-                            idle: float = 12.0, click_idle: float = 15.0, settle: float = 2.0):
+                            idle: float = 12.0, click_idle: float = 15.0, settle: float = 1.5):
     """(info_text, {qism_raqami: telethon_message}, debug_matn) qaytaradi."""
     links = deep_links(post, source_bot) if post is not None else []
     payload = links[0][1] if links else code
