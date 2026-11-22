@@ -31,7 +31,10 @@ REQUIRED = ("desc", "genres", "year")
 FETCH_TIMEOUT = int(os.environ.get("UB_FETCH_TIMEOUT", "240"))     # manba bot bilan butun suhbat eng ko'pi bilan
 POSTER_TIMEOUT = int(os.environ.get("UB_POSTER_TIMEOUT", "45"))    # poster yuklab olish
 UPLOAD_TIMEOUT = int(os.environ.get("UB_UPLOAD_TIMEOUT", "900"))   # bitta nishonga yuklash
-AI_TIMEOUT = int(os.environ.get("UB_AI_TIMEOUT", "60"))      # AI qidiruvi eng ko'pi bilan necha soniya
+AI_STEP_TIMEOUT = {"_jikan_search": 12, "_anilist_search": 10, "_tmdb_facts": 10, "_gemini_enrich": 25, "_translate_uz": 12}
+AI_TIMEOUT = int(os.environ.get("UB_AI_TIMEOUT", "60"))
+AI_POLL = 8          # AI kutilayotganda hisobotdagi sekundlar necha soniyada yangilanadi
+AI_GRACE = 30        # AI_TIMEOUT dan keyin yana shuncha kutib, baribir davom etamiz      # AI qidiruvi eng ko'pi bilan necha soniya
 AI_ATTEMPTS = int(os.environ.get("UB_AI_ATTEMPTS", "1"))     # AI maydonlari bo'sh bo'lsa necha marta urinish
 
 
@@ -49,12 +52,73 @@ def _missing(info: dict) -> list[str]:
     return [k for k in REQUIRED if not info.get(k)]
 
 
+async def _bounded(aw, timeout: float):
+    """Vaqt chegarasi: `wait_for` dan farqli, ichki vazifa bekor qilinishiga javob bermasa ham `timeout` da qaytadi."""
+    task = asyncio.ensure_future(aw)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=timeout)
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    if not done:
+        task.cancel()
+        task.add_done_callback(lambda t: t.cancelled() or t.exception())   # "exception never retrieved" bo'lmasin
+        raise asyncio.TimeoutError()
+    return task.result()
+
+
+_AI_PATCHED = False
+
+
+def _instrument_ai() -> None:
+    """Kaworai AI funksiyalariga (faqat shu jarayonda) log va qadam bo'yicha vaqt chegarasi qo'yadi:
+    qaysi manba sekinligi logda ko'rinadi, bitta sekin manba butun qidiruvni cho'zib yubormaydi."""
+    global _AI_PATCHED
+    if _AI_PATCHED:
+        return
+    _AI_PATCHED = True
+    try:
+        from utils import ai_anime as A
+    except Exception:
+        logger.warning("ai_anime topilmadi — qadamlar o'ralmadi", exc_info=True)
+        return
+
+    def make(name: str, orig):
+        async def wrapper(*a, **k):
+            t = time.monotonic()
+            logger.info("AI/%s boshlandi", name)
+            try:
+                r = await asyncio.wait_for(orig(*a, **k), AI_STEP_TIMEOUT[name])
+            except asyncio.TimeoutError:
+                logger.warning("AI/%s %ss ichida tugamadi — o'tkazib yuboryapman", name, AI_STEP_TIMEOUT[name])
+                errs = next((x for x in a if isinstance(x, list)), None)
+                if errs is not None:
+                    errs.append(f"{name}: {AI_STEP_TIMEOUT[name]}s ichida javob bermadi")
+                return ([], "vaqt tugadi") if name in ("_jikan_search", "_anilist_search") else None
+            logger.info("AI/%s tugadi (%.1fs)", name, time.monotonic() - t)
+            return r
+        return wrapper
+
+    for name in AI_STEP_TIMEOUT:
+        if hasattr(A, name):
+            setattr(A, name, make(name, getattr(A, name)))
+
+
+def _ai_in_thread(english: str, ctype: str) -> dict:
+    """AI qidiruvi alohida oqimda va o'z hodisalar siklida: ichida nima qotmasin, asosiy jarayonni bloklamaydi."""
+    _instrument_ai()
+    return asyncio.run(build_content_info(english, ctype))
+
+
 async def _ai_info(english: str, ctype: str) -> dict:
-    """AI ma'lumot yig'adi (vaqt chegarasi bilan); asosiy maydonlar bo'sh bo'lsa AI_ATTEMPTS martagacha urinadi."""
+    """AI ma'lumot yig'adi (qat'iy vaqt chegarasi bilan); asosiy maydonlar bo'sh bo'lsa AI_ATTEMPTS martagacha urinadi."""
     info: dict = {}
+    loop = asyncio.get_running_loop()
     for attempt in range(1, max(1, AI_ATTEMPTS) + 1):
+        t = time.monotonic()
         try:
-            info = await asyncio.wait_for(build_content_info(english, ctype), AI_TIMEOUT)
+            info = await _bounded(loop.run_in_executor(None, _ai_in_thread, english, ctype), AI_TIMEOUT)
+            logger.info("AI tugadi (%.1fs): topildi=%s", time.monotonic() - t, bool(info.get("matched_title") or info.get("desc")))
         except asyncio.TimeoutError:
             logger.warning("AI qidiruvi %ss ichida tugamadi (%s)", AI_TIMEOUT, english)
             info = {"errors": [f"AI {AI_TIMEOUT}s ichida javob bermadi"]}
@@ -177,7 +241,7 @@ async def _noop(*a, **k) -> None:
 async def _fetch(client, cfg: dict, code: str, msg, prog) -> tuple:
     """Manba bot bilan suhbat — vaqt chegarasi bilan (qotib qolsa SourceBlocked: keyinroq qayta uriniladi)."""
     try:
-        return await asyncio.wait_for(
+        return await _bounded(
             fetch_from_source(client, cfg["source_bot"], code, post=msg, notify=rt.notify, progress=prog.step),
             FETCH_TIMEOUT)
     except asyncio.TimeoutError:
@@ -255,13 +319,13 @@ async def _process_post(client, msg, cfg: dict, attempt: int, bag: dict, prog) -
     poster = None
     if "poster" in bag:
         try:
-            poster = await asyncio.wait_for(bag["poster"], POSTER_TIMEOUT)
+            poster = await _bounded(bag["poster"], POSTER_TIMEOUT)
             await prog.step(f"✓ Poster yuklandi ({len(poster or b'') // 1024} KB)")
         except asyncio.TimeoutError:
             logger.warning("poster %ss ichida yuklanmadi — manba tugagach qayta urinaman", POSTER_TIMEOUT)
             await prog.step("◌ Poster qotib qoldi, qayta urinyapman...")
             try:
-                poster = await asyncio.wait_for(_download_poster(client, msg), POSTER_TIMEOUT)
+                poster = await _bounded(_download_poster(client, msg), POSTER_TIMEOUT)
                 await prog.step(f"✓ Poster yuklandi ({len(poster or b'') // 1024} KB)", True)
             except Exception:
                 logger.warning("poster ikkinchi urinishda ham yuklanmadi", exc_info=True)
@@ -324,7 +388,7 @@ async def _deliver(t, client, title: str, ctype: str, info: dict, episodes: dict
             new_eps = targets.new_episodes(episodes, last)
             if not new_eps:
                 return f"= {esc(t.name)}: «{esc(title)}» bor (ID {aid}), yangi qism yo'q ({last}-qismgacha bor)"
-        sent, saved = await asyncio.wait_for(t.upload(client, aid, ctype, new_eps), UPLOAD_TIMEOUT)
+        sent, saved = await _bounded(t.upload(client, aid, ctype, new_eps), UPLOAD_TIMEOUT)
         if saved <= 0:
             return f"! {esc(t.name)}: ID {aid} — qismlar qabul qilinmadi (yuborildi {sent}/{len(new_eps)}). Kanal/admin huquqini tekshiring."
         news = await t.news(aid, ctype, sorted(new_eps), is_new)
@@ -346,12 +410,26 @@ async def _process_multi(client, msg, tcfgs: list[dict], title: str, code: str, 
         return await rt.notify(f"✕ «{esc(title)}» ({esc(ctype)}) uchun yoqilgan nishon bot yo'q — qo'shilmadi.")
 
     await step("◌ AI natijasini kutyapman...")
+    ai = {}
     try:
-        ai = await (ai_task if ai_task is not None else _ai_info(eng, ctype))
+        if ai_task is not None:
+            tw = time.monotonic()
+            while not ai_task.done():
+                await asyncio.wait({ai_task}, timeout=AI_POLL)
+                if not ai_task.done():
+                    if time.monotonic() - tw > AI_TIMEOUT + AI_GRACE:        # zaxira: AI vazifasi o'zi tugamasa ham kutib o'tirmaymiz
+                        ai_task.cancel()
+                        logger.error("AI vazifasi %ss dan keyin ham tugamadi — post ma'lumoti bilan davom etaman", AI_TIMEOUT + AI_GRACE)
+                        break
+                    await step(f"◌ AI natijasini kutyapman... {round(time.monotonic() - tw)}s", True)
+            if ai_task.done() and not ai_task.cancelled():
+                ai = ai_task.result()
+        else:
+            ai = await _ai_info(eng, ctype)
     except Exception:
         logger.exception("AI xato")
-        ai = {}
     ai = ai or {}
+    logger.info("[%s] AI natijasi olindi: topildi=%s", title, bool(ai.get("matched_title") or ai.get("desc") or ai.get("genres")))
     post = post_info(msg.message or "")
     ai_found = bool(ai.get("matched_title") or ai.get("desc") or ai.get("genres"))
     if ai_found:
@@ -359,6 +437,7 @@ async def _process_multi(client, msg, tcfgs: list[dict], title: str, code: str, 
     else:
         pct, parts = None, {}
     info = merge_info(ai, post, pct)
+    logger.info("[%s] moslik=%s, nishonlar=%s", title, pct, [t.name for t in ts])
     if not any(info.get(k) for k in REQUIRED):
         return await rt.notify(f"✕ <b>{esc(title)}</b>: na AI, na postda ma'lumot (tavsif/janr/yil) topildi — hech qaysi botga qo'shilmadi.")
 
