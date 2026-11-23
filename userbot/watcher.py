@@ -6,15 +6,17 @@ import logging
 import os
 import time
 
-from telethon import events
+from telethon import events, utils
+from telethon.tl import types as T
 
-from . import storage
+from . import folders, storage
 from .pipeline import process_post
 from .runtime import rt
 
 logger = logging.getLogger("userbot")
 
 POST_TIMEOUT = int(os.environ.get("UB_POST_TIMEOUT", "1500"))        # bitta post eng ko'pi bilan necha soniya (qotib qolmasligi uchun)
+FOLDER_REFRESH = int(os.environ.get("UB_FOLDER_REFRESH", str(6 * 3600)))    # papkalarni necha soniyada qayta o'qiydi
 HEALTH_INTERVAL = int(os.environ.get("UB_HEALTH_INTERVAL", "120"))   # sessiya holatini necha soniyada tekshiradi
 
 
@@ -31,6 +33,26 @@ def _make_handler(cfg: dict):
     return on_post
 
 
+def _register_folders(fl: list[dict], skip: set[int]) -> None:
+    """Papka kanallari: bitta umumiy handler ("yangi qism" rejimi)."""
+    fmap = {utils.get_peer_id(T.PeerChannel(cid)): cfg for cid, cfg in folders.watch_map(fl, skip).items()}
+    if not fmap:
+        return
+
+    async def on_folder_post(event):
+        m = event.message
+        cfg = fmap.get(m.chat_id)
+        if cfg is None or not (m.message or "").strip():
+            return
+        logger.info("Papka posti: %s id=%s matn=%r", cfg["title"], m.id, (m.message or "")[:60])
+        rt.last_seen[cfg["channel"]] = time.time()
+        await rt.queue.put((m, cfg))
+
+    rt.client.add_event_handler(on_folder_post, events.NewMessage(chats=[cid for cid in folders.watch_map(fl, skip)]))
+    rt.handler.append(on_folder_post)
+    logger.info("Papka kanallari kuzatuvda: %s ta", len(fmap))
+
+
 async def start_watcher() -> None:
     """Barcha kuzatuv kanallarini (qayta) ro'yxatdan o'tkazadi."""
     for h in (rt.handler or []):
@@ -40,7 +62,11 @@ async def start_watcher() -> None:
             pass
     rt.handler = []
     items = await storage.load_watches()
-    if not (rt.client and items):
+    fl = await storage.load_folders()
+    if not rt.client:
+        return
+    _register_folders(fl, {w["channel"] for w in items})
+    if not items:
         return
     for cfg in items:
         h = _make_handler(cfg)
@@ -74,8 +100,17 @@ async def worker() -> None:
 async def health_loop() -> None:
     """Telegram sessiyasi yaroqliligini tekshiradi; bekor qilingan bo'lsa (masalan bir sessiya ikki joyda ishlasa) adminga aytadi."""
     was_ok = True
+    last_refresh = time.time()
     while True:
         await asyncio.sleep(HEALTH_INTERVAL)
+        if rt.client is not None and time.time() - last_refresh > FOLDER_REFRESH:
+            last_refresh = time.time()
+            try:
+                if await folders.refresh_all(rt.client):
+                    logger.info("papka kanallari o'zgardi — kuzatuv yangilanyapti")
+                    await start_watcher()
+            except Exception as e:
+                logger.warning("papkalarni yangilashda xato: %s: %s", type(e).__name__, e)
         c = rt.client
         if c is None:
             continue

@@ -37,6 +37,7 @@ class Login(StatesGroup):
     channel = State()
     source = State()
     ctype = State()
+    folder = State()
 
 
 def _is_admin(uid: int) -> bool:
@@ -255,6 +256,7 @@ async def got_type(call: CallbackQuery, state: FSMContext):
 
 async def _watch_view() -> tuple[str, InlineKeyboardMarkup]:
     items = await storage.load_watches()
+    fl = await storage.load_folders()
     lines = [f"{DIV}\n◈ <b>Kuzatiladigan kanallar</b>: {len(items)} ta\n"]
     kb = []
     for i, w in enumerate(items, 1):
@@ -263,8 +265,19 @@ async def _watch_view() -> tuple[str, InlineKeyboardMarkup]:
         kb.append([InlineKeyboardButton(text=f"✕ {w.get('title') or w['channel']}", callback_data=f"wc:del:{w['channel']}")])
     if not items:
         lines.append("Hozircha kanal yo'q.")
-    lines.append(f"\nIstalgancha kanal qo'shishingiz mumkin. Har biri o'z manba boti va turi bilan.\n{DIV}")
+    if fl:
+        lines.append("\n📁 <b>Papkalar</b> (yangi qism rejimi):")
+        for f in fl:
+            miss = f" • a'zo emas: {len(f['missing'])}" if f.get("missing") else ""
+            lines.append(f"• <b>{html.escape(f['title'])}</b> — {len(f['channels'])} kanal{miss}")
+            kb.append([InlineKeyboardButton(text=f"✕ 📁 {f['title']}", callback_data=f"fd:del:{f['slug']}")])
+            if f.get("missing"):
+                kb.append([InlineKeyboardButton(text=f"＋ {len(f['missing'])} ta kanalga a'zo bo'lish", callback_data=f"fd:join:{f['slug']}")])
+        kb.append([InlineKeyboardButton(text="🔄 Papkalarni yangilash", callback_data="fd:ref")])
+    lines.append(f"\nIstalgancha kanal qo'shishingiz mumkin. Har biri o'z manba boti va turi bilan.\n"
+                 f"Papka (addlist havolasi) qo'shsangiz, undagi hamma kanal kuzatiladi: bazada bor animening yangi qismlari avtomatik qo'shiladi.\n{DIV}")
     kb.append([InlineKeyboardButton(text="＋ Kanal qo'shish", callback_data="wc:add")])
+    kb.append([InlineKeyboardButton(text="＋ Papka (addlist) qo'shish", callback_data="fd:add")])
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
 
 
@@ -288,6 +301,89 @@ async def watch_add(call: CallbackQuery, state: FSMContext):
     await state.set_state(Login.channel)
     await call.message.answer("⌕ Yangi kanal usernameini yuboring (bekor qilish: /cancel):")
     await call.answer()
+
+
+@router.callback_query(F.data == "fd:add")
+async def folder_add(call: CallbackQuery, state: FSMContext):
+    if not _is_admin(call.from_user.id):
+        return await call.answer()
+    if not rt.client:
+        return await call.answer("Avval /start bilan akkauntni ulang.", show_alert=True)
+    await state.set_state(Login.folder)
+    await call.message.answer("📁 Papka havolasini yuboring (https://t.me/addlist/...). Bekor qilish: /cancel")
+    await call.answer()
+
+
+@router.message(StateFilter(Login.folder), F.text)
+async def got_folder(msg: Message, state: FSMContext):
+    if not _is_admin(msg.from_user.id):
+        return
+    from . import folders
+    slug = folders.parse_addlist(msg.text)
+    if not slug:
+        return await msg.answer("✕ Bu addlist havolasi emas. Masalan: https://t.me/addlist/AbCdEf...")
+    try:
+        f = await folders.add_folder(rt.client, slug)
+    except Exception as e:
+        return await msg.answer(f"✕ Papkani ochib bo'lmadi: {html.escape(type(e).__name__)}. Havola eskirgan bo'lishi mumkin.")
+    await state.clear()
+    from .watcher import start_watcher
+    await start_watcher()
+    extra = f"\n! {len(f['missing'])} ta kanalga hali a'zo emassiz — /watch dagi tugma orqali a'zo bo'ling." if f["missing"] else ""
+    await msg.answer(f"{DIV}\n✓ 📁 <b>{html.escape(f['title'])}</b> qo'shildi!\n\nKuzatiladi: {len(f['channels'])} ta kanal.{extra}\n"
+                     f"Bu kanallardagi postlar: bazangizda bor animening yetishmayotgan qismlari avtomatik qo'shiladi.\n{DIV}", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "fd:ref")
+async def folder_refresh(call: CallbackQuery):
+    if not _is_admin(call.from_user.id):
+        return await call.answer()
+    if not rt.client:
+        return await call.answer("Avval /start bilan akkauntni ulang.", show_alert=True)
+    from . import folders
+    from .watcher import start_watcher
+    await folders.refresh_all(rt.client)
+    await start_watcher()
+    text, kb = await _watch_view()
+    try:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await call.answer("✓ Yangilandi")
+
+
+@router.callback_query(F.data.startswith("fd:join:"))
+async def folder_join(call: CallbackQuery):
+    if not _is_admin(call.from_user.id):
+        return await call.answer()
+    if not rt.client:
+        return await call.answer("Avval /start bilan akkauntni ulang.", show_alert=True)
+    from . import folders
+    from .watcher import start_watcher
+    await call.answer("A'zo bo'lyapman...")
+    try:
+        n = await folders.join_missing(rt.client, call.data.split(":", 2)[2], rt.notify)
+    except Exception as e:
+        return await call.message.answer(f"✕ A'zo bo'lib bo'lmadi: {html.escape(type(e).__name__)}")
+    await folders.refresh_all(rt.client)
+    await start_watcher()
+    await call.message.answer(f"✓ {n} ta kanalga a'zo bo'ldim. /watch")
+
+
+@router.callback_query(F.data.startswith("fd:del:"))
+async def folder_del(call: CallbackQuery):
+    if not _is_admin(call.from_user.id):
+        return await call.answer()
+    from . import folders
+    from .watcher import start_watcher
+    await folders.remove_folder(call.data.split(":", 2)[2])
+    await start_watcher()
+    text, kb = await _watch_view()
+    try:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await call.answer("✓ Olib tashlandi")
 
 
 @router.callback_query(F.data.startswith("wc:del:"))
@@ -331,8 +427,10 @@ async def _status_text() -> str:
     work = (f"{html.escape(rt.current)} ({int(time.time() - rt.current_since)}s)"
             + (f"\n   bosqich: {html.escape(rt.stage)}" if rt.stage else "")) if rt.current else "—"
     up = _ago(rt.started_at).replace(" oldin", "") if rt.started_at else "—"
+    fl = await storage.load_folders()
+    fl_line = (f"\n📁 Papkalar: {len(fl)} (jami {sum(len(f['channels']) for f in fl)} kanal, yangi qism rejimi)" if fl else "")
     return (f"◈ Userbot: {'✓ ishlayapti' if connected else '✕ o‘chiq'}\n≡ Telegram: {tg}\n"
-            f"⌕ Kuzatuv kanallari ({len(items)}):\n" + ("\n".join(rows) or "—")
+            f"⌕ Kuzatuv kanallari ({len(items)}):\n" + ("\n".join(rows) or "—") + fl_line
             + f"\n◌ Navbatda: {rt.queue.qsize()} • hozir: {work}\n⏱ Ishlayapti: {up}")
 
 

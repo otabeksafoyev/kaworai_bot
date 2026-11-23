@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import os
+import re
 
 from telethon.errors import FloodWaitError
 
@@ -17,7 +19,16 @@ from .runtime import rt
 
 logger = logging.getLogger("userbot")
 
+YUMORA_GAP = float(os.environ.get("UB_YUMORA_GAP", "0.4"))   # Yumora qismni raqami bilan yozadi (poyga yo'q) — tez yuborsa bo'ladi
+
 DEFAULT_KAWORAI = {"id": "kaworai", "kind": "kaworai", "name": "Kaworai", "min_percent": 70, "enabled": True}
+
+
+def norm_title(t: str) -> str:
+    """Nomlarni solishtirish uchun: kichik harf, yil/qavs, belgilar va ortiqcha bo'shliqlarsiz."""
+    t = re.sub(r"[\(\[]\s*(?:19|20)\d{2}\s*[\)\]]", " ", (t or "").lower())
+    t = re.sub(r"[^\w\s]", " ", t.replace("ʻ", "'").replace("’", "'").replace("`", "'"))
+    return re.sub(r"\s+", " ", t).strip()
 
 
 def range_text(eps: list[int]) -> str:
@@ -101,13 +112,20 @@ async def _kaworai_bot_username() -> str:
     return _kaworai_username
 
 
-def _kaworai_caption(anime, eps: list[int], is_new: bool) -> str:
+def _kaworai_caption(anime, eps: list[int], is_new: bool, total: int | None = None) -> str:
     from utils.security import esc
     from utils.ui import DIV1
 
     year = f" ({anime.year})" if anime.year else ""
     if not is_new:
-        return f"๏ <b>{esc(anime.title)}</b>{year}\n{DIV1}\n➤ ᐅ Yangi qism: <b>{range_text(eps)}</b>\n➤ № Kode: {anime.id}"
+        lines = ["◈ <b>Yangi qism qo'shildi!</b>", DIV1, f"๏ <b>{esc(anime.title)}</b>{year}",
+                 f"➤ ᐅ Qism: <b>{range_text(eps)}</b> tayyor"]
+        if total:
+            lines.append(f"➤ ๏ Jami qismlar: {total}")
+        if anime.genres:
+            lines.append(f"➤ ๏ Janri: {esc(', '.join(anime.genres[:3]))}")
+        lines += [f"➤ № Kode: {anime.id}", DIV1, "ᐅ Pastdagi tugma orqali hoziroq tomosha qiling"]
+        return "\n".join(lines)
     lines = [f"๏ <b>{esc(anime.title)}</b>{year}", DIV1,
              f"➤ ๏ Tur: {_TYPE_LABEL.get(anime.content_type or 'anime', '—')}",
              f"➤ № Kode: {anime.id}"]
@@ -133,7 +151,22 @@ class KaworaiTarget(Target):
 
         async with AsyncSessionLocal() as s:
             row = (await s.execute(select(Anime.id).where(func.lower(Anime.title) == title.lower()))).first()
-        return row[0] if row else None
+            if row:
+                return row[0]
+            key = norm_title(title)
+            first = key.split(" ")[0] if key else ""
+            if len(first) < 3:
+                return None
+            cands = (await s.execute(select(Anime.id, Anime.title).where(Anime.title.ilike(f"%{first}%")).limit(60))).all()
+        return next((i for i, t in cands if norm_title(t) == key), None)
+
+    async def content_type_of(self, aid: int) -> str:
+        from database.engine import AsyncSessionLocal
+        from database.models import Anime
+
+        async with AsyncSessionLocal() as s:
+            a = await s.get(Anime, aid)
+        return (a.content_type if a else None) or "anime"
 
     async def max_episode(self, aid: int) -> int:
         from sqlalchemy import func, select
@@ -185,8 +218,10 @@ class KaworaiTarget(Target):
             return 0
         username = await _kaworai_bot_username()
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="ᐅ Tomosha qilish", url=f"https://t.me/{username}?start=anime_{aid}")]])
-        caption = _kaworai_caption(anime, eps, is_new)
+            InlineKeyboardButton(text="ᐅ Tomosha qilish" if is_new or len(eps) != 1 else f"ᐅ {eps[0]}-qismni ko'rish",
+                                 url=f"https://t.me/{username}?start=anime_{aid}")]])
+        total = await self.count_episodes(aid)
+        caption = _kaworai_caption(anime, eps, is_new, total)
         sent = 0
         for ch in chans:
             try:
@@ -246,7 +281,18 @@ class YumoraTarget(Target):
 
     async def find_existing(self, title: str) -> int | None:
         pool = await self._pool()
-        return await pool.fetchval("SELECT id FROM animes WHERE lower(title) = lower($1) LIMIT 1", title)
+        aid = await pool.fetchval("SELECT id FROM animes WHERE lower(title) = lower($1) LIMIT 1", title)
+        if aid:
+            return aid
+        key = norm_title(title)
+        first = key.split(" ")[0] if key else ""
+        if len(first) < 3:
+            return None
+        rows = await pool.fetch("SELECT id, title FROM animes WHERE title ILIKE $1 LIMIT 60", f"%{first}%")
+        return next((r["id"] for r in rows if norm_title(r["title"]) == key), None)
+
+    async def content_type_of(self, aid: int) -> str:
+        return "anime"
 
     async def max_episode(self, aid: int) -> int:
         pool = await self._pool()
@@ -302,7 +348,7 @@ class YumoraTarget(Target):
         for n, m in episodes.items():
             if await _send_file_retry(client, self._chan(), m.media, f"id: {code}\nqism: {n}"):
                 sent += 1
-            await asyncio.sleep(2)
+            await asyncio.sleep(YUMORA_GAP)
         want = list(episodes)
         saved = 0
         for _ in range(40):             # Yumora bot kanaldan qabul qilguncha kutamiz (~1 daqiqagacha)
@@ -322,17 +368,21 @@ class YumoraTarget(Target):
         if not (a and chans):
             return 0
         title = html.escape(a["title"])
+        cnt = await pool.fetchval("SELECT COUNT(*) FROM episodes WHERE anime_id = $1", aid)
+        genres = html.escape(", ".join(a["genres"]) or "—")
         if is_new:
-            cnt = await pool.fetchval("SELECT COUNT(*) FROM episodes WHERE anime_id = $1", aid)
-            text = (f"🎬 <b>{title}</b>\n{_DIV}\n🎭 <b>Janr:</b> {html.escape(', '.join(a['genres']) or '—')}\n"
+            text = (f"🎬 <b>{title}</b>\n{_DIV}\n🎭 <b>Janr:</b> {genres}\n"
                     f"📺 <b>Qismlar:</b> {cnt}\n🆔 <code>{a['code']}</code>")
         else:
-            text = f"🎬 <b>{title}</b>\n{_DIV}\n📺 <b>Yangi qism:</b> {range_text(eps)}\n🆔 <code>{a['code']}</code>"
+            text = (f"🆕 <b>Yangi qism qo'shildi!</b>\n{_DIV}\n🎬 <b>{title}</b>\n"
+                    f"📺 <b>{range_text(eps)}</b> tayyor\n🎭 <b>Janr:</b> {genres}\n📚 <b>Jami qismlar:</b> {cnt}\n"
+                    f"🆔 <code>{a['code']}</code>\n{_DIV}\n👇 Pastdagi tugma orqali hoziroq tomosha qiling")
         poster = a["poster_file_id"]
         if not poster:
             poster = await pool.fetchval("SELECT value FROM settings WHERE key = 'default_poster'")
         markup = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
-            text="▶️ Tomosha qilish", url=f"https://t.me/{self.cfg.get('bot_username', '')}?start={a['code']}")]])
+            text="▶️ Tomosha qilish" if is_new or len(eps) != 1 else f"▶️ {eps[0]}-qismni ko'rish",
+            url=f"https://t.me/{self.cfg.get('bot_username', '')}?start={a['code']}")]])
         bot, sent = self._bot(), 0
         for chat_id in chans:
             try:

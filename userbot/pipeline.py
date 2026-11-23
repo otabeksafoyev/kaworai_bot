@@ -21,7 +21,8 @@ from .parsers import ENG_RE, clean_line, parse_post, same_title
 from .postinfo import AI_TRUST, merge_info, post_info
 from .scoring import breakdown_text, match_percent
 from .runtime import rt
-from .source import SourceBlocked, fetch_from_source
+from .source import SourceBlocked, fetch_from_source, source_from_post
+from .parsers import episode_no
 
 logger = logging.getLogger("userbot")
 
@@ -238,14 +239,22 @@ async def _noop(*a, **k) -> None:
     return None
 
 
-async def _fetch(client, cfg: dict, code: str, msg, prog) -> tuple:
+async def _fetch(client, cfg: dict, code: str, msg, prog, only_after: int = 0) -> tuple:
     """Manba bot bilan suhbat — vaqt chegarasi bilan (qotib qolsa SourceBlocked: keyinroq qayta uriniladi)."""
     try:
         return await _bounded(
-            fetch_from_source(client, cfg["source_bot"], code, post=msg, notify=rt.notify, progress=prog.step),
+            fetch_from_source(client, cfg["source_bot"], code, post=msg, notify=rt.notify, progress=prog.step,
+                              only_after=only_after),
             FETCH_TIMEOUT)
     except asyncio.TimeoutError:
         raise SourceBlocked(f"Manba bot {FETCH_TIMEOUT}s ichida tugamadi.\nOxirgi bosqich: {rt.stage or '—'}")
+
+
+async def _retry_later(msg, cfg: dict, attempt: int, title: str, err) -> None:
+    if attempt < MAX_RETRY:
+        asyncio.get_running_loop().call_later(RETRY_MIN * 60, rt.queue.put_nowait, (msg, cfg, attempt + 1))
+        return await rt.notify(f"! <b>{esc(title)}</b>:\n{esc(str(err))}\n◌ {RETRY_MIN} daqiqadan keyin qayta uriniladi ({attempt + 1}/{MAX_RETRY}).")
+    return await rt.notify(f"✕ <b>{esc(title)}</b>: urinishlar tugadi — qo'shilmadi.\n{esc(str(err))}")
 
 
 async def process_post(client, msg, cfg: dict, attempt: int = 0) -> None:
@@ -269,6 +278,8 @@ async def _process_post(client, msg, cfg: dict, attempt: int, bag: dict, prog) -
     if not (title and code):
         logger.info("O'tkazildi: nom/kod topilmadi (nom=%r, kod=%r) matn=%r", title, code, (msg.message or "")[:200])
         return  # anime posti emas
+    if cfg.get("mode") == "folder":                 # papka kanali: faqat bazadagi animening yetishmayotgan qismlari
+        return await _process_folder_post(client, msg, cfg, attempt, prog, title, code)
     ctype = cfg.get("content_type", "anime")
     header = (f"Yangi post • № manba kodi: {code}" if attempt == 0
               else f"Qayta tekshiryapman ({attempt}/{MAX_RETRY}) • № manba kodi: {code}")
@@ -290,10 +301,7 @@ async def _process_post(client, msg, cfg: dict, attempt: int, bag: dict, prog) -
         timings["manba"] = round(time.monotonic() - ts0)
         await prog.step(f"✓ Manba bot: {len(episodes)} ta qism ({timings['manba']}s)")
     except SourceBlocked as e:
-        if attempt < MAX_RETRY:
-            asyncio.get_running_loop().call_later(RETRY_MIN * 60, rt.queue.put_nowait, (msg, cfg, attempt + 1))
-            return await rt.notify(f"! <b>{esc(title)}</b>:\n{esc(str(e))}\n◌ {RETRY_MIN} daqiqadan keyin qayta uriniladi ({attempt + 1}/{MAX_RETRY}).")
-        return await rt.notify(f"✕ <b>{esc(title)}</b>: urinishlar tugadi — qo'shilmadi.\n{esc(str(e))}")
+        return await _retry_later(msg, cfg, attempt, title, e)
     except Exception as e:
         return await rt.notify(f"✕ Manba bot bilan ishlashda xato: {esc(type(e).__name__)}")
     if not episodes:
@@ -397,6 +405,78 @@ async def _deliver(t, client, title: str, ctype: str, info: dict, episodes: dict
     except Exception as e:
         logger.exception("nishon %s xato", t.name)
         return f"✕ {esc(t.name)}: xato ({esc(type(e).__name__)})"
+
+
+async def _deliver_episodes(t, client, aid: int, ctype: str, new_eps: dict) -> str:
+    """Mavjud animega faqat yangi qismlar + "Yangi qism qo'shildi" e'loni."""
+    try:
+        sent, saved = await _bounded(t.upload(client, aid, ctype, new_eps), UPLOAD_TIMEOUT)
+        if saved <= 0:
+            return f"! {esc(t.name)}: ID {aid} — qismlar qabul qilinmadi (yuborildi {sent}/{len(new_eps)}). Kanal/admin huquqini tekshiring."
+        news = await t.news(aid, ctype, sorted(new_eps), False)
+        return (f"✓ {esc(t.name)}: {targets.range_text(list(new_eps))} qo'shildi • ID {aid} • qabul: {saved}/{len(new_eps)}"
+                f" • news: {news} ta kanal")
+    except Exception as e:
+        logger.exception("nishon %s xato (papka)", t.name)
+        return f"✕ {esc(t.name)}: xato ({esc(type(e).__name__)})"
+
+
+async def _process_folder_post(client, msg, cfg: dict, attempt: int, prog, title: str, code: str) -> None:
+    """Papka kanalidagi post: postdagi tugmadan manba botga kiradi va Kaworai/Yumora bazasida BOR animening
+    faqat YETISHMAYOTGAN qismlarini olib qo'shadi. Bazada yo'q anime yoki yangi qism bo'lmasa — jim o'tkazib yuboriladi."""
+    src = source_from_post(msg)
+    if not src:
+        logger.info("[papka] %s: postda manba bot tugmasi yo'q — o'tkazildi", title)
+        return
+    bot, payload = src
+    tcfgs = await targets.load_targets() or [dict(targets.DEFAULT_KAWORAI)]
+    found = []
+    for c in tcfgs:
+        if not c.get("enabled", True):
+            continue
+        t = targets.make(c)
+        try:
+            aid = await t.find_existing(title)
+            if aid:
+                found.append((t, aid, await t.max_episode(aid)))
+        except Exception:
+            logger.warning("[papka] %s: %s bazasini tekshirib bo'lmadi", title, c.get("name"), exc_info=True)
+    if not found:
+        logger.info("[papka] %s: hech qaysi bot bazasida yo'q — o'tkazildi", title)
+        return
+    need_after = min(last for _, _, last in found)
+    n_post = episode_no(msg.message or "")
+    if n_post is not None and n_post <= need_after:
+        logger.info("[papka] %s: %s-qism hammasida bor (oxirgisi %s) — o'tkazildi", title, n_post, need_after)
+        return
+
+    await prog.begin(title, f"Yangi qism rejimi ({cfg.get('title') or 'papka'}) • № manba kodi: {code}")
+    await prog.step(f"◌ Bazada bor: {', '.join(t.name for t, _, _ in found)}; {need_after}-qismdan keyingilarini qidiryapman...")
+    t0 = time.monotonic()
+    try:
+        info_text, episodes, debug = await _fetch(client, {"source_bot": "@" + bot}, code, msg, prog, only_after=need_after)
+    except SourceBlocked as e:
+        return await _retry_later(msg, cfg, attempt, title, e)
+    except Exception as e:
+        return await rt.notify(f"✕ Manba bot bilan ishlashda xato: {esc(type(e).__name__)}")
+    if not episodes:
+        logger.info("[papka] %s: manba botda %s-qismdan keyingi qism topilmadi", title, need_after)
+        return await prog.step(f"= Manba botda {need_after}-qismdan keyingi qism yo'q — qo'shilmadi")
+    await prog.step(f"✓ Manba bot: {len(episodes)} ta yangi qism ({round(time.monotonic() - t0)}s)")
+
+    jobs, lines = [], []
+    for t, aid, last in found:
+        new_eps = targets.new_episodes(episodes, last)
+        if not new_eps:
+            lines.append(f"= {esc(t.name)}: yangi qism yo'q ({last}-qismgacha bor)")
+            continue
+        jobs.append(_deliver_episodes(t, client, aid, await t.content_type_of(aid), new_eps))
+    await prog.step("◌ Qo'shilyapti: " + ", ".join(t.name for t, _, _ in found))
+    results = list(await asyncio.gather(*jobs)) if jobs else []
+    if any(r.startswith("✓") for r in results):
+        await storage.mark_done(msg.chat_id, msg.id)
+    await rt.notify(f"◈ <b>{esc(title)}</b> — yangi qism ({esc(cfg.get('title') or 'papka')}):\n" + "\n".join(results + lines)
+                    + f"\n⏱ jami {round(time.monotonic() - t0)}s")
 
 
 async def _process_multi(client, msg, tcfgs: list[dict], title: str, code: str, eng: str, ctype: str,

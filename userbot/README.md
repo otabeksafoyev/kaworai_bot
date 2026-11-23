@@ -39,3 +39,14 @@ Chegara: foiz **shu qiymatdan kam bo'lmasa** qo'shiladi (>=).
 - Qismlar topilmasa, adminga botning javobi va ko'ringan tugmalar matni yuboriladi (moslashtirish uchun).
 - `/watch` — istalgancha kanal qo'shish/olib tashlash; har biri o'z manba boti va kontent turi bilan.
 - `/start` — tugmali panel (kanallar, nishon botlar, holat, uzish); "Menu" tugmasi buyruqlar ro'yxatini ochadi.
+
+## Papka (addlist) rejimi va tezlik
+
+- `/watch` → **"＋ Papka (addlist) qo'shish"**: `https://t.me/addlist/...` havolasini yuboring. Papkadagi hamma kanal kuzatiladi.
+  Bu kanallardagi postlar uchun userbot postdagi tugmadan (`t.me/<bot>?start=...`) manba botga kiradi (majburiy obuna bo'lsa a'zo bo'ladi)
+  va Kaworai/Yumora bazasida **bor** animening faqat **yetishmayotgan** qismlarini olib qo'shadi, so'ng news kanallarga "Yangi qism qo'shildi!" e'lonini yuboradi.
+  Bazada yo'q anime, tugmasiz post yoki allaqachon bor qism — jim o'tkazib yuboriladi. Papkaga yangi kanal qo'shilsa — har 6 soatda
+  (`UB_FOLDER_REFRESH`) yoki "🔄 Papkalarni yangilash" bilan olinadi. A'zo bo'lmagan kanallar uchun "a'zo bo'lish" tugmasi bor.
+- Qismlar videosi sarlavhadagi raqam bo'yicha bog'lanadi; sarlavhada qism raqami bo'lsa, bir vaqtda `UB_SOURCE_PARALLEL` (standart 4) ta qism so'raladi,
+  bo'lmasa — xavfsiz birma-bir rejim. Faqat yangi qismlar olinadi (bazadagi oxirgisidan keyingilari).
+- Qotib qolishdan himoya: `UB_FETCH_TIMEOUT` (240s), `UB_POSTER_TIMEOUT` (45s), `UB_AI_TIMEOUT` (60s), `UB_UPLOAD_TIMEOUT` (900s), `UB_CLICK_TIMEOUT` (40s).

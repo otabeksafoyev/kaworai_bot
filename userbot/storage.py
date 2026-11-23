@@ -15,6 +15,7 @@ _K_SESSION = "userbot:session"
 _K_CREDS = "userbot:creds"
 _K_WATCH = "userbot:watch"
 _K_WATCHES = "userbot:watches"
+_K_FOLDERS = "userbot:folders"
 _K_DONE = "userbot:done"
 _K_TARGETS = "userbot:targets"
 
@@ -90,6 +91,15 @@ async def load_watches() -> list[dict]:
 
 async def save_watches(items: list[dict]) -> None:
     await _set(_K_WATCHES, json.dumps(items))
+
+
+async def load_folders() -> list[dict]:
+    v = await _get(_K_FOLDERS)
+    return json.loads(v) if v else []
+
+
+async def save_folders(items: list[dict]) -> None:
+    await _set(_K_FOLDERS, json.dumps(items))
 
 
 async def is_done(chat_id: int, msg_id: int) -> bool:

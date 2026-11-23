@@ -34,9 +34,16 @@ async def main() -> None:
         await rt.client.connect()
         if await rt.client.is_user_authorized():
             await rt.client.get_dialogs()   # kanal/maxfiy kanal entity keshi uchun
+            try:
+                from . import folders
+                await folders.refresh_all(rt.client)       # papkaga yangi kanal qo'shilgan bo'lishi mumkin
+            except Exception:
+                logging.getLogger("userbot").warning("papkalar yangilanmadi", exc_info=True)
             await start_watcher()
             asyncio.create_task(health_loop())
-            await rt.notify("✓ Userbot ishga tushdi.\n⌕ Kuzatuv kanallari:\n" + describe_watches(await storage.load_watches()))
+            fl = await storage.load_folders()
+            await rt.notify("✓ Userbot ishga tushdi.\n⌕ Kuzatuv kanallari:\n" + describe_watches(await storage.load_watches())
+                            + (f"\n📁 Papkalar: {len(fl)} (jami {sum(len(f['channels']) for f in fl)} kanal)" if fl else ""))
         else:
             rt.client = None
             await storage.clear_login()

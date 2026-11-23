@@ -14,6 +14,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 
 from telethon import errors, events, functions
 
@@ -62,6 +63,9 @@ class _BotChat:
 class SourceBlocked(Exception):
     """Manba bot majburiy obuna tugallanmagani sababli qismlarni bermayapti (keyinroq qayta urinish mumkin)."""
 MAX_STEPS = 80
+PARALLEL = int(os.environ.get("UB_SOURCE_PARALLEL", "4"))   # bir vaqtda nechta qism so'raladi (sarlavhada qism raqami bo'lsa)
+EP_TOTAL = float(os.environ.get("UB_EP_TOTAL", "120"))   # bitta qism/guruh videosini eng ko'pi bilan shuncha soniya kutamiz
+EP_IDLE = float(os.environ.get("UB_EP_IDLE", "30"))       # yangi video kelmasa shuncha soniyadan keyin kutishni to'xtatamiz
 CLICK_TIMEOUT = int(os.environ.get("UB_CLICK_TIMEOUT", "40"))   # tugma bosilganda botning callback javobini eng ko'pi bilan shuncha kutamiz
 IO_TIMEOUT = 30                                                    # Telegram'ga bitta so'rov uchun
 MAX_CLICKS_PER_EP = 2     # bir qism raqami uchun eng ko'pi bilan nechta tugma bosiladi
@@ -97,6 +101,20 @@ def deep_links(post, source_bot: str) -> list[tuple[str, str]]:
         if m and m.group(1).lower() == want:
             out.append((m.group(1), m.group(2)))
     return out
+
+
+def source_from_post(post) -> tuple[str, str] | None:
+    """Postdagi tugmalardan manba bot va deep link payload'i: (bot, payload). "Tomosha qilish" kabi tugma ustun."""
+    first = None
+    for b in flat_buttons(post):
+        m = _START_URL_RE.match(getattr(b, "url", None) or "")
+        if not m:
+            continue
+        cand = (m.group(1), m.group(2))
+        if re.search(r"(?i)(tomosha|ko['ʻ’`]?r|watch|смотр|play|▶)", b.text or ""):
+            return cand
+        first = first or cand
+    return first
 
 
 def _quality_value(text: str) -> int | None:
@@ -207,7 +225,8 @@ def _key(m, b, extra=None) -> tuple:
     return (m.id, b.text, tuple(x.text for x in flat_buttons(m)), extra)
 
 
-def _next_action(cards: dict, done: set, pages: int, cur_ep=None, have: set | None = None, clicks: dict | None = None):
+def _next_action(cards: dict, done: set, pages: int, cur_ep=None, have: set | None = None, clicks: dict | None = None,
+                 min_ep: int = 0):
     """('quality'|'episode'|'next', xabar, tugma[, boshqa_sifatlar]) yoki None."""
     msgs = [cards[k] for k in sorted(cards, reverse=True)]
     for m in msgs:                                        # 1) sifat tanlovi (har bir qism uchun alohida)
@@ -222,6 +241,7 @@ def _next_action(cards: dict, done: set, pages: int, cur_ep=None, have: set | No
             if (mm and getattr(b, "data", None) and not _SKIP_BTN_RE.search(b.text) and not _quality_value(b.text)
                     and _key(m, b) not in done
                     and int(mm.group(1)) not in have                      # bu qism allaqachon olingan
+                    and int(mm.group(1)) > min_ep                         # faqat yangi qismlar (min_ep dan keyingilar)
                     and clicks.get(int(mm.group(1)), 0) < MAX_CLICKS_PER_EP):
                 eps.append((int(mm.group(1)), m, b))
     if eps:
@@ -236,8 +256,20 @@ def _next_action(cards: dict, done: set, pages: int, cur_ep=None, have: set | No
     return None
 
 
+def _episode_batch(m, done: set, have: set, clicks: dict, min_ep: int, limit: int) -> list:
+    """Bir xabardagi bosilmagan qism tugmalari (raqam bo'yicha), parallel so'rash uchun."""
+    out = []
+    for b in flat_buttons(m):
+        mm = _EP_BTN_RE.match(b.text or "")
+        if (mm and getattr(b, "data", None) and not _SKIP_BTN_RE.search(b.text) and not _quality_value(b.text)
+                and _key(m, b) not in done and int(mm.group(1)) not in have and int(mm.group(1)) > min_ep
+                and clicks.get(int(mm.group(1)), 0) < MAX_CLICKS_PER_EP):
+            out.append((int(mm.group(1)), b))
+    return sorted(out, key=lambda x: x[0])[:limit]
+
+
 async def fetch_from_source(client, source_bot: str, code: str, post=None, notify=None,
-                            idle: float = 12.0, click_idle: float = 15.0, settle: float = 1.5, progress=None):
+                            idle: float = 12.0, click_idle: float = 15.0, settle: float = 1.5, progress=None, only_after: int = 0):
     """(info_text, {qism_raqami: telethon_message}, debug_matn) qaytaradi."""
     async def say(text: str, replace: bool = False) -> None:
         if progress:
@@ -260,6 +292,8 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
     pending: set[str] = set(_PENDING)
     ep_clicks: dict[int, int] = {}
     pages = 0
+    parallel_ok = PARALLEL > 1       # sarlavhada qism raqami ishonchli bo'lsa True (birinchi videodan keyin aniqlanadi)
+    captions_ok = False
 
     async def click(b):
         try:
@@ -275,7 +309,7 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
     async with _BotChat(client, source_bot) as conv:
 
         async def pull(wait: float) -> None:
-            nonlocal cur_ep
+            nonlocal cur_ep, captions_ok, parallel_ok
             new: list = []
             await _drain(conv, wait, settle, new)
             for m in new:
@@ -283,12 +317,37 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
                 if flat_buttons(m):
                     cards[m.id] = m
                 if is_video(m):
-                    n = cur_ep if cur_ep is not None else episode_no(m.message)
+                    cap = episode_no(m.message)
+                    n = cap if cap is not None else cur_ep           # sarlavhadagi raqam ustun (video kech kelsa adashmaslik uchun)
+                    if cur_ep is not None:
+                        if cap == cur_ep:
+                            captions_ok = True
+                        else:
+                            parallel_ok = False                      # sarlavhada raqam yo'q/mos emas — parallel xavfli
+                    elif cap is None:
+                        parallel_ok = False
                     await say(f"✓ Video keldi{f' ({n}-qism)' if n is not None else ''}", True)
                     if n is not None:
                         ep_msgs.setdefault(n, m)
                     else:
                         loose.append(m)
+
+        async def wait_eps(wanted: set, card, alerts_before: int) -> None:
+            """So'ralgan qismlar videosini kutadi: hammasi kelsa, sifat tanlovi chiqsa, bot ogohlantirsa yoki uzoq jim qolsa to'xtaydi."""
+            t0 = last = time.monotonic()
+            while wanted - set(ep_msgs):
+                n0 = len(got)
+                await pull(3.0)
+                now = time.monotonic()
+                if len(got) > n0:
+                    last = now
+                if len(alerts) > alerts_before:
+                    return
+                cards[card.id] = await _refresh(client, card)
+                if any(getattr(b, "data", None) and _quality_value(b.text) for b in flat_buttons(cards[card.id])):
+                    return
+                if now - last > EP_IDLE or now - t0 > EP_TOTAL:
+                    return
 
         await say(f"◌ Manba bot: /start {payload} yuborildi, javob kutyapman...", True)
         await conv.send_message(f"/start {payload}")
@@ -330,10 +389,28 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
                 cards[gate.id] = await _refresh(client, gate)
                 continue
 
-            act = _next_action(cards, done, pages, cur_ep, set(ep_msgs), ep_clicks)
+            act = _next_action(cards, done, pages, cur_ep, set(ep_msgs), ep_clicks, only_after)
             if not act:
                 break
             kind, m, b = act[0], act[1], act[2]
+            if kind == "episode" and parallel_ok and captions_ok:
+                batch = _episode_batch(m, done, set(ep_msgs), ep_clicks, only_after, PARALLEL)
+                if len(batch) > 1:                      # bir nechta qismni bir vaqtda so'raymiz — bot kechikishi bir marta to'lanadi
+                    nums = [n for n, _ in batch]
+                    await say(f"◌ {len(batch)} ta qism bir vaqtda so'ralyapti ({nums[0]}–{nums[-1]})...", True)
+                    for n, bb in batch:
+                        done.add(_key(m, bb))
+                        ep_clicks[n] = ep_clicks.get(n, 0) + 1
+                    cur_ep = None
+                    a0 = len(alerts)
+
+                    async def delayed(i, bb):
+                        await asyncio.sleep(0.25 * i)
+                        await click(bb)
+                    await asyncio.gather(*(delayed(i, bb) for i, (_, bb) in enumerate(batch)))
+                    await wait_eps(set(nums), m, a0)
+                    cards[m.id] = await _refresh(client, m)
+                    continue
             await say(f"◌ '{b.text}' tugmasi bosildi, natijani kutyapman...", True)
             if kind == "quality":
                 done.update(_key(m, x, cur_ep) for x in act[3])
@@ -344,8 +421,14 @@ async def fetch_from_source(client, source_bot: str, code: str, post=None, notif
                 ep_clicks[cur_ep] = ep_clicks.get(cur_ep, 0) + 1
             elif kind == "next":
                 pages += 1
+            if kind == "quality":
+                parallel_ok = False                       # sifat tanlovi bor — qismlarni birma-bir olamiz
+            a0 = len(alerts)
             await click(b)
-            await pull(click_idle)
+            if kind == "episode":
+                await wait_eps({cur_ep}, m, a0)
+            else:
+                await pull(click_idle)
             cards[m.id] = await _refresh(client, m)
         await pull(settle)                                # kechikib kelgan videolar
 
