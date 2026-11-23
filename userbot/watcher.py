@@ -48,7 +48,7 @@ def _register_folders(fl: list[dict], skip: set[int]) -> None:
         rt.last_seen[cfg["channel"]] = time.time()
         await rt.queue.put((m, cfg))
 
-    rt.client.add_event_handler(on_folder_post, events.NewMessage(chats=[cid for cid in folders.watch_map(fl, skip)]))
+    rt.client.add_event_handler(on_folder_post, events.NewMessage(chats=list(fmap)))   # fmap kalitlari -100... (to'liq) ID
     rt.handler.append(on_folder_post)
     logger.info("Papka kanallari kuzatuvda: %s ta", len(fmap))
 
@@ -65,7 +65,11 @@ async def start_watcher() -> None:
     fl = await storage.load_folders()
     if not rt.client:
         return
-    _register_folders(fl, {w["channel"] for w in items})
+    try:
+        _register_folders(fl, {w["channel"] for w in items})
+    except Exception:                                  # papka xatosi asosiy kuzatuvni to'xtatmasin
+        logger.exception("papka kanallari ro'yxatdan o'tmadi")
+        await rt.notify("! Papka kanallari ulanmadi (loglarga qarang) — oddiy kuzatuv davom etadi.")
     if not items:
         return
     for cfg in items:

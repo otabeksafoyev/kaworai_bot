@@ -93,9 +93,38 @@ async def save_watches(items: list[dict]) -> None:
     await _set(_K_WATCHES, json.dumps(items))
 
 
+def _norm_peers(items) -> list[dict]:
+    """Eski/boshqa formatdagi kanallarni ({"id","title"}) ko'rinishiga keltiradi (int, str, dict qabul qilinadi)."""
+    out: list[dict] = []
+    for c in items or []:
+        if isinstance(c, dict):
+            cid, title = c.get("id", c.get("channel_id")), c.get("title")
+        else:
+            cid, title = c, None
+        try:
+            cid = int(cid)
+        except (TypeError, ValueError):
+            continue
+        if cid < 0:                                   # -100123... (marked) -> 123...
+            from telethon import utils
+            cid = utils.resolve_id(cid)[0]
+        out.append({"id": cid, "title": title or str(cid)})
+    return out
+
+
 async def load_folders() -> list[dict]:
     v = await _get(_K_FOLDERS)
-    return json.loads(v) if v else []
+    try:
+        raw = json.loads(v) if v else []
+    except ValueError:
+        return []
+    out: list[dict] = []
+    for f in raw if isinstance(raw, list) else []:
+        if not isinstance(f, dict) or not f.get("slug"):
+            continue                                  # slug yo'q — qayta o'qib bo'lmaydi, o'tkazib yuboramiz
+        out.append({**f, "title": f.get("title") or "Papka",
+                    "channels": _norm_peers(f.get("channels")), "missing": _norm_peers(f.get("missing"))})
+    return out
 
 
 async def save_folders(items: list[dict]) -> None:

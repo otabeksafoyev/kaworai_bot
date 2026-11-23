@@ -78,7 +78,7 @@ async def refresh_all(client) -> bool:
         except Exception as e:
             logger.warning("papka %s yangilanmadi: %s: %s", f["slug"], type(e).__name__, e)
             continue
-        if {c["id"] for c in nf["channels"]} != {c["id"] for c in f["channels"]} or len(nf["missing"]) != len(f.get("missing", [])):
+        if {c["id"] for c in nf["channels"]} != {c["id"] for c in f.get("channels", [])} or len(nf["missing"]) != len(f.get("missing", [])):
             changed = True
         items[i] = nf
     if items:
